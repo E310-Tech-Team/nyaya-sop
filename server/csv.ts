@@ -1,0 +1,96 @@
+import {
+  AGE_RANGES,
+  CURRENT_STATUSES,
+  EDUCATION_LEVELS,
+  GENDERS,
+  PURPOSE_SCALE,
+  formatPhone,
+  labelFor,
+  referenceFromId,
+} from '../src/shared/application';
+import type { ApplicationExportRow } from './repository';
+
+type Cell = string | number | null | undefined;
+
+const FORMULA_START = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^[+-]?\d[\d ]*$/;
+
+/**
+ * RFC 4180 quoting, plus a leading apostrophe on values that spreadsheet apps would
+ * otherwise run as formulas (CSV injection: =, +, -, @, tab, carriage return).
+ * Plain signed numbers such as "+447700900123" are harmless and left alone.
+ */
+export function csvCell(value: Cell): string {
+  let text = value === null || value === undefined ? '' : String(value);
+  if (FORMULA_START.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
+  return /[",\r\n]/.test(text) || text !== text.trim() ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function toCsv(header: string[], rows: Cell[][]): string {
+  return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+// Reviewers are in Nigeria; show submission times in West Africa Time.
+const lagosTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Africa/Lagos',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const formatTime = (date: Date) => lagosTime.format(date).replace(',', '');
+
+const HEADER = [
+  'Reference',
+  'Submitted (WAT)',
+  'Cohort',
+  'Review status',
+  'Published status',
+  'Full name',
+  'Email',
+  'Phone',
+  'Gender',
+  'Age range',
+  'State of residence',
+  'City/Town',
+  'RCCG parish',
+  'Highest education',
+  'Current status',
+  'Purpose clarity (1-5)',
+  'Consent version',
+  'UTM source',
+  'UTM medium',
+  'UTM campaign',
+  'Referrer',
+];
+
+export function applicationsToCsv(rows: ApplicationExportRow[]): string {
+  return toCsv(
+    HEADER,
+    rows.map((row) => [
+      referenceFromId(row.id),
+      formatTime(row.created_at),
+      row.cohort_slug,
+      row.status,
+      row.published_status ?? '',
+      row.full_name,
+      row.email,
+      formatPhone(row.phone_e164),
+      labelFor(GENDERS, row.gender),
+      labelFor(AGE_RANGES, row.age_range),
+      row.state_of_residence,
+      row.city,
+      row.parish_name,
+      labelFor(EDUCATION_LEVELS, row.education_level),
+      labelFor(CURRENT_STATUSES, row.current_status),
+      `${row.purpose_clarity} - ${labelFor(PURPOSE_SCALE, row.purpose_clarity)}`,
+      row.consent_version,
+      row.submission_meta?.utmSource,
+      row.submission_meta?.utmMedium,
+      row.submission_meta?.utmCampaign,
+      row.submission_meta?.referrer,
+    ]),
+  );
+}

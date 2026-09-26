@@ -1,0 +1,24 @@
+# Nginx site for the bare-metal option. Copy to /etc/nginx/sites-available/school-of-purpose,
+# replace apply.example.org, enable it, then run:  sudo certbot --nginx -d apply.example.org
+# (certbot adds the HTTPS server block and the http→https redirect).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name apply.example.org;
+
+    client_max_body_size 64k;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # Overwrite (don't append) so visitors can't spoof their address; the app
+        # trusts it because TRUST_PROXY=loopback.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+}

@@ -1,0 +1,6 @@
+# pnpm settings for this single-package repo (not a monorepo).
+#
+# pnpm 11 refuses to install when a dependency wants to run a build script that
+# hasn't been reviewed. esbuild's postinstall only verifies its platform binary.
+allowBuilds:
+  esbuild: true

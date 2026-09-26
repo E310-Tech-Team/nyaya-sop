@@ -1,0 +1,7 @@
+# Caddy obtains and renews the HTTPS certificate for DOMAIN automatically
+# (DNS must already point at this server, and ports 80/443 must be open)
+# and redirects http:// to https://.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

@@ -1,0 +1,304 @@
+# Deployment and operations runbook: VPS (Linode or similar)
+
+**Last updated:** 2026-09-26
+
+This deploys the whole site (website + installable app + API + background worker + PostgreSQL) to **one Linux VPS**. There are two options:
+
+| | **A. Docker Compose (recommended)** | **B. Bare metal** |
+|---|---|---|
+| What runs | 4 containers: Caddy (HTTPS) → app (Node) → Postgres 17, plus a worker (same image) | Nginx → Node (systemd, worker inside) → Postgres installed with apt |
+| HTTPS | Automatic (Caddy / Let's Encrypt) | certbot |
+| Updating | `git pull && docker compose up -d --build` | `git pull && pnpm install && pnpm build && systemctl restart` |
+| Best for | Most setups; reproducible | Servers where Docker isn't allowed |
+
+Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend-Schema.md) (database, API, retention) · [`.env.example`](../.env.example) (every setting)
+
+**Never expose the development server (`pnpm dev`) to the internet.** It has no HTTPS, uses the test email outbox (whose page shows sign-in links) and a development secret. Anything reachable from outside, including staging, runs a production build.
+
+---
+
+## 0. Before you start
+
+1. **A VPS** running Ubuntu 24.04 LTS (or Debian 12). 1 vCPU / 1 GB RAM is enough (Linode "Nanode"); 2 GB is more comfortable with the worker. London is a good default region for Nigeria.
+2. **A domain or subdomain** (e.g. `apply.yourchurch.org`) with an **A record** (and AAAA for IPv6) pointing at the VPS. **HTTPS is required**, not optional: installing the app, the service worker, push notifications and the secure sign-in cookies only work on a valid `https://` origin. Set up DNS first: certificates are issued only once it resolves.
+3. **Firewall:** allow only SSH (22), HTTP (80) and HTTPS (443). Postgres is never exposed.
+   ```bash
+   sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw allow 443/udp && sudo ufw enable
+   ```
+4. **An email provider** (optional at first, needed for applicant sign-in and emailed staff invitations): any SMTP service (Postmark, Mailgun, Amazon SES, Zoho, Brevo…), with SPF and DKIM set up for the sending domain. Without it, sign-in by email stays **off** and the site says so; nothing pretends an email was sent.
+5. **Who the staff are and their roles** ([05 §6](05-Backend-Schema.md#roles-and-permissions)). At least one owner, ideally two, so one can recover the other.
+
+---
+
+## A. Docker Compose (recommended)
+
+### A1. Install Docker (once)
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER   # log out and back in afterwards
+```
+
+### A2. Get the code and configure
+
+```bash
+sudo mkdir -p /opt/school-of-purpose && sudo chown $USER /opt/school-of-purpose
+git clone <your-repo-url> /opt/school-of-purpose   # or copy the project folder with rsync/scp
+cd /opt/school-of-purpose
+cp .env.example .env && chmod 600 .env
+nano .env
+```
+
+| Variable | Value |
+|---|---|
+| `DOMAIN` | `apply.yourchurch.org` (the site will be `https://DOMAIN`; `SITE_URL` is derived from it) |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
+| `APP_SECRET` | `openssl rand -base64 48`. **Required.** Keep it stable: changing it signs everyone out and breaks stored secrets ([rotation](#rotating-secrets)) |
+| `SMTP_URL`, `EMAIL_FROM` | when you have an email provider, e.g. `smtps://USER:PASS@smtp.example.com:465` and `School of Purpose <no-reply@apply.yourchurch.org>` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | for push notifications: see [A4](#a4-web-push-keys-once) |
+| `VITE_CONTACT_EMAIL` | optional public contact address |
+| `BUILD_ID` | optional release name (e.g. the git commit: `BUILD_ID=$(git rev-parse --short HEAD)`) |
+
+### A3. Start
+
+```bash
+docker compose up -d --build
+docker compose ps              # db, app (healthy), worker, caddy: all running
+docker compose logs -f app     # "Applied migration …", "Server listening…"
+docker compose logs -f worker  # "Background worker … started"
+```
+
+The app logs a warning for each optional integration that isn't configured ("Email is not configured…", "VAPID keys are not configured…").
+
+### A4. Web Push keys (once)
+
+```bash
+docker compose run --rm app node server-dist/push-keys.js
+```
+
+Copy the three lines into `.env`, set `VAPID_SUBJECT` to a monitored `mailto:` address (Apple requires `mailto:` or `https:`), then `docker compose up -d` (app and worker restart). **Back up the key pair with `.env`** ([A7](#a7-backups-do-this-on-day-one)). Generate it only once per site: new keys make every device turn notifications on again (the app does this automatically when someone next opens it with permission already granted, but devices that aren't opened stop receiving).
+
+### A5. First admin
+
+No default credentials exist anywhere. On the server:
+
+```bash
+docker compose exec app node server-dist/admin.js create-owner --email you@yourchurch.org --name "Your Name"
+```
+
+It prints a **single-use link, valid 72 hours**: treat it like a password. Open it, choose a password (12+ characters), then set up two-step verification (scan the QR code in an authenticator app, confirm a code, **save the 10 recovery codes**). Then invite colleagues from **Admin → Staff** (emailed, or a link to share privately when email is off).
+
+### A6. Smoke test
+
+```bash
+curl -s https://DOMAIN/api/health   # {"status":"ok","database":"ok"}
+curl -s https://DOMAIN/api/config   # accounts/push enabled flags and the release id
+curl -sI https://DOMAIN/sw.js | grep -i -E "cache-control|service-worker-allowed"   # no-cache, /
+```
+
+Then in a browser: submit a test application; sign in to `/admin`; check **Settings → Integrations and health** (email, push, worker "Running"); register your phone as a test device (**Notifications → Your test devices**) and **Send a test**; delete the test application (**Applicants → the application → Delete**).
+
+### A7. Backups (do this on day one)
+
+```bash
+./deploy/backup.sh          # writes backups/sop-YYYY-MM-DD_HHMMSS.dump (private, 600)
+crontab -e                  # add:
+# 30 2 * * * cd /opt/school-of-purpose && ./deploy/backup.sh >> backups/backup.log 2>&1
+```
+
+- Backups contain personal data. Keep 14 days on the server (the default) **and** copy them off the server (e.g. `rclone` to encrypted object storage, or Linode Backups).
+- **Back up `.env` separately and securely** (a password manager or sealed offline copy): it holds `APP_SECRET` and the VAPID private key. A database restored without the matching `APP_SECRET` can't decrypt staff authenticator secrets or push subscriptions.
+- **Restore:** see the comment at the top of [`deploy/backup.sh`](../deploy/backup.sh). Test a restore on a spare machine once a term.
+
+### A8. Updating the site
+
+```bash
+cd /opt/school-of-purpose
+git pull
+./deploy/backup.sh                                            # before any upgrade with migrations
+BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build   # app applies migrations, then the worker restarts
+docker image prune -f
+```
+
+What people see: pages open in a browser tab pick up the new release when reloaded; the installed app and open tabs show **"An update is ready · Update now"** and never reload by themselves (so nobody loses a form or an admin edit). Old files stay available to tabs still on the previous version.
+
+---
+
+## B. Bare metal (Node + local Postgres + Nginx)
+
+### B1. Install Node 22, pnpm, Postgres 17, Nginx
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs nginx
+sudo corepack enable
+sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+sudo apt-get install -y postgresql-17
+```
+
+### B2. Database and service user
+
+```bash
+sudo adduser --system --group --home /opt/school-of-purpose sop
+PASSWORD=$(openssl rand -hex 24); echo "DB password: $PASSWORD"
+sudo -u postgres psql -c "create role sop login password '$PASSWORD';"
+sudo -u postgres psql -c "create database sop owner sop;"
+```
+
+### B3. Build
+
+```bash
+sudo -u sop git clone <your-repo-url> /opt/school-of-purpose
+cd /opt/school-of-purpose
+sudo -u sop cp .env.example .env && sudo -u sop nano .env
+#   DATABASE_URL=postgres://sop:<PASSWORD>@127.0.0.1:5432/sop
+#   TRUST_PROXY=loopback
+#   SITE_URL=https://apply.yourchurch.org
+#   APP_SECRET=<openssl rand -base64 48>
+#   (+ SMTP_URL, EMAIL_FROM, VAPID_* when ready; WORKER_MODE stays inline)
+sudo chmod 600 .env
+sudo -u sop pnpm install --frozen-lockfile
+sudo -u sop pnpm build
+```
+
+### B4. Run with systemd, publish with Nginx + certbot
+
+```bash
+sudo cp deploy/school-of-purpose.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now school-of-purpose
+journalctl -u school-of-purpose -f            # "Server listening…", "Background worker … started"
+
+sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/school-of-purpose
+sudo sed -i 's/apply.example.org/apply.yourchurch.org/' /etc/nginx/sites-available/school-of-purpose
+sudo ln -s /etc/nginx/sites-available/school-of-purpose /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo apt-get install -y certbot python3-certbot-nginx && sudo certbot --nginx -d apply.yourchurch.org
+```
+
+First admin: `sudo -u sop node server-dist/admin.js create-owner --email … --name …`. VAPID keys: `node server-dist/push-keys.js`. Backups: `sudo -u postgres pg_dump -Fc sop > /var/backups/sop-$(date +%F).dump` from cron. Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && sudo systemctl restart school-of-purpose`.
+
+---
+
+## Operating the site
+
+### The admin area
+
+Everything the Programme team does is at **`https://DOMAIN/admin`**: applicants (review, notes, publishing decisions, CSV download), applicant accounts, cohorts (opening and closing applications), notifications, announcements, staff, settings and the audit history ([03 §9](03-App-Flow.md#9-admin-platform)). Each person signs in with their own account and two-step verification. What they can do depends on their role. The old `…/api/admin/applications.csv` address no longer accepts a shared password.
+
+### Opening and closing applications
+
+**Admin → Cohorts → Edit**: tick or untick *Accepting applications*, and optionally set opening and closing times (entered in Lagos time by default, stored in UTC). SQL fallback: `update cohorts set is_accepting_applications = false where slug = 'called-generation-1';`.
+
+### Email
+
+Set `SMTP_URL` and `EMAIL_FROM`, restart (`docker compose up -d`). Check **Settings → Integrations and health** shows "SMTP configured", then request a sign-in link at `/account` with your own address. If emails land in spam, check SPF/DKIM/DMARC for the sending domain. Applicant sign-in can also be switched off in **Settings** without removing the configuration.
+
+### Background worker
+
+- Docker: the `worker` container (`restart: unless-stopped`); the app runs with `WORKER_MODE=off`. Bare metal: inside the web process (`WORKER_MODE=inline`, supervised by systemd).
+- **Graceful shutdown:** on SIGTERM the worker stops claiming jobs, lets running ones finish for up to 20 s, then hands the rest back to the queue (the web server finishes requests within 15 s). Compose waits 30 s for the worker and 20 s for the app; systemd waits 20 s.
+- **Heartbeat:** the worker writes a heartbeat every 30 s; **Settings → Integrations and health** shows "Running" if it's under 2 minutes old. If it says "Not seen", check `docker compose logs worker`.
+- Several workers can run at once safely (jobs are claimed with `FOR UPDATE SKIP LOCKED`).
+
+### Queue monitoring and failed jobs
+
+The dashboard's **Background jobs** panel shows waiting, running and failed (7 days) jobs with the latest errors. A campaign's page shows its deliveries (queued, attempted, accepted by the push service, failed, expired, skipped).
+
+```sql
+-- docker compose exec db psql -U sop -d sop
+select id, kind, status, attempts, run_at, last_error from jobs where status in ('failed', 'pending') order by updated_at desc limit 20;
+-- Retry a failed job (every job kind is safe to run again):
+update jobs set status = 'pending', run_at = now(), attempts = 0, last_error = null, finished_at = null where id = 123;
+```
+
+A job whose worker crashed is picked up again automatically when its lease (2 minutes) runs out. Deliveries that failed permanently (e.g. a device that no longer exists) are not retried; that's expected.
+
+### Staff sign-in problems
+
+| Situation | Fix |
+|---|---|
+| Lost phone, has recovery codes | Sign in with a recovery code ("Use a recovery code"), then **Your security → Create new recovery codes**; an owner can reset their two-step verification so they enrol the new phone |
+| Lost phone and codes | Another owner: **Staff → Reset two-step verification**. The only owner: on the server, `docker compose exec app node server-dist/admin.js reset-mfa --email …` |
+| Forgotten password | `/admin/forgot` (needs email). Without email: `docker compose exec app node server-dist/admin.js reset-password --email …` prints a single-use 30-minute link; the reset still asks for their authenticator code |
+| Locked out after wrong attempts | Wait (15 min, doubling up to 24 h), or an owner suspends and reactivates them (clears the lock) |
+| Invitation expired | **Staff → New invitation link** |
+
+### Migrations
+
+They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, each in a transaction, under a lock. To run them without starting the site: `docker compose run --rm app node server-dist/migrate.js`. **Back up first**; never edit an applied migration file.
+
+### Rotating secrets
+
+| Secret | How | Consequences |
+|---|---|---|
+| `POSTGRES_PASSWORD` | `alter role sop password '…'` in psql, update `.env`, `docker compose up -d` | None for users |
+| SMTP credentials | Update `SMTP_URL`, restart | None |
+| VAPID keys | Only if the private key leaked: `push-keys.js`, update `.env`, restart | Devices must re-subscribe: the app does it automatically for people who open it again with permission granted; others stop receiving |
+| `APP_SECRET` | Only if leaked (or the server was compromised): new value in `.env`, restart, then as below | Everyone is signed out (CSRF tokens change). Staff authenticator secrets and push subscriptions encrypted with the old key can't be read: reset two-step verification for every staff member (`admin.js reset-mfa --email …` or Staff page) and run `update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'rejected' where status = 'active';` so devices show "turn on again" |
+| A staff member's password | They change it under **Your security** (other sessions are signed out) |
+
+### Incident response
+
+1. **Contain:** suspend the affected staff account (**Staff → Suspend**, which also signs them out everywhere) or all sessions (`update staff_sessions set revoked_at = now() where revoked_at is null;`). If the server is compromised, take it offline (`docker compose stop app worker`).
+2. **Assess:** **Audit history** (exports, views of applicant records, publications, sends, role changes, settings), `docker compose logs app` (request metadata only, no bodies).
+3. **Rotate** anything that may have leaked (table above) and restore from a clean backup if data was altered.
+4. **Notify:** follow your obligations under the Nigeria Data Protection Act 2023 (the regulator expects prompt breach notification) and tell affected applicants where required. Record what happened and what changed.
+
+### Service worker rollback
+
+If a release's service worker misbehaves (e.g. serves a broken page offline):
+
+1. **Normal fix:** deploy a corrected release. Browsers fetch `sw.js` without caching and offer the update.
+2. **Emergency kill switch:** `SW_KILL_SWITCH=1 docker compose up -d --build`. That release's page removes any service worker registration, and its `sw.js` deletes every School of Purpose cache and unregisters itself on the next update check (at the latest when the site is next opened). The site keeps working without offline support.
+3. After a few days (once people have opened the site), deploy a normal build again (`SW_KILL_SWITCH=` empty) to restore offline support.
+
+Never serve `sw.js` with long cache headers; the app sends `Cache-Control: no-cache` for it (and for `index.html`, the manifest and `offline.html`).
+
+### Staging and device testing
+
+Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrome and Samsung Internet install and push) **needs a trusted HTTPS origin reachable from the phone**. `127.0.0.1`/`localhost` on your computer isn't reachable from a phone, and service workers, install and push require a valid certificate.
+
+1. Add a DNS record such as `staging.apply.yourchurch.org` → the VPS.
+2. Run a second Compose project with its own `.env` (its own `DOMAIN`, `POSTGRES_PASSWORD`, `APP_SECRET`, **separate VAPID keys**, test email provider or sandbox) and its own volumes: `docker compose -p sop-staging --env-file .env.staging up -d --build`. Caddy needs one site block per domain (run staging's Caddy on the same instance by adding a second site to `deploy/Caddyfile`, or put staging on a separate small VPS).
+3. **Never use real applicants' data on staging** and never send test notifications to real applicants: register your own devices as test devices.
+4. Device checklist (record the device, OS and browser versions):
+
+| Device | Check |
+|---|---|
+| iPhone/iPad, iOS/iPadOS 16.4+ | Safari → Share (iOS 26: ••• → Share) → Add to Home Screen, Open as Web App on; opens full screen; **Enable notifications** in the app → Allow; admin test send arrives; tapping opens the right page; offline: public pages load, account pages show the offline page |
+| iPhone in Safari (not installed) | Notification card says to add to Home Screen first; `/install` shows the Safari steps |
+| Android, Chrome | Install prompt from `/install`; notifications in the browser and in the installed app; test send arrives; lock-screen text is neutral for application updates |
+| Android, Samsung Internet | Add page to → Home screen; notifications |
+| Mac, Safari 17+ | File → Add to Dock; notifications in Safari |
+| Windows, Edge / Chrome | App available → Install; notifications |
+| Any, Firefox | No install on desktop (page says so); notifications work |
+| Instagram/Facebook in-app browser | `/install` shows "open in your browser" and Copy link |
+
+### Handling a deletion request
+
+- **Account:** **Admin → Accounts → the account → Delete account** (type the email). The person can also do it themselves under **Account → Settings**. Applications stay, unlinked.
+- **Application:** **Admin → Applicants → the application → Delete application** (type the reference). Notes and history go with it.
+- Remove the person from any exported spreadsheets; backups age out after 14 days (off-server copies per your retention policy).
+
+### Monitoring
+
+- `GET /api/health` → 200 when the app and database are up (503 otherwise). Point an uptime monitor at it.
+- **Settings → Integrations and health**: database, email, push, worker heartbeat, queue, release id. No secrets are shown.
+- Logs: `docker compose logs -f app worker` (JSON; API request metadata only, never bodies) or `journalctl -u school-of-purpose`.
+
+---
+
+## Production checklist
+
+- [ ] DNS points at the VPS; `https://DOMAIN` loads with a valid certificate
+- [ ] `.env` has strong `POSTGRES_PASSWORD` and `APP_SECRET`, is `chmod 600`, and is backed up securely off the server
+- [ ] `/api/health` returns `ok`; `docker compose ps` shows the worker running
+- [ ] First owner created, two-step verification set up, recovery codes stored safely; a second owner invited
+- [ ] Email configured and a sign-in link received (or accounts intentionally left off)
+- [ ] VAPID keys generated once, backed up, and a test notification received on a staff test device (or push intentionally left off)
+- [ ] A test application submitted, found in **Applicants**, and deleted
+- [ ] Nightly backup cron installed **and** off-server copies arranged
+- [ ] Firewall allows only 22/80/443
+- [ ] Privacy notice, consent wording and retention periods agreed by the Programme team ([01-PRD §8](01-PRD.md#8-open-questions))
+- [ ] Device checks done on staging (above)
+- [ ] Uptime monitor on `/api/health`

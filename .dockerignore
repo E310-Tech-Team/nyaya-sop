@@ -1,0 +1,17 @@
+# Allow-list: send Docker only what the build needs. Anything else in the folder
+# (local .env, databases, backups, zip exports, design files) never reaches the image.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!index.html
+!tsconfig.json
+!vite.config.ts
+!public
+!src
+!server
+!scripts
+
+# Tests are not needed in the image.
+**/*.test.ts
+src/shared/test-fixtures.ts

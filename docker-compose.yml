@@ -1,0 +1,138 @@
+# School of Purpose on a single VPS: Caddy (HTTPS) → app (Node) → Postgres, plus a background
+# worker for notifications and clean-up.
+#   1. cp .env.example .env   and set DOMAIN, POSTGRES_PASSWORD, APP_SECRET
+#      (optional: SMTP_URL + EMAIL_FROM for sign-in emails, VAPID_* for push notifications)
+#   2. docker compose up -d --build
+#   3. docker compose exec app node server-dist/admin.js create-owner --email you@example.org --name "Your Name"
+# Full runbook: docs/DEPLOYMENT.md
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-build: &build
+  context: .
+  args:
+    SITE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+    VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
+    # Optional release id shown in the admin area (e.g. the git commit); a timestamp otherwise.
+    BUILD_ID: ${BUILD_ID:-}
+    # Emergency only (docs/DEPLOYMENT.md "Service worker rollback"): 1 builds a service worker that removes itself.
+    SW_KILL_SWITCH: ${SW_KILL_SWITCH:-}
+
+# Settings shared by the web app and the worker. Secrets come from .env; nothing secret is baked
+# into the image.
+x-app-env: &app-env
+  NODE_ENV: production
+  PGHOST: db
+  PGPORT: "5432"
+  PGDATABASE: ${POSTGRES_DB:-sop}
+  PGUSER: ${POSTGRES_USER:-sop}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+  SITE_URL: https://${DOMAIN}
+  APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env (openssl rand -base64 48)}
+  # Email (optional). Without it, applicant sign-in and emailed staff invitations stay switched off.
+  SMTP_URL: ${SMTP_URL:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  # Web Push (optional). Without keys, notifications stay switched off. Generate once:
+  #   docker compose run --rm app node server-dist/push-keys.js
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  PUSH_ENDPOINT_HOSTS: ${PUSH_ENDPOINT_HOSTS:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sop}
+      POSTGRES_USER: ${POSTGRES_USER:-sop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published to the internet: only the app and worker containers can reach it.
+    logging: *logging
+
+  app:
+    build: *build
+    image: school-of-purpose:latest
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      HOST: 0.0.0.0
+      PORT: "3000"
+      # Caddy's container address is on the private Docker network.
+      TRUST_PROXY: loopback,uniquelocal
+      RATE_LIMIT_SUBMIT_MAX: ${RATE_LIMIT_SUBMIT_MAX:-20}
+      RATE_LIMIT_SUBMIT_WINDOW_MINUTES: ${RATE_LIMIT_SUBMIT_WINDOW_MINUTES:-10}
+      # Background jobs run in the worker service below.
+      WORKER_MODE: "off"
+    expose:
+      - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Lets in-flight requests finish on restart (the server force-exits after 15 s).
+    stop_grace_period: 20s
+    logging: *logging
+
+  # Sends notifications and runs the nightly clean-up. Restarted by Docker if it stops; on
+  # shutdown it finishes running jobs (up to 20 s) and hands the rest back to the queue.
+  worker:
+    build: *build
+    image: school-of-purpose:latest
+    restart: unless-stopped
+    init: true
+    command: ["node", "server-dist/worker.js"]
+    depends_on:
+      app:
+        condition: service_healthy # the app applies database migrations first
+    environment:
+      <<: *app-env
+      RUN_MIGRATIONS: "false"
+    healthcheck:
+      disable: true # no web server here; the admin area shows the worker's heartbeat
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

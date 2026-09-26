@@ -1,0 +1,35 @@
+# systemd unit for the bare-metal option (Node + local Postgres + Nginx on one VPS).
+# Install:  sudo cp deploy/school-of-purpose.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now school-of-purpose
+# Logs:     journalctl -u school-of-purpose -f
+[Unit]
+Description=School of Purpose expression-of-interest site
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sop
+Group=sop
+WorkingDirectory=/opt/school-of-purpose
+# .env holds DATABASE_URL (or PG* vars), SITE_URL, APP_SECRET, TRUST_PROXY=loopback, and optionally
+# SMTP_URL/EMAIL_FROM and VAPID_*. Background jobs run inside this process (WORKER_MODE=inline).
+EnvironmentFile=/opt/school-of-purpose/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node server-dist/index.js
+Restart=on-failure
+RestartSec=5
+# Stop: finish in-flight requests and background jobs (up to ~15 s), then exit.
+TimeoutStopSec=20
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

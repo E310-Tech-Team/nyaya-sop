@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "School of Purpose",
+  "short_name": "SOP",
+  "description": "Purpose Boot Camp by the RCCG School of Purpose: read about the programme, apply, and follow your application.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#8b1e3f",
+  "background_color": "#f7f3eb",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Apply", "url": "/apply", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "My application", "url": "/account/application", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}

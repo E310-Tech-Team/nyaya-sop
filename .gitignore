@@ -1,0 +1,31 @@
+# Dependencies & build output
+node_modules/
+.pnpm-store/
+dist/
+server-dist/
+coverage/
+*.tsbuildinfo
+vite.config.*.timestamp-*
+.vite/
+.cache/
+
+# Local configuration & secrets: never commit
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Local data: embedded dev database, backups, dumps and archives (may contain personal data)
+.data/
+backups/
+*.dump
+*.gz
+*.zip
+
+# Large design originals (a compressed copy is committed)
+design/*-figma.png
+
+# Logs & OS files
+logs/
+*.log
+.DS_Store

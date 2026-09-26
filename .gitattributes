@@ -1,0 +1,12 @@
+# Normalise line endings; mark binaries so git never tries to diff or convert them.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.dump binary
