@@ -30,6 +30,34 @@ Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend
 
 ---
 
+## Quick install (one command)
+
+On a fresh Ubuntu 24.04 / Debian 12 VPS (e.g. a Hostinger KVM plan), as root:
+
+```bash
+# 1. The repository is private: give this server a read-only deploy key
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/sop_deploy -C sop-vps && cat ~/.ssh/sop_deploy.pub
+#    → GitHub: E310-Tech-Team/nyaya-sop → Settings → Deploy keys → Add (leave "write access" off)
+
+# 2. Get the code
+GIT_SSH_COMMAND="ssh -i ~/.ssh/sop_deploy -o StrictHostKeyChecking=accept-new" \
+  git clone git@github.com:E310-Tech-Team/nyaya-sop.git /opt/school-of-purpose
+cd /opt/school-of-purpose && git config core.sshCommand "ssh -i ~/.ssh/sop_deploy"
+
+# 3. Install
+./deploy/install.sh --domain apply.yourchurch.org --email you@yourchurch.org --name "Your Name"
+```
+
+[`deploy/install.sh`](../deploy/install.sh) installs Docker if needed (and swap on servers under 2 GB), refuses to start if something else holds ports 80/443, creates `.env` with **new secrets generated on the server** (`POSTGRES_PASSWORD`, `APP_SECRET`), checks that the domain points at the server, builds and starts the four containers, generates the Web Push keys, creates the first owner (it prints the single-use setup link: open it straight away), schedules nightly backups, and prints the site's health. It never prints secrets.
+
+- **Domain:** point the domain's A record at the VPS first. No domain yet? Leave out `--domain`: it uses the server's hostname (on Hostinger, `srvNNNNNN.hstgr.cloud`, which already points at the VPS) and you can switch later by running the script again with `--domain`.
+- **Hostinger firewall:** if the VPS firewall in hPanel is on, allow TCP 22, 80 and 443 (and UDP 443).
+- **Email** stays off until you add `SMTP_URL` and `EMAIL_FROM` to `.env` and run the script again ([Email](#email)).
+- **Updating:** `cd /opt/school-of-purpose && git pull && ./deploy/install.sh` (it backs up the database first and keeps `.env`).
+- **Back up `.env` privately** (password manager or sealed offline copy): see [A7](#a7-backups-do-this-on-day-one).
+
+The sections below are the same steps done by hand, and how to run the site.
+
 ## A. Docker Compose (recommended)
 
 ### A1. Install Docker (once)

@@ -107,7 +107,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 7.7 | SEO | Done: indexable, OG image, favicons (set `SITE_URL`) |
 | 7.8 | Deployment artifacts | Done: Dockerfile, Compose + Caddy, backups, systemd/Nginx alternative, runbook |
 | 7.9 | Verify the Docker image and stack | Done (2026-09-26): built and run locally against real PostgreSQL 17 through Caddy HTTPS; submissions, CSV export, backup/restore and graceful shutdown verified; re-verified the same day with the worker service, migrations 0003–0005 over existing data, owner bootstrap in the container and staff sign-in with two-step verification |
-| 7.10 | Deploy to the VPS | **Blocked** on the domain (Q13) and VPS access |
+| 7.10 | Deploy to the VPS | **Ready**: one-command installer `deploy/install.sh` (2026-09-28; Hostinger VPS planned). Waiting on the VPS and domain (Q13) |
 | 7.11 | Real-device QA (low-end Android, iOS Safari, VoiceOver/TalkBack), including install and push on iPhone/iPad 16.4+ and Android | Not started: needs the staging origin ([DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing)) |
 
 ### Phase 8: Motion & UX refinement (**Done**, 2026-09-26)

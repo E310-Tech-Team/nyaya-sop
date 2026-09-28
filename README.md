@@ -65,13 +65,13 @@ Dockerfile, docker-compose.yml, .env.example
 
 ## Deploying
 
-See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. In short, on the VPS:
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. In short, on an Ubuntu VPS (as root), after cloning to `/opt/school-of-purpose` with a read-only deploy key:
 
 ```bash
-cp .env.example .env   # set DOMAIN, POSTGRES_PASSWORD, APP_SECRET (+ SMTP_URL, VAPID_* when ready)
-docker compose up -d --build
-docker compose exec app node server-dist/admin.js create-owner --email you@example.org --name "Your Name"
+./deploy/install.sh --domain apply.example.org --email you@example.org --name "Your Name"
 ```
+
+It installs Docker, generates the secrets on the server, builds and starts Caddy (HTTPS), the app, the worker and Postgres, creates the first owner and schedules backups. Run it again after `git pull` to update.
 
 ## Documentation
 
