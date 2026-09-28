@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#8b1e3f" />
+    <meta name="theme-color" content="#841d26" />
     <title>You're offline · School of Purpose</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <!-- Served by the service worker when a page can't load without a connection. No scripts, no web fonts. -->
     <style>
       :root {
@@ -18,12 +18,12 @@
       body {
         margin: 0;
         min-height: 100vh;
-        background: #f7f3eb;
+        background: #f3f0e6;
         color: #202124;
         font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
       }
       header {
-        background: #8b1e3f;
+        background: #841d26;
         color: #fff;
         padding: 18px 20px;
         display: flex;
@@ -31,14 +31,9 @@
         gap: 12px;
       }
       .mark {
-        display: grid;
-        place-items: center;
+        display: block;
         width: 40px;
         height: 40px;
-        border-radius: 999px;
-        background: #fff;
-        color: #8b1e3f;
-        font: 900 12px/1 'Arial Black', Arial, sans-serif;
       }
       .name {
         font-weight: 800;
@@ -52,7 +47,7 @@
       }
       .eyebrow {
         margin: 0;
-        color: #8b1e3f;
+        color: #841d26;
         font-size: 11px;
         font-weight: 800;
         letter-spacing: 2px;
@@ -97,15 +92,15 @@
         display: inline-block;
         padding: 12px 22px;
         border-radius: 999px;
-        background: #8b1e3f;
+        background: #841d26;
         color: #fff;
         font-weight: 700;
         text-decoration: none;
       }
       a.button.secondary {
         background: transparent;
-        color: #8b1e3f;
-        border: 1px solid #8b1e3f;
+        color: #841d26;
+        border: 1px solid #841d26;
       }
       a:focus-visible {
         outline: 3px solid #202124;
@@ -115,7 +110,7 @@
   </head>
   <body>
     <header>
-      <span class="mark" aria-hidden="true">SOP</span>
+      <img class="mark" src="/icons/icon-192.png" width="40" height="40" alt="" />
       <span class="name">SCHOOL OF PURPOSE</span>
     </header>
     <main>

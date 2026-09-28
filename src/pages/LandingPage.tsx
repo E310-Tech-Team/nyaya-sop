@@ -8,6 +8,7 @@ import imgSplitSweep from '../assets/landing/hero-split-sweep.svg';
 import imgDotAccent from '../assets/landing/hero-dot-grid.svg';
 import imgArrowRight1 from '../assets/landing/arrow-right-cream.svg';
 import imgCircleCheck from '../assets/landing/hero-circle.svg';
+import { BrandLockup } from '../components/BrandLockup';
 import { ClosingInvitation } from '../components/landing/ClosingInvitation';
 import { AboutPreview, FaqPreview, JourneyPreview, ProgrammePreview } from '../components/landing/Previews';
 import { WhatToExpect } from '../components/landing/WhatToExpect';
@@ -61,34 +62,18 @@ function Eligibility({ className = '' }: { className?: string }) {
  */
 function HomeHeader({ menu }: { menu: MobileMenuControls }) {
   return (
-    <StickyHeader className="top-0 bg-[#8b1e3f] transition-[background-color,box-shadow] duration-[180ms] ease-[var(--ease-standard)] data-[scrolled]:shadow-[0_1px_0_rgba(255,255,255,0.1),0_6px_18px_rgba(26,8,16,0.18)] xl:top-[calc(var(--landing-zoom,1)*-16px)] xl:-mb-[calc(var(--landing-zoom,1)*112px)] xl:bg-transparent xl:data-[scrolled]:bg-[#8b1e3f]">
+    <StickyHeader className="top-0 bg-[#841d26] transition-[background-color,box-shadow] duration-[180ms] ease-[var(--ease-standard)] data-[scrolled]:shadow-[0_1px_0_rgba(255,255,255,0.1),0_6px_18px_rgba(26,8,16,0.18)] xl:top-[calc(var(--landing-zoom,1)*-16px)] xl:-mb-[calc(var(--landing-zoom,1)*112px)] xl:bg-transparent xl:data-[scrolled]:bg-[#841d26]">
       {(scrolled) => (
         <>
           {/* Phones and tablets */}
           <div className="on-dark enter-fade flex h-[78px] items-center justify-between overflow-clip px-5 xl:hidden" style={enterAfter(HERO_MOBILE.brand)}>
-            <div className="flex gap-[10px] items-center">
-              <div className="bg-white flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[38px]">
-                <p className="font-sans font-black text-[#8b1e3f] text-[11px]">SOP</p>
-              </div>
-              <div className="flex flex-col items-start">
-                <p className="font-sans font-black text-[12px] text-white tracking-[0.4px]">SCHOOL OF PURPOSE</p>
-                <p className="font-serif italic text-[#f3dce3] text-[11px]">RCCG National Young Adults &amp; Youth</p>
-              </div>
-            </div>
+            <BrandLockup on="dark" className="h-[48px]" />
             <MenuButton menu={menu} />
           </div>
           {/* Desktop: 32px from the top of the hero frame, a 64px row, 16px below */}
           <div className={`landing-scale mx-auto hidden w-full max-w-[1440px] xl:block ${scrolled ? 'on-dark' : ''}`}>
             <div className="enter-fade mx-[80px] mb-[16px] mt-[32px] flex h-[64px] items-center justify-between" style={enterAfter(HERO.brand)}>
-              <div className="flex gap-[12px] items-center overflow-clip">
-                <div className="bg-white flex flex-col items-center justify-center overflow-clip rounded-[21px] size-[42px]">
-                  <p className="font-sans font-black not-italic text-[#8b1e3f] text-[13px]">SOP</p>
-                </div>
-                <div className="flex flex-col items-start leading-normal overflow-clip whitespace-nowrap">
-                  <p className="font-sans font-black not-italic text-[19px] text-white tracking-[0.5px]">SCHOOL OF PURPOSE</p>
-                  <p className="font-serif font-normal italic text-[#f3dce3] text-[12px]">RCCG National Young Adults &amp; Youth</p>
-                </div>
-              </div>
+              <BrandLockup on="dark" className="h-[60px]" />
               <DesktopNav tone={scrolled ? 'dark' : 'light'} toneSwitches />
             </div>
           </div>
@@ -118,7 +103,7 @@ export default function LandingPage() {
 
       <main id="main" className="w-full">
       {/* ── MOBILE HERO ── */}
-      <div className="on-dark bg-[#8b1e3f] flex flex-col items-start w-full xl:hidden">
+      <div className="on-dark bg-[#841d26] flex flex-col items-start w-full xl:hidden">
         {/* Hero copy: eyebrow, headline, one supporting sentence, eligibility, then the actions. */}
         <div className="flex flex-col items-start overflow-clip pb-[12px] pt-[30px] px-6 sm:px-10 w-full max-w-[760px] mx-auto">
           <p className="enter-fade font-sans font-bold text-[#dcc28a] text-[11px] tracking-[1.6px] uppercase" style={enterAfter(HERO_MOBILE.eyebrow)}>
@@ -138,10 +123,10 @@ export default function LandingPage() {
             <div className="flex flex-col gap-[10px] w-full sm:flex-row">
               <Link
                 to="/apply"
-                className="motion-button bg-[#f7f3eb] hover:bg-white cursor-pointer flex sm:flex-1 h-[56px] items-center justify-between gap-[12px] pl-[22px] pr-[11px] rounded-[999px]"
+                className="motion-button bg-[#f3f0e6] hover:bg-white cursor-pointer flex sm:flex-1 h-[56px] items-center justify-between gap-[12px] pl-[22px] pr-[11px] rounded-[999px]"
               >
-                <span className="font-sans font-bold text-[15px] text-[#8b1e3f] whitespace-nowrap">Start my application</span>
-                <span aria-hidden="true" className="motion-arrow bg-[#8b1e3f] flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[34px]">
+                <span className="font-sans font-bold text-[15px] text-[#841d26] whitespace-nowrap">Start my application</span>
+                <span aria-hidden="true" className="motion-arrow bg-[#841d26] flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[34px]">
                   <span className="font-sans font-bold text-[17px] text-white">→</span>
                 </span>
               </Link>
@@ -175,7 +160,7 @@ export default function LandingPage() {
           {HERO_COPY.edition}
         </p>
         {/* Scripture */}
-        <div className="bg-[#f7f3eb] w-full">
+        <div className="bg-[#f3f0e6] w-full">
           <div className="pb-[34px] pt-[28px] px-6 sm:px-10 w-full max-w-[760px] mx-auto">
             <figure data-reveal="up" className="bg-[#3b081a] flex flex-col gap-[14px] items-center overflow-clip pb-[44px] pt-[40px] px-[28px] w-full">
               <blockquote className="font-serif font-semibold italic leading-[1.45] text-[18px] text-center text-white w-full">
@@ -189,7 +174,7 @@ export default function LandingPage() {
 
       {/* ── DESKTOP HERO ── */}
       <div className="landing-desktop hidden xl:block w-full">
-      <div className="bg-[#8b1e3f] h-[900px] overflow-clip relative shrink-0 w-full">
+      <div className="bg-[#841d26] h-[900px] overflow-clip relative shrink-0 w-full">
         {/* White right panel — extends from the 865px mark (of the 1440px frame, centred) all the way to the right edge */}
         <div
           className="absolute top-0 h-full bg-white"
@@ -216,8 +201,8 @@ export default function LandingPage() {
 
           {/* The edition's name, once, as a small caption beside the photograph. */}
           <div className="enter-fade absolute flex flex-col gap-[10px] items-start left-[1190px] top-[688px] w-[170px]" style={enterAfter(HERO.caption)}>
-            <span aria-hidden="true" className="bg-[#8b1e3f] h-[1.5px] w-[28px]" />
-            <p className="font-sans font-bold leading-[1.5] text-[#8b1e3f] text-[12px] tracking-[2.4px] uppercase">{HERO_COPY.edition}</p>
+            <span aria-hidden="true" className="bg-[#841d26] h-[1.5px] w-[28px]" />
+            <p className="font-sans font-bold leading-[1.5] text-[#841d26] text-[12px] tracking-[2.4px] uppercase">{HERO_COPY.edition}</p>
           </div>
 
           {/* Participants. Decorative layers take no pointer events (they reach up under the
@@ -249,10 +234,10 @@ export default function LandingPage() {
               <div className="flex gap-[12px] items-center">
                 <Link
                   to="/apply"
-                  className="motion-button bg-[#f7f3eb] hover:bg-white cursor-pointer flex gap-[14px] h-[58px] items-center pl-[26px] pr-[12px] rounded-[999px]"
+                  className="motion-button bg-[#f3f0e6] hover:bg-white cursor-pointer flex gap-[14px] h-[58px] items-center pl-[26px] pr-[12px] rounded-[999px]"
                 >
-                  <span className="font-sans font-bold leading-normal not-italic text-[#8b1e3f] text-[15px] whitespace-nowrap">Start my application</span>
-                  <span aria-hidden="true" className="motion-arrow bg-[#8b1e3f] flex flex-col items-center justify-center overflow-clip rounded-[999px] size-[34px]">
+                  <span className="font-sans font-bold leading-normal not-italic text-[#841d26] text-[15px] whitespace-nowrap">Start my application</span>
+                  <span aria-hidden="true" className="motion-arrow bg-[#841d26] flex flex-col items-center justify-center overflow-clip rounded-[999px] size-[34px]">
                     <img alt="" className="block max-w-none size-[16px]" src={imgArrowRight1} />
                   </span>
                 </Link>

@@ -56,7 +56,7 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
   return (
     <section id={id} aria-label="The six stages" className="w-full">
     {/* ── MOBILE JOURNEY ── */}
-    <div className="landing-gutter bg-[#f7f3eb] flex flex-col gap-[34px] items-start pb-[64px] pt-[44px] w-full xl:hidden">
+    <div className="landing-gutter bg-[#f3f0e6] flex flex-col gap-[34px] items-start pb-[64px] pt-[44px] w-full xl:hidden">
       {/* Compact vertical timeline: number + name, duration/format, what happens, how people move on. */}
       <ol className="flex flex-col items-start w-full">
         {JOURNEY.map((stage, idx) => {
@@ -67,14 +67,14 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
                 <span className="bg-[#5c1329] flex items-center justify-center rounded-full shrink-0 size-[36px] font-serif font-bold lining-nums text-[#dcc28a] text-[16px]">
                   {stage.num}
                 </span>
-                {!last && <span className="bg-[#8b1e3f] flex-1 my-[6px] opacity-25 w-px" />}
+                {!last && <span className="bg-[#841d26] flex-1 my-[6px] opacity-25 w-px" />}
               </div>
               <div className={`flex flex-col flex-1 gap-[6px] items-start min-w-0 pt-[5px] ${last ? '' : 'pb-[26px]'}`}>
                 <h2 className="font-display leading-[1.1] text-[#202124] text-[22px]">
                   <span className="sr-only">Stage {stage.num}: </span>
                   {stage.name}
                 </h2>
-                <StageMeta items={stage.meta} className="font-sans font-bold leading-[1.45] text-[#8b1e3f] text-[11px] tracking-[0.9px] uppercase" />
+                <StageMeta items={stage.meta} className="font-sans font-bold leading-[1.45] text-[#841d26] text-[11px] tracking-[0.9px] uppercase" />
                 {stage.condition && (
                   <p className="bg-[#5c1329] font-sans font-extrabold leading-[1.3] px-[10px] py-[4px] rounded-full text-[#dcc28a] text-[11px] tracking-[0.6px] uppercase">
                     {stage.condition}
@@ -83,7 +83,7 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
                 <p className="font-sans font-normal leading-[1.5] text-[#202124] text-[14px] w-full">{stage.body}</p>
                 {stage.next && (
                   <p className="flex gap-[6px] items-start font-sans font-semibold leading-[1.45] text-[#665d60] text-[13px]">
-                    <span aria-hidden="true" className="text-[#8b1e3f]">→</span>
+                    <span aria-hidden="true" className="text-[#841d26]">→</span>
                     {stage.next}
                   </p>
                 )}
@@ -95,7 +95,7 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
     </div>
 
     {/* ── JOURNEY CASCADE (desktop) ── */}
-    <div className="landing-desktop bg-[#f7f3eb] w-full shrink-0 hidden xl:block">
+    <div className="landing-desktop bg-[#f3f0e6] w-full shrink-0 hidden xl:block">
       {/* The cascade was drawn under a 160px section header; the page intro replaces that
           header, so the drawing is lifted by 160px inside a shorter frame. */}
       <div className="h-[1108px] overflow-clip relative max-w-[1440px] mx-auto">
@@ -209,13 +209,13 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
                 <div className="flex flex-col flex-1 gap-[8px] items-start min-h-px px-[24px] pb-[20px] pt-[16px] w-full">
                   <div className="flex items-center justify-between w-full">
                     <p aria-hidden="true" className="font-serif font-bold leading-none text-[#dcc28a] text-[30px]">{stage.num}</p>
-                    <h2 className="font-sans font-bold leading-normal not-italic text-[#f7f3eb] text-[18px]">
+                    <h2 className="font-sans font-bold leading-normal not-italic text-[#f3f0e6] text-[18px]">
                       <span className="sr-only">Stage {stage.num}: </span>
                       {stage.name}
                     </h2>
                   </div>
                   <StageMeta items={stage.meta} className="font-sans font-bold leading-[1.45] text-[#dcc28a] text-[11px] tracking-[0.9px] uppercase" />
-                  <p className="font-sans font-normal leading-[1.5] not-italic text-[14px] text-[rgba(247,243,235,0.85)] w-full">{stage.body}</p>
+                  <p className="font-sans font-normal leading-[1.5] not-italic text-[14px] text-[rgba(243,240,230,0.85)] w-full">{stage.body}</p>
                   {stage.next && (
                     <p className="flex gap-[6px] items-start mt-auto font-sans font-semibold leading-[1.45] text-[#f3dce3] text-[13px]">
                       <span aria-hidden="true">→</span>

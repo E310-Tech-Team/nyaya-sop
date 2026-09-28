@@ -47,7 +47,7 @@ function PageFrame() {
  */
 export function PageIntro({ eyebrow, title, children, actions }: { eyebrow: string; title: string; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <section className="on-dark w-full border-b border-white/10 bg-[#8b1e3f]">
+    <section className="on-dark w-full border-b border-white/10 bg-[#841d26]">
       <div className="landing-scale mx-auto w-full max-w-[1440px]">
         <div className="landing-gutter flex flex-col items-start pb-[44px] pt-[34px] xl:px-[80px] xl:pb-[80px] xl:pt-[64px]">
           <p className="enter-fade font-sans font-bold text-gold-light text-[11px] tracking-[1.6px] uppercase xl:text-[12px] xl:tracking-[3px]" style={enterAfter(0)}>
@@ -80,7 +80,7 @@ export function PageIntro({ eyebrow, title, children, actions }: { eyebrow: stri
 /** Closing invitation on the dedicated pages: the hero's promise, eligibility and the actions. */
 export function ApplyBand({ secondary }: { secondary?: { to: string; label: string } }) {
   return (
-    <section aria-labelledby="apply-band-heading" className="on-dark w-full bg-[#8b1e3f]">
+    <section aria-labelledby="apply-band-heading" className="on-dark w-full bg-[#841d26]">
       <div className="landing-scale mx-auto w-full max-w-[1440px]">
         <div
           data-reveal-group=""

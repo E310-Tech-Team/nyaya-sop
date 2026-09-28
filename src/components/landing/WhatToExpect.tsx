@@ -56,7 +56,7 @@ export function WhatToExpect() {
                 <p className={`font-sans text-[13px] font-bold leading-[1.4] ${item.conditional ? 'text-gold-light' : 'text-brand'}`}>
                   {item.facts}
                 </p>
-                <p className={`font-sans text-[14px] leading-[1.55] ${item.conditional ? 'text-[rgba(247,243,235,0.85)]' : 'text-muted'}`}>
+                <p className={`font-sans text-[14px] leading-[1.55] ${item.conditional ? 'text-[rgba(243,240,230,0.85)]' : 'text-muted'}`}>
                   {item.body}
                 </p>
               </li>

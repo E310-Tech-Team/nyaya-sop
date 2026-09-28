@@ -10,7 +10,7 @@ Related: [04 §7 Imagery](04-UI-UX-Design-Brief.md#7-imagery) · [06 Phase 10](0
 ## 1. Rules
 
 - **Never change the homepage hero images** (`hero-participants.webp` and the hero artwork), their files, references or behaviour.
-- The Biblical Blueprint paintings, icons, decorative SVGs, logos and backgrounds are out of scope.
+- The Biblical Blueprint paintings, icons, decorative SVGs, logos and backgrounds are out of scope. (The logo and its usage rules: [design/brand](../design/brand/README.md).)
 - A supporting photo is only replaced by an **authentic photo from a verified RCCG NYAYA source** with **permission to reuse** (written approval, or published terms that allow it). Public availability is not permission.
 - Never crop out, cover or remove watermarks or credits. Never hotlink: approved files are downloaded into `src/assets/`.
 - Match the photo to its real context. A photo from another NYAYA programme (for example RISE) must not be presented as the Purpose Boot Camp; its alt text describes the visible scene only and doesn't name people.

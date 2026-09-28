@@ -1,7 +1,7 @@
 # 06 — Implementation Plan
 
-**Last updated:** 2026-09-26
-**Overall status:** Phases 0–6, 8, 9, 11 and **12 (installable app, notifications, applicant accounts, admin platform)** are **done**; 7 (launch) is in progress; 10 (photography) waits for permission. 264 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** choose an email provider and generate VAPID keys, deploy to the VPS with a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Last updated:** 2026-09-28
+**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)** and **13 (brand identity)** are **done**; 7 (launch) is in progress; 10 (photography) waits for permission. 265 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** choose an email provider and generate VAPID keys, deploy to the VPS with a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
 
 Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
 
@@ -22,6 +22,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | Notifications | ✅ Web Push by topic with consent history, campaigns via a Postgres job queue and worker, neutral application-update alerts, in-app inbox · ⏳ needs VAPID keys; real-device checks |
 | Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ⏳ not yet deployed to the VPS |
 | Launch content | ⏳ Privacy notice, domain, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)) |
+| Brand | ✅ Official lockup in every header, menu, footer and the admin area; brand palette; favicons, app icons and social card from the brand mark ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
 | Photography | ⏳ Prototype stock/AI photos still in place; authentic NYAYA (RISE) photos shortlisted, **awaiting permission** ([IMAGERY.md](IMAGERY.md)); hero images fixed |
 
 ## Phases
@@ -33,11 +34,11 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 0.1 | Unzip the Figma Make export | Done (2026-09-26) |
 | 0.2 | Create the six core docs | Done (2026-09-26) |
 
-### Phase 1: Project foundation (**Done**, except git)
+### Phase 1: Project foundation (**Done**)
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | Git repository | **Not started**: repo files are ready (`.gitignore`, `.gitattributes` with the Figma LFS rules replaced by plain git); run `git init` and make the first commit when ready |
+| 1.1 | Git repository | Done: private repository `E310-Tech-Team/nyaya-sop` (GitHub Actions CI in `.github/workflows/ci.yml`) |
 | 1.2 | Move the 15 MB reference render out of `src/` | Done: `design/` (compressed copy committed, original ignored) |
 | 1.3 | Hosting decision | Done: VPS (D-2) |
 | 1.4 | Real metadata: title, description, OG image, favicons | Done |
@@ -176,6 +177,20 @@ Built in the brief's six working phases; each has its tests.
 
 **Verified vs not verified:** everything above is verified by automated tests and in desktop Chrome/Chromium. **Not yet verified:** real phones and tablets (iOS/iPadOS Home Screen install and push, Android Chrome and Samsung Internet), Safari on macOS, Firefox, Edge on Windows, screen readers, and axe-core on the new screens. **Not configured yet:** an SMTP provider (so applicant sign-in is off in production) and VAPID keys (so push is off) until they are set on the server.
 
+### Phase 13: Brand identity (**Done**, 2026-09-28)
+
+From the brand guideline ("School of Purpose 4.pdf": lockups, rationale, palette) and the 4× logo exports supplied with it.
+
+| # | Task | Status |
+|---|---|---|
+| 13.1 | Brand masters | Done: moved out of `public/` (they would have shipped, 4 MB, spaces in the URLs) to [`design/brand/`](../design/brand/README.md) with clear names; two byte-identical copies dropped; README with the palette, rationale and usage rules |
+| 13.2 | Official lockup instead of the "SOP" text monogram | Done: `BrandLockup` in the homepage and marketing headers, phone menu, footer, application header (cream on burgundy, colour on paper), admin sidebar and staff sign-in; offline page shows the mark |
+| 13.3 | Favicons, app icons, notification badge | Done: `scripts/brand-assets.py` resizes the mark (favicon `.ico` + 32 px PNG, `any` and maskable 192/512, iOS 180 px, Android badge); `favicon.svg` and `scripts/generate-icons.mjs` retired |
+| 13.4 | Brand palette | Done: `#841D26` / `#F3F0E6` / `#B69B63` replace the prototype's colours in the tokens, the Figma-export arbitrary values and `rgba()` tints, manifest, theme colour, offline page and emails. Hero photo and artwork files unchanged. Contrast recomputed ([04 §2](04-UI-UX-Design-Brief.md#brand-palette-adopted-2026-09-28)) |
+| 13.5 | Social card | Done: new `og-image.jpg` captured from the production hero with the lockup; the old Figma crop still showed the prototype headline |
+| 13.6 | Fix found while verifying | Done: the first service-worker install claimed the page and every first-time visitor was offered "A newer version of the site is available". The first claim is now silent; the real update flow was re-checked end to end |
+| 13.7 | Verification | Done: `pnpm check` (265 tests); production build in headless Chrome, 30/30 (icons served and decoded at their sizes, installable, lockups precached, offline page, first visit silent, two-tab update flow); text-contrast scan of 13 pages at 390 and 1440 px (no failures); UI walk-through at 375, 1280 and 1440 px. **Not yet:** the new icons on real devices (Android maskable shape and status-bar badge, iOS Home Screen) |
+
 ## Content needed from the Programme team
 
 The UX pass only uses facts already in the site copy. These need an owner's answer before they can be added:
@@ -203,18 +218,17 @@ The UX pass only uses facts already in the site copy. These need an owner's answ
 
 ## Next steps (in order)
 
-1. **Git:** `git init`, first commit, push to a private repo (GitHub/GitLab); CI starts running.
-2. **Content decisions:** privacy notice wording (Q9), retention periods (Q11, C17), contact email (Q12), email provider (C14), staff roles (C16), confirm "SOP"/org naming (Q8) and the state list (Q4), plus C3–C6.
-3. **Deploy a staging origin** (e.g. `staging.<domain>` with its own database and VAPID keys) and run the device tests in [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing): iPhone/iPad (Home Screen install + push), Android (Chrome, Samsung Internet), Safari on Mac, Firefox, Edge.
-4. **Deploy production:** create the VPS, point DNS, set `APP_SECRET`, `SMTP_URL`/`EMAIL_FROM`, generate VAPID keys once and back them up, follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended), create the first owner, run the production checklist.
-5. **Before announcing:** submit and delete a test application, set up nightly backups + off-site copies, add an uptime monitor, invite staff.
-6. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
+1. **Content decisions:** privacy notice wording (Q9), retention periods (Q11, C17), contact email (Q12), email provider (C14), staff roles (C16), confirm "SOP"/org naming (Q8) and the state list (Q4), plus C3–C6.
+2. **Deploy a staging origin** (e.g. `staging.<domain>` with its own database and VAPID keys) and run the device tests in [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing): iPhone/iPad (Home Screen install + push), Android (Chrome, Samsung Internet), Safari on Mac, Firefox, Edge.
+3. **Deploy production:** create the VPS, point DNS, then run `deploy/install.sh` ([DEPLOYMENT: Quick install](DEPLOYMENT.md#quick-install-one-command): it generates `APP_SECRET` and the VAPID keys on the server and creates the first owner) or follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended); add `SMTP_URL`/`EMAIL_FROM`, back up `.env`, run the production checklist.
+4. **Before announcing:** submit and delete a test application, set up nightly backups + off-site copies, add an uptime monitor, invite staff.
+5. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
 
 ## Dependency graph
 
 ```mermaid
 flowchart LR
-    P0[Phase 0 ✓] --> P1[Phase 1 ✓<br/>except git]
+    P0[Phase 0 ✓] --> P1[Phase 1 ✓]
     P1 --> P2[Phase 2 ✓]
     P2 --> P3[Phase 3 ✓]
     P3 --> P4[Phase 4 ✓<br/>privacy page blocked]
@@ -228,6 +242,8 @@ flowchart LR
     P12 --> P5[Phase 5 ✓ push<br/>email confirmation TBD]
     P12 --> P6[Phase 6 ✓]
     P12 --> DEV[Device tests<br/>need staging]
+    P9 --> P13[Phase 13 ✓<br/>brand identity]
+    P12 --> P13
     DEV --> P7
 ```
 
@@ -259,6 +275,8 @@ flowchart LR
 | D-20 | 2026-09-26 | Default `viewport-fit` (browser keeps content in the safe areas) instead of `cover`, so the existing design needs no per-section insets | Decided |
 | D-21 | 2026-09-26 | Internal review status and the applicant-facing published status are separate; publishing is an explicit, previewed step; lock-screen text never reveals a decision | Decided (brief) |
 | D-22 | 2026-09-26 | Analytics: an allowlist of anonymous events with coarse properties only; "observed installs" and "standalone launches" reported separately | Decided (brief) |
+| D-23 | 2026-09-28 | The brand guideline's palette replaces the prototype's colours site-wide (tokens and arbitrary values). The hero photo and artwork files stay untouched | Decided (brand guideline) |
+| D-24 | 2026-09-28 | Logos are the supplied raster artwork resized by `scripts/brand-assets.py` (Python + Pillow, outputs committed), never redrawn or traced; emails keep a text header, with no remote logo that would reveal when a sign-in email is opened | Decided |
 
 ## Doc maintenance
 

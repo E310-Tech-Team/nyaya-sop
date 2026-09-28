@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router';
+import { BrandLockup } from '../components/BrandLockup';
 import { Button, LoadError, Loading, PageHeader } from '../components/ui';
 import { can, ROLE_LABELS, type Permission } from '../shared/permissions';
 import { adminApi } from './api';
@@ -133,12 +134,9 @@ function AdminLayout() {
     <div className="flex min-h-screen w-full flex-col bg-cream lg:flex-row">
       <aside className="on-dark flex shrink-0 flex-col gap-4 bg-brand-deep px-4 py-4 text-white lg:sticky lg:top-0 lg:h-screen lg:w-[248px] lg:overflow-y-auto lg:py-6">
         <div className="flex items-center justify-between gap-3">
-          <Link to="/admin" className="flex items-center gap-2.5">
-            <span className="flex size-[36px] items-center justify-center rounded-full bg-white font-sans text-[11px] font-black text-brand">SOP</span>
-            <span className="flex flex-col leading-tight">
-              <span className="font-sans text-[12px] font-black tracking-[0.4px]">SCHOOL OF PURPOSE</span>
-              <span className="font-sans text-[11px] text-white/70">Admin</span>
-            </span>
+          <Link to="/admin" className="flex flex-col items-start gap-1">
+            <BrandLockup on="dark" alt="School of Purpose" className="h-[40px]" />
+            <span className="font-sans text-[11px] font-bold uppercase tracking-[1.2px] text-white/75">Admin</span>
           </Link>
           <button
             type="button"

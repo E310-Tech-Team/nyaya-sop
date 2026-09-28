@@ -1,8 +1,9 @@
 /**
  * Builds the service worker (src/sw/sw.ts → dist/sw.js) after Vite has written the site, with:
- * - __PRECACHE__: the app shell (index.html, offline page, manifest, icons) plus the JS and CSS
- *   the first page load needs (the entry chunk and its static imports). Lazily loaded parts
- *   (the admin area, account pages) are cached when first used, never ahead of time.
+ * - __PRECACHE__: the app shell (index.html, offline page, manifest, icons, the logo lockups)
+ *   plus the JS and CSS the first page load needs (the entry chunk and its static imports).
+ *   Lazily loaded parts (the admin area, account pages) are cached when first used, never ahead
+ *   of time.
  * - __BUILD_ID__: this release's id, also written to dist/build-id.txt. The server sends it with
  *   every API response (x-app-build), so an open page can tell it's out of date.
  * - __KILL_SWITCH__: SW_KILL_SWITCH=1 builds a service worker that removes itself (DEPLOYMENT.md).
@@ -13,7 +14,9 @@ import { build } from 'esbuild';
 import type { Plugin, ResolvedConfig } from 'vite';
 
 /** Always cached, whatever the build contains. */
-const SHELL_FILES = ['/index.html', '/offline.html', '/manifest.webmanifest', '/favicon.svg', '/icons/icon-192.png', '/icons/badge-96.png'];
+const SHELL_FILES = ['/index.html', '/offline.html', '/manifest.webmanifest', '/favicon-32.png', '/icons/icon-192.png', '/icons/badge-96.png'];
+/** Bundled images every page shows (the header and footer logos, src/components/BrandLockup.tsx). */
+const SHELL_ASSET = /^assets\/brand-lockup-[\w-]+\.webp$/;
 
 export function serviceWorker(options: { buildId: string; killSwitch: boolean }): Plugin {
   let config: ResolvedConfig;
@@ -35,6 +38,7 @@ export function serviceWorker(options: { buildId: string; killSwitch: boolean })
         chunk.imports.forEach(visit);
       };
       for (const item of Object.values(bundle)) if (item.type === 'chunk' && item.isEntry) visit(item.fileName);
+      for (const item of Object.values(bundle)) if (item.type === 'asset' && SHELL_ASSET.test(item.fileName)) files.add(item.fileName);
       // Anything index.html itself loads (stylesheets, preloads) belongs to the first load too.
       const html = bundle['index.html'];
       if (html?.type === 'asset') {

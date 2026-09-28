@@ -1,8 +1,6 @@
 /** Site-wide wording and settings. Change copy here rather than in individual pages. */
 export const site = {
   name: 'School of Purpose',
-  monogram: 'SOP',
-  organisation: 'RCCG Young Adults & Youth',
   programme: 'Purpose Boot Camp',
   formName: 'Expression of Interest Form',
   /** Shown on the welcome screen and under the form. */

@@ -223,7 +223,7 @@ export default function ReviewPage() {
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          className="w-full max-w-[840px] rounded-[12px] border border-brand/40 bg-[rgba(139,30,63,0.05)] px-[18px] py-[14px] font-sans text-[14px] leading-[1.55] text-brand outline-none"
+          className="w-full max-w-[840px] rounded-[12px] border border-brand/40 bg-[rgba(132,29,38,0.05)] px-[18px] py-[14px] font-sans text-[14px] leading-[1.55] text-brand outline-none"
         >
           {errorContent(error)}
         </div>

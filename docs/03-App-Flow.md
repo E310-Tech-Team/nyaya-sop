@@ -1,6 +1,6 @@
 # 03 — App Flow
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 **Status:** Built. Every screen has its own URL (React Router 8): the homepage, the marketing pages (About, Programme, Journey, FAQ), the application, the install/notification/updates pages, the optional applicant account area and the admin platform. Answers persist across refresh and Back, and submissions go to the API. The site is an installable web app with a service worker ([§6](#6-offline-and-updates)).
 
 Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [04-UI-UX-Design-Brief](04-UI-UX-Design-Brief.md) · [05-Backend-Schema](05-Backend-Schema.md)
@@ -107,7 +107,7 @@ A concise overview: the hero, "What to expect", one short preview per dedicated 
 
 | Section (`id`) | Content | Actions |
 |---|---|---|
-| Header / hero (`#top`) | SOP lockup and nav; eyebrow "School of Purpose · First Edition"; headline (`<h1>`) "Discover your purpose. Prepare to lead."; one supporting sentence; one eligibility line ("For RCCG members aged 18–30"); photograph with the caption "The Called Generation" | Nav: Home · About · Programme · Journey · FAQ (+ Contact when `VITE_CONTACT_EMAIL` is set). **Start my application** → `/apply` (primary). **Explore the programme** → `/programme`. Header **Apply** → `/apply`. Mobile: menu button opens an accessible dialog (Escape closes it, focus stays inside) |
+| Header / hero (`#top`) | The brand lockup (RCCG NYAYA School of Purpose) and nav; eyebrow "School of Purpose · First Edition"; headline (`<h1>`) "Discover your purpose. Prepare to lead."; one supporting sentence; one eligibility line ("For RCCG members aged 18–30"); photograph with the caption "The Called Generation" | Nav: Home · About · Programme · Journey · FAQ (+ Contact when `VITE_CONTACT_EMAIL` is set). **Start my application** → `/apply` (primary). **Explore the programme** → `/programme`. Header **Apply** → `/apply`. Mobile: menu button opens an accessible dialog (Escape closes it, focus stays inside) |
 | What to expect (`#what-to-expect`) | Virtual training (8 weeks, online) → merit-based selection → physical boot camp (**if selected**: 10 fully sponsored days at Redemption City) → 12 months' mentorship, then two years in community. "Applying doesn’t guarantee a place at the boot camp." | See the full journey → `/journey` |
 | About preview (`#about`) | The purpose statement, Vision and Mission (portrait from 1280 px) | About the School of Purpose → `/about` |
 | Programme preview (`#programme`) | The Doctrine of Purpose and its three questions (photograph from 1280 px) | Explore the programme → `/programme` |
@@ -255,6 +255,8 @@ sequenceDiagram
     W->>W: activate v2: delete v1 precache (keep its /assets for old tabs), claim
     W-->>P: controllerchange → reload onto v2
 ```
+
+Other tabs open on the old version switch service worker too; they say "A newer version of the site is available" with **Reload**, and never reload by themselves. On a first visit the new service worker takes control of the page without any offer: that isn't an update (until 2026-09-28 it was wrongly offered to every first-time visitor).
 
 A lazily loaded part of the site that fails to download (removed by a deploy, or a dropped connection) shows "This page needs a refresh" instead of a broken screen. Emergency rollback: [DEPLOYMENT](DEPLOYMENT.md#service-worker-rollback).
 

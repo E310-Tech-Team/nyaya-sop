@@ -60,7 +60,14 @@ export function registerServiceWorker(): void {
   }
   if (!import.meta.env.PROD || !window.isSecureContext) return;
 
+  // A page that loaded without a service worker gets one when the first install claims it: that
+  // is not an update, and must not offer one (it did, to every first-time visitor).
+  let controlled = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!controlled) {
+      controlled = true;
+      return;
+    }
     // Reload only because the person pressed Update here; another tab's update just asks.
     if (userAskedToUpdate) window.location.reload();
     else set({ status: 'reload', reason: 'updated-elsewhere' });

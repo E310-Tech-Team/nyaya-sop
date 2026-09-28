@@ -78,7 +78,7 @@ function ProgrammeStructure() {
                       items={phase.facts}
                       className={`font-sans text-[11px] font-bold uppercase leading-[1.45] tracking-[0.9px] xl:text-[12px] ${dark ? 'text-gold-light' : 'text-brand'}`}
                     />
-                    <p className={`font-sans text-[15px] leading-[1.6] ${dark ? 'text-[rgba(247,243,235,0.88)]' : 'text-ink'}`}>{phase.body}</p>
+                    <p className={`font-sans text-[15px] leading-[1.6] ${dark ? 'text-[rgba(243,240,230,0.88)]' : 'text-ink'}`}>{phase.body}</p>
                     {phase.next && (
                       <p className={`mt-auto flex items-start gap-[6px] pt-[4px] font-sans text-[13px] font-semibold leading-[1.45] ${dark ? 'text-rose' : 'text-muted'}`}>
                         <span aria-hidden="true" className={dark ? '' : 'text-brand'}>
