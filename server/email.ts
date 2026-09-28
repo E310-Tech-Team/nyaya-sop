@@ -73,12 +73,12 @@ const escapeHtml = (value: string) =>
 
 function layout(heading: string, paragraphs: string[], action: { label: string; url: string }, footer: string): string {
   const p = (text: string) => `<p style="margin:0 0 16px;font:15px/1.6 Arial,sans-serif;color:#202124">${escapeHtml(text)}</p>`;
-  return `<!doctype html><html lang="en"><body style="margin:0;background:#f7f3eb;padding:24px">
+  return `<!doctype html><html lang="en"><body style="margin:0;background:#f3f0e6;padding:24px">
 <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #d8d0c3;border-radius:12px;padding:28px">
-<p style="margin:0 0 20px;font:900 13px Arial,sans-serif;letter-spacing:.6px;color:#8b1e3f">SCHOOL OF PURPOSE</p>
+<p style="margin:0 0 20px;font:11px/1.4 Arial,sans-serif;letter-spacing:3px;color:#841d26">RCCG NYAYA<br><span style="font-size:15px;font-weight:900;letter-spacing:.6px">SCHOOL OF PURPOSE</span></p>
 <h1 style="margin:0 0 16px;font:700 20px Arial,sans-serif;color:#202124">${escapeHtml(heading)}</h1>
 ${paragraphs.map(p).join('')}
-<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#8b1e3f;color:#fff;text-decoration:none;font:700 15px Arial,sans-serif;padding:12px 22px;border-radius:999px">${escapeHtml(action.label)}</a></p>
+<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#841d26;color:#fff;text-decoration:none;font:700 15px Arial,sans-serif;padding:12px 22px;border-radius:999px">${escapeHtml(action.label)}</a></p>
 <p style="margin:0 0 8px;font:13px/1.5 Arial,sans-serif;color:#665d60">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all">${escapeHtml(action.url)}</span></p>
 <p style="margin:16px 0 0;font:13px/1.5 Arial,sans-serif;color:#665d60">${escapeHtml(footer)}</p>
 </div></body></html>`;

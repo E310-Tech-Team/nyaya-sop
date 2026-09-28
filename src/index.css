@@ -12,15 +12,16 @@
   --font-display: 'Anton', Impact, 'Arial Narrow Bold', sans-serif;
   --font-serif: 'Cormorant Garamond Variable', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
 
-  --color-brand: #8b1e3f;
-  --color-brand-hover: #6b1629;
+  /* brand, gold and cream are the brand palette (design/brand/README.md); the rest derive from it. */
+  --color-brand: #841d26;
+  --color-brand-hover: #6a171e;
   --color-brand-deep: #4a0e1a;
   --color-ink: #202124;
   --color-muted: #665d60;
-  --color-gold: #b89b5e;
-  /* Gold for small text on burgundy: 5.15:1 (the base gold is only 3.35:1). */
+  --color-gold: #b69b63;
+  /* Gold for small text on burgundy: 5.55:1 (the brand gold is only 3.60:1). */
   --color-gold-light: #dcc28a;
-  --color-cream: #f7f3eb;
+  --color-cream: #f3f0e6;
   --color-paper: #fcfaf6;
   --color-rose: #f3dce3;
   --color-line: #d8d0c3;

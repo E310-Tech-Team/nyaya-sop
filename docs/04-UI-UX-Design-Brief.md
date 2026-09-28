@@ -1,6 +1,7 @@
 # 04 — UI/UX Design Brief
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
+**Brand source:** the brand guideline "School of Purpose 4.pdf" (logo lockups, rationale, palette), with the logo masters in [`design/brand/`](../design/brand/README.md) (§2).
 **Design source:** Figma Make project "Prototype Design". Compressed render of the desktop landing page: [`design/landing-reference.webp`](../design/landing-reference.webp). The 15 MB original, `design/landing-reference-figma.png`, is kept locally and git-ignored.
 **Implementation:** design tokens in [`src/index.css`](../src/index.css) `@theme` (colour, type) and `:root` (motion). The application screens use the shared components in `src/components/`. The homepage hero and the reused editorial sections (Vision & Mission, Doctrine, Blueprint, the Journey cascade) still use the Figma export's arbitrary values; the newer sections and the shared marketing chrome ([`src/components/marketing/`](../src/components/marketing/)) use the tokens. Programme wording shared across screens lives in [`src/config/programme.ts`](../src/config/programme.ts).
 
@@ -12,7 +13,8 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md)
 
 **Mood:** warm, editorial, reverent but energetic. It should feel like a premium leadership programme, not a generic church flyer.
 
-- **Burgundy + cream + antique gold.** Burgundy carries authority and brand. Cream keeps long reading comfortable. Gold marks progress, numerals and sacred accents.
+- **Burgundy + cream + antique gold**, the brand palette (§2). Burgundy carries authority and brand. Cream keeps long reading comfortable. Gold marks progress, numerals and sacred accents.
+- **The official lockup** (the target mark with "RCCG NYAYA / School of / Purpose") in every header, the phone menu, the footer and the admin area.
 - **Poster-style condensed headlines** (Anton), a clean sans body (Inter), and a **classical serif** (Cormorant Garamond) for scripture, biblical names and numerals.
 - **Pill CTAs with a white circular arrow "knob":** the single primary-action pattern.
 - **Numbered structure everywhere** (01, 02 … / I, II, III): a guided, ordered journey.
@@ -22,26 +24,63 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md)
 
 ## 2. Colour
 
+### Brand identity
+
+The brand guideline ("School of Purpose 4.pdf") defines the logo, its meaning and the palette. The masters, their original file names and the usage rules are in [`design/brand/README.md`](../design/brand/README.md).
+
+- **Palette:** burgundy `#841D26`, cream `#F3F0E6`, gold `#B69B63`: the `brand`, `cream` and `gold` tokens below. The artwork uses exactly these three colours.
+- **The mark** is an archery target read as a journey: the outer ring is the goal (focus, direction), the gold sunburst bullseye the fulfilment of purpose, and the path of rays the journey towards it.
+- **The lockup** (mark + "RCCG NYAYA / School of / Purpose") comes from `BrandLockup` ([`src/components/BrandLockup.tsx`](../src/components/BrandLockup.tsx)): `on="dark"` gives cream lettering, `on="light"` burgundy lettering. Sized by height:
+
+| Surface | Version | Height |
+|---|---|---|
+| Homepage and marketing header, phones and tablets | cream | 48 px |
+| Homepage and marketing header, from 1280 px (1440 frame) | cream | 60 px |
+| Phone/tablet menu | cream | 56 px |
+| Footer | cream | 64 px |
+| Application header: burgundy bar (phones, tablets) / paper (desktop) | cream / colour | 40 / 60 px |
+| Admin sidebar, with an "Admin" label | cream | 40 px |
+| Staff sign-in card, with an "Admin" pill | colour | 44 px |
+
+- Where a link wraps the lockup, the link keeps its name ("School of Purpose: home") and the image has `alt=""`. Elsewhere its alternative text is "RCCG NYAYA School of Purpose".
+- Files: two 960×268 WebP lockups (about 20 KB each), content-hashed and precached by the service worker so headers keep their logo offline. Favicons and app icons: §7. All are resized from the masters by `python3 scripts/brand-assets.py`; the logo is never redrawn or recoloured.
+- **Emails** keep a text header in burgundy ("RCCG NYAYA / SCHOOL OF PURPOSE") rather than a logo image. Remote images are often blocked, and fetching one would tell the server when someone opens a sign-in or password email.
+
 ### Tokens (implemented in `@theme`, usable as `bg-brand`, `text-muted`, `border-line-strong`, …)
 
 | Token | Hex | Role |
 |---|---|---|
-| `brand` | `#8b1e3f` | Primary burgundy: CTAs, headers, side panel, headings, focus rings |
-| `brand-hover` | `#6b1629` | Primary button hover |
-| `brand-deep` | `#4a0e1a` | Done-step tick, deep accents |
+| `brand` | `#841d26` | **Brand burgundy.** Primary: CTAs, headers, side panel, headings, focus rings |
+| `brand-hover` | `#6a171e` | Primary button hover (the brand burgundy, about 20% darker) |
+| `brand-deep` | `#4a0e1a` | Done-step tick, admin sidebar, deep accents |
 | `ink` | `#202124` | Primary text |
 | `muted` | `#665d60` | Secondary text, placeholders, hints |
-| `gold` | `#b89b5e` | Decorative gold: rules, done-step fill (non-text, 3.35:1 on brand is fine for shapes) |
-| `gold-light` | `#dcc28a` | **Gold text on burgundy** (eyebrows, numerals): 5.15:1 |
-| `cream` | `#f7f3eb` | Page background |
+| `gold` | `#b69b63` | **Brand gold.** Decorative: rules, done-step fill (non-text; 3.60:1 on brand is fine for shapes) |
+| `gold-light` | `#dcc28a` | **Gold text on burgundy** (eyebrows, numerals): 5.55:1 |
+| `cream` | `#f3f0e6` | **Brand cream.** Page background, light pills on burgundy |
 | `paper` | `#fcfaf6` | Inputs, desktop header |
-| `rose` | `#f3dce3` | Tints, badges, subtitles on burgundy |
+| `rose` | `#f3dce3` | Tints, badges, accents on burgundy |
 | `line` | `#d8d0c3` | Card borders, dividers |
 | `line-strong` | `#8f8577` | **Form-control borders**: 3.48:1 on paper |
 
-Landing-only colours (arbitrary values from the Figma export): deep burgundies `#3b081a` `#5c1329` `#6b1d2a`, footer `#1a0810`, card darks `#161719` `#202124`, gold variant `#b8962e`. Success-page confetti colours are decorative.
+Landing-only colours (arbitrary values from the Figma export; its burgundy, cream and gold are now the brand values): deep burgundies `#3b081a` `#5c1329` `#6b1d2a`, footer `#1a0810`, card darks `#161719` `#202124`. The fixed hero artwork (`src/assets/landing/hero-*.svg`) keeps the prototype's `#8B1E3F` in its thin circle and dot grid, which is indistinguishable at that size and opacity. Success-page confetti colours are decorative.
 
-### Contrast fixes made (2026-09-26)
+### Brand palette adopted (2026-09-28)
+
+The prototype's burgundy `#8b1e3f`, creams `#f7f3eb`/`#f4efe6` and golds `#b89b5e`/`#b8962e` were replaced everywhere by the brand palette: tokens, the Figma-export arbitrary values and their `rgba()` tints, the manifest and theme colour, the offline page and the emails. The brand burgundy is slightly darker, so light text on it gains contrast. The brand cream is slightly darker too, so dark text on it loses a little:
+
+| Pair | Before | After |
+|---|---|---|
+| White on burgundy (buttons, headers) | 8.92:1 | 9.61:1 |
+| Burgundy on cream | 8.06:1 | 8.43:1 |
+| Gold text (`gold-light`) on burgundy | 5.15:1 | 5.55:1 |
+| Rose on burgundy | 6.86:1 | 7.40:1 |
+| Gold eyebrow on the footer | 6.85:1 | 7.23:1 |
+| Muted text on cream | 5.75:1 | 5.58:1 |
+
+Checked with a text-contrast scan of the production build (about 1,200 text elements on 13 pages at 390 and 1440 px): no failures. It flagged only the disabled "Sign in" button (inactive controls are exempt) and "The Called Generation", whose white panel is a sibling layer rather than an ancestor (it is burgundy on white, 9.61:1). Text over gradients (19 items on `/about` at 1440 px) was left to the eye, as before. axe-core has not been re-run since the change.
+
+### Contrast fixes made (2026-09-26, with the prototype palette)
 
 | Pair | Before | After |
 |---|---|---|
@@ -50,7 +89,7 @@ Landing-only colours (arbitrary values from the Figma export): deep burgundies `
 | Footer copyright and tagline on `#1a0810` | 34–50% cream ✗ | 62–72% cream ✓ |
 | Grey glyph icons on white (mobile success cards) | 1.97:1 | Replaced with the SVG icons and marked decorative |
 
-Current result: **axe-core reports no contrast violations** on any screen.
+Result then: **axe-core reported no contrast violations** on any screen.
 
 ## 3. Typography
 
@@ -122,9 +161,10 @@ Same sticky header on all four (burgundy, lockup links home, nav with the curren
 
 | Component | Notes |
 |---|---|
+| `BrandLockup` | The official logo lockup (`on="dark"` cream / `on="light"` burgundy lettering), sized by height; sizes per surface in §2 |
 | `SiteHeader` | Brand lockup (links home, never wraps) + badge ("Expression of Interest Form", "Application received"…) |
 | `ApplicationLayout`, `StepHeader`, `FormCard`, `FormActions`, `SavedNote`, `Divider` (`FormLayout.tsx`) | Step chrome: compact mobile progress row / desktop side panel, the page `<h1>` (section label shown from 1024 px, where the side panel doesn't repeat it), "* Required" note. `FormActions` always ends with the saved-answers note ("Your answers are saved while this tab stays open.") |
-| `TextField`, `SelectField` | `<label>`-associated native controls, hint + error wired with `aria-describedby`, `aria-invalid`; focus ring `0 0 0 3px rgba(139,30,63,.22)` |
+| `TextField`, `SelectField` | `<label>`-associated native controls, hint + error wired with `aria-describedby`, `aria-invalid`; focus ring `0 0 0 3px rgba(132,29,38,.22)` |
 | `ChoiceGroup` (`tiles` / `scale`) | `<fieldset>`/`<legend>` + **native radio inputs** (visually hidden) styled as tiles; arrow-key navigation built in; focus outline via `has-[:focus-visible]` |
 | `PrimaryButton`, `PrimaryLink`, `BackLink` | Pill with arrow knob; busy spinner state; `.motion-button` feedback (see §6) |
 | `MarketingLayout`, `PageIntro`, `ApplyBand` (`src/components/marketing/PageParts.tsx`) | Layout route for the dedicated pages (header stays mounted, page + footer re-arm scroll reveals per page); the compact page intro with the page's `<h1>`; the closing apply band |
@@ -221,8 +261,14 @@ Reveal opacity resolves in about two-thirds of the travel time, so content is le
 - Content images have **descriptive alt text** (e.g. "Painting of Nehemiah directing the rebuilding of Jerusalem's walls"). Decorative glows, rings, route lines and arrows use `alt=""`/`aria-hidden`.
 - Below-the-fold images use `loading="lazy"`; the hero image has `fetchpriority="high"`.
 - **Provenance (audit 2026-09-26):** the supporting photographs came with the Figma Make prototype and are generic stock-style or AI-generated, not RCCG photography. Two show invented event signage: the boot-camp image's "Redemption City Team Building Seminar" banner and the community image's "Unity in Innovation 2024 Summit" banner. Authentic RCCG NYAYA photos were found (RISE skills programme) but have no usage permission and carry a "RISE 30" watermark, so nothing has been replaced yet. Sources, candidates, gaps and the adoption steps are in [IMAGERY.md](IMAGERY.md). The hero photograph and artwork are fixed and must not change.
-- Social card: `public/og-image.jpg` (1200×630, cropped from the Figma hero). Favicons: `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` (burgundy "SOP" mark).
-- **App icons** (`public/icons/`, rendered by `scripts/generate-icons.mjs`): the burgundy disc with white Arial Black "SOP" (192/512, like the favicon); a full-bleed **maskable** version with the lettering inside the central safe zone (Android crops it to its own shape); and a 96 px monochrome **badge** (a white disc with the letters cut out) for Android's status bar. Splash/background colour cream `#f7f3eb`, theme colour burgundy `#8b1e3f`.
+- Social card: `public/og-image.jpg` (1200×630): the settled desktop hero with its header (the lockup), captured from the production build at 1440 px (2× pixel density, rows 16–772) on 2026-09-28. It replaced the Figma crop, which still carried the prototype's headline.
+- **Favicons and app icons**, resized from the brand mark by `scripts/brand-assets.py` (§2):
+  - `favicon.ico` (16/32/48) and `favicon-32.png`: the mark on its own.
+  - `apple-touch-icon.png` (180 px, opaque): the mark at 80% on brand burgundy.
+  - `icons/icon-192.png`, `icon-512.png` (manifest `any`): the mark with transparent corners, also used for notifications.
+  - `icons/icon-maskable-192.png`, `-512.png`: the mark at 76% on burgundy, so it stays inside the central 80% safe zone whatever shape Android crops to.
+  - `icons/badge-96.png`: a white silhouette of the mark's ink (ring, path, sunburst) for Android's status bar, which only uses the alpha channel.
+  - Splash/background colour: brand cream `#f3f0e6`. Theme colour: brand burgundy `#841d26`.
 
 ## 8. Accessibility
 
@@ -259,8 +305,8 @@ Target **WCAG 2.2 AA**. Status after the 2026-09-26 rebuild:
 
 | # | Inconsistency | Resolution |
 |---|---|---|
-| D1 | Monogram "SOC" on landing vs "SOP" elsewhere | ✅ "SOP" everywhere (confirm with the brand owner) |
-| D2 | Three spellings of the organisation name | Kept as-is: the full "RCCG National Young Adults & Youth" on the landing page and footer, the short "RCCG Young Adults & Youth" on form headers. The hero's "Young Adult and Youth" is the design's headline wording. **Brand owner to confirm** |
+| D1 | Monogram "SOC" on landing vs "SOP" elsewhere | ✅ Superseded (2026-09-28): the official lockup replaced the text monogram everywhere. "SOP" remains the short name (manifest, home-screen title, application references) |
+| D2 | Three spellings of the organisation name | Headers now show the lockup's "RCCG NYAYA". Text still uses the full "RCCG National Young Adults & Youth" (About eyebrow, footer copyright) and the short "RCCG Young Adults & Youth" (page title). **Brand owner to confirm** the preferred written form |
 | D3 | Step 3 panel reused Step 1 copy | ✅ Own title/subtitle ("Purpose & Self-Discovery") |
 | D4 | Step 2 panel label weights inverted | ✅ Shared component; active = bold |
 | D5 | "5 minutes" vs "12 minutes" | ✅ "About 5 minutes" everywhere (`site.minutesToComplete`) |
@@ -282,7 +328,7 @@ Target **WCAG 2.2 AA**. Status after the 2026-09-26 rebuild:
 
 **Account area.** Uses the marketing header and footer, on cream, with a pill tab bar (Overview · Application · Messages & notifications · Settings), "Signed in as …" and **Sign out**. Application statuses use calm badges: *Received* and *Not selected* neutral, *Under review* burgundy-tinted, *Shortlisted* and *Invited* green. A decision is never shown in alarm red. The Programme team's message sits in its own cream box.
 
-**Admin area.** Its own layout: a deep-burgundy (`brand-deep`) sidebar with the SOP lockup, navigation filtered to the person's role, their name and role, and **Sign out**; on phones the sidebar becomes a top bar with a **Menu** toggle. Content sits on cream in white `Panel`s. Conventions:
+**Admin area.** Its own layout: a deep-burgundy (`brand-deep`) sidebar with the cream lockup and an "Admin" label, navigation filtered to the person's role, their name and role, and **Sign out**; on phones the sidebar becomes a top bar with a **Menu** toggle. Content sits on cream in white `Panel`s. Conventions:
 - Review statuses: *New* amber, *Under review* burgundy, *Shortlisted*/*Invited* green, the rest neutral.
 - Numbers use tabular figures; every time shows its zone (WAT by default).
 - Lists keep filters, sort and page in the URL. On phones the filters fold behind a **Filters (n on)** toggle.
@@ -290,4 +336,4 @@ Target **WCAG 2.2 AA**. Status after the 2026-09-26 rebuild:
 - Notification previews render as a phone-style card with the real icon, and say that devices differ.
 - Counts use the brief's truthful labels: "Accepted by push service" (explained as not meaning shown or read), "Active subscriptions (devices)", "Observed installs", "Recorded clicks (a lower bound)".
 
-**Sign-in screens** (staff): a single centred card on cream with the SOP lockup: password → six-digit code (or "Use a recovery code") → first-time authenticator setup with the QR code, the key in groups of four, and recovery codes shown once with **Copy codes** and an "I've saved my recovery codes" tick before continuing.
+**Sign-in screens** (staff): a single centred card on cream with the colour lockup and an "Admin" pill: password → six-digit code (or "Use a recovery code") → first-time authenticator setup with the QR code, the key in groups of four, and recovery codes shown once with **Copy codes** and an "I've saved my recovery codes" tick before continuing.

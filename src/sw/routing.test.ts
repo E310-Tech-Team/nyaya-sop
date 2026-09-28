@@ -37,6 +37,7 @@ describe('what the service worker caches', () => {
     [get('/assets/index-B1x2y3.js'), 'asset'],
     [get('/assets/inter-latin-wght-normal-abc.woff2'), 'asset'],
     [get('/icons/icon-192.png'), 'static'],
+    [get('/favicon.ico'), 'static'],
     [get('/manifest.webmanifest'), 'static'],
     [get('/offline.html'), 'static'],
   ] as const)('%o → %s', (request, expected) => {

@@ -39,8 +39,8 @@ const describedBy = (...ids: (string | false | undefined)[]) => ids.filter(Boole
 const controlClass = (invalid: boolean) =>
   // No transition: focus and error states must appear immediately.
   `h-[52px] w-full rounded-[8px] border bg-paper px-[15px] font-sans text-[16px] text-ink outline-none ` +
-  `placeholder:text-muted focus:border-brand focus:shadow-[0_0_0_3px_rgba(139,30,63,0.22)] ` +
-  (invalid ? 'border-brand bg-[rgba(139,30,63,0.03)]' : 'border-line-strong');
+  `placeholder:text-muted focus:border-brand focus:shadow-[0_0_0_3px_rgba(132,29,38,0.22)] ` +
+  (invalid ? 'border-brand bg-[rgba(132,29,38,0.03)]' : 'border-line-strong');
 
 type ShellProps = {
   id: string;
@@ -102,7 +102,7 @@ export function TextField({ id, number, label, required = true, hint, error, cla
 }
 
 const CHEVRON =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='8' viewBox='0 0 14 8'%3E%3Cpath d='M1 1l6 6 6-6' stroke='%238b1e3f' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='8' viewBox='0 0 14 8'%3E%3Cpath d='M1 1l6 6 6-6' stroke='%23841d26' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")";
 
 type SelectFieldProps = Omit<ShellProps, 'children'> & {
   value: string;
@@ -191,10 +191,10 @@ export function ChoiceGroup<V extends string | number>({ name, number, legend, h
                 variant === 'scale' ? 'min-h-[72px] gap-[14px] px-[14px] py-[13px]' : 'min-h-[50px] gap-[11px] px-[14px] py-[12px]'
               } ${
                 checked
-                  ? 'border-brand bg-[rgba(139,30,63,0.06)] shadow-[0_0_0_2px_rgba(139,30,63,0.15)]'
+                  ? 'border-brand bg-[rgba(132,29,38,0.06)] shadow-[0_0_0_2px_rgba(132,29,38,0.15)]'
                   : error
                     ? 'border-brand/60 bg-paper hover:border-brand'
-                    : 'border-line bg-paper hover:border-brand hover:bg-[rgba(139,30,63,0.03)]'
+                    : 'border-line bg-paper hover:border-brand hover:bg-[rgba(132,29,38,0.03)]'
               }`}
             >
               <input

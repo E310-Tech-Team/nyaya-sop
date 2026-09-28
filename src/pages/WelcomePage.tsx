@@ -110,9 +110,9 @@ export default function WelcomePage() {
                 htmlFor="consent"
                 className={`flex w-full cursor-pointer items-start gap-[12px] rounded-[6px] border px-[14px] py-[15px] text-left transition-[border-color,background-color] duration-(--duration-form) has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-3 has-[:focus-visible]:outline-brand md:gap-[14px] ${
                   draft.consent
-                    ? 'border-brand bg-[rgba(139,30,63,0.06)]'
+                    ? 'border-brand bg-[rgba(132,29,38,0.06)]'
                     : showError
-                      ? 'border-[#c9546f] bg-[rgba(139,30,63,0.04)]'
+                      ? 'border-[#c9546f] bg-[rgba(132,29,38,0.04)]'
                       : 'border-line-strong bg-cream hover:border-brand'
                 }`}
               >

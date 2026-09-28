@@ -90,7 +90,7 @@ export function ProgrammePreview() {
               className="absolute inset-0 size-full rounded-[24px] object-cover"
               src={imgVisualSide}
             />
-            <div className="absolute inset-0 rounded-[24px] bg-[rgba(139,30,63,0.2)]" />
+            <div className="absolute inset-0 rounded-[24px] bg-[rgba(132,29,38,0.2)]" />
           </div>
           <div className="flex min-w-0 flex-1 flex-col items-start gap-[26px] xl:gap-[32px]">
             <div data-reveal="up" data-reveal-at="100" className="flex flex-col items-start gap-[14px]">
@@ -98,7 +98,7 @@ export function ProgrammePreview() {
               <h2 id="programme-preview-heading" className="font-display text-[34px] leading-[1.05] text-white xl:text-[48px]">
                 The Doctrine of Purpose
               </h2>
-              <p className="font-sans text-[15px] leading-[1.55] text-[rgba(247,243,235,0.8)] xl:text-[16px]">{DOCTRINE.intro}</p>
+              <p className="font-sans text-[15px] leading-[1.55] text-[rgba(243,240,230,0.8)] xl:text-[16px]">{DOCTRINE.intro}</p>
             </div>
             <ol className="flex w-full flex-col gap-[10px]">
               {DOCTRINE.questions.map((item, i) => (

@@ -4,7 +4,7 @@ export function ErrorSummary({ count }: { count: number }) {
   return (
     <div
       role="alert"
-      className="w-full max-w-[840px] rounded-[10px] border border-brand/40 bg-[rgba(139,30,63,0.05)] px-[16px] py-[12px] font-sans text-[14px] font-semibold text-brand"
+      className="w-full max-w-[840px] rounded-[10px] border border-brand/40 bg-[rgba(132,29,38,0.05)] px-[16px] py-[12px] font-sans text-[14px] font-semibold text-brand"
     >
       {count === 1 ? 'One answer needs attention' : `${count} answers need attention`} before you continue.
     </div>

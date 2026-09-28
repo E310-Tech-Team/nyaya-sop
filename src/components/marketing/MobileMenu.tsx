@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router';
 import imgMenuIcon from '../../assets/landing/icon-menu.svg';
 import { useInstallState } from '../../lib/install';
 import { prefersReducedMotion } from '../../lib/motion';
+import { BrandLockup } from '../BrandLockup';
 import { CONTACT_LINK, MAIN_NAV } from './nav';
 
 export type MenuState = 'closed' | 'open' | 'closing';
@@ -166,13 +167,7 @@ function MenuDrawer({
         >
           <span aria-hidden="true">&times;</span>
         </button>
-        <div className="flex flex-col items-start gap-[4px]">
-          <div className="bg-white flex flex-col items-center justify-center rounded-[999px] size-[44px]">
-            <p className="font-sans font-black text-[#8b1e3f] text-[12px]">SOP</p>
-          </div>
-          <p className="font-sans font-black text-white text-[11px] tracking-[0.5px] mt-2">SCHOOL OF PURPOSE</p>
-          <p className="font-serif italic text-[#f3dce3] text-[12px]">RCCG National Young Adults &amp; Youth</p>
-        </div>
+        <BrandLockup on="dark" className="h-[56px]" />
         <nav aria-label="Main">
           <ul className="flex flex-col gap-[24px]">
             {MAIN_NAV.map((item) => (
@@ -213,7 +208,7 @@ function MenuDrawer({
           )}
           <Link
             to="/apply"
-            className="block w-full rounded-[8px] bg-white py-[14px] text-center font-sans text-[13px] font-bold uppercase tracking-[0.8px] text-[#8b1e3f]"
+            className="block w-full rounded-[8px] bg-white py-[14px] text-center font-sans text-[13px] font-bold uppercase tracking-[0.8px] text-[#841d26]"
           >
             Apply Now
           </Link>

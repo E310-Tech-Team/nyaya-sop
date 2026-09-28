@@ -4,6 +4,7 @@ import imgArrowRight from '../../assets/landing/arrow-right-burgundy.svg';
 import imgArrowRightCream from '../../assets/landing/arrow-right-cream.svg';
 import { site } from '../../config/site';
 import { useInstallState } from '../../lib/install';
+import { BrandLockup } from '../BrandLockup';
 import { MenuButton, type MobileMenuControls } from './MobileMenu';
 import { CONTACT_LINK, MAIN_NAV } from './nav';
 import { StickyHeader } from './StickyHeader';
@@ -23,8 +24,8 @@ export function DesktopNav({ tone, toneSwitches = false }: { tone: 'light' | 'da
   const linkClass = (active: boolean) =>
     `font-sans ${active ? 'font-extrabold' : 'font-semibold'} nav-underline leading-normal not-italic ${linkColor} text-[13px] uppercase whitespace-nowrap transition-[color] duration-[180ms]`;
   const pillColors = light
-    ? 'bg-[#8b1e3f] border border-[#8b1e3f] hover:bg-[#6b1629]'
-    : `bg-[#f7f3eb] hover:bg-white ${toneSwitches ? 'border border-[#f7f3eb] hover:border-white' : ''}`;
+    ? 'bg-[#841d26] border border-[#841d26] hover:bg-[#6a171e]'
+    : `bg-[#f3f0e6] hover:bg-white ${toneSwitches ? 'border border-[#f3f0e6] hover:border-white' : ''}`;
   return (
     <nav aria-label="Main" className="flex gap-[34px] items-center">
       <ul className="flex gap-[34px] items-center">
@@ -48,13 +49,13 @@ export function DesktopNav({ tone, toneSwitches = false }: { tone: 'light' | 'da
         className={`motion-button ${pillColors} cursor-pointer flex gap-[12px] h-[44px] items-center overflow-clip px-[24px] rounded-[32px]`}
       >
         <span
-          className={`font-sans font-bold leading-normal not-italic text-[14px] ${light ? 'text-white' : 'text-[#8b1e3f]'} whitespace-nowrap transition-[color] duration-[180ms]`}
+          className={`font-sans font-bold leading-normal not-italic text-[14px] ${light ? 'text-white' : 'text-[#841d26]'} whitespace-nowrap transition-[color] duration-[180ms]`}
         >
           Apply
         </span>
         <span
           aria-hidden="true"
-          className={`motion-arrow relative ${light ? 'bg-white' : 'bg-[#8b1e3f]'} flex flex-col items-center justify-center overflow-clip rounded-[999px] size-[24px]`}
+          className={`motion-arrow relative ${light ? 'bg-white' : 'bg-[#841d26]'} flex flex-col items-center justify-center overflow-clip rounded-[999px] size-[24px]`}
         >
           {toneSwitches ? (
             // Both arrows, cross-faded with the knob, so the arrow never vanishes mid-switch.
@@ -71,27 +72,14 @@ export function DesktopNav({ tone, toneSwitches = false }: { tone: 'light' | 'da
   );
 }
 
-/** Brand lockup linking home, as on the homepage (compact on phones and tablets). */
+/**
+ * The brand lockup linking home, as on the homepage: the cream version, since every marketing
+ * header is burgundy (compact on phones and tablets).
+ */
 function HomeLink({ compact = false }: { compact?: boolean }) {
-  return compact ? (
-    <Link to="/" aria-label={`${site.name}: home`} className="flex gap-[10px] items-center">
-      <span className="bg-white flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[38px]">
-        <span className="font-sans font-black text-[#8b1e3f] text-[11px]">SOP</span>
-      </span>
-      <span className="flex flex-col items-start">
-        <span className="font-sans font-black text-[12px] text-white tracking-[0.4px]">SCHOOL OF PURPOSE</span>
-        <span className="font-serif italic text-[#f3dce3] text-[11px]">RCCG National Young Adults &amp; Youth</span>
-      </span>
-    </Link>
-  ) : (
-    <Link to="/" aria-label={`${site.name}: home`} className="flex gap-[12px] items-center">
-      <span className="bg-white flex flex-col items-center justify-center overflow-clip rounded-[21px] size-[42px]">
-        <span className="font-sans font-black not-italic text-[#8b1e3f] text-[13px]">SOP</span>
-      </span>
-      <span className="flex flex-col items-start leading-normal whitespace-nowrap">
-        <span className="font-sans font-black not-italic text-[19px] text-white tracking-[0.5px]">SCHOOL OF PURPOSE</span>
-        <span className="font-serif font-normal italic text-[#f3dce3] text-[12px]">RCCG National Young Adults &amp; Youth</span>
-      </span>
+  return (
+    <Link to="/" aria-label={`${site.name}: home`} className="flex shrink-0 items-center">
+      <BrandLockup on="dark" alt="" className={compact ? 'h-[48px]' : 'h-[60px]'} />
     </Link>
   );
 }
@@ -102,7 +90,7 @@ function HomeLink({ compact = false }: { compact?: boolean }) {
  */
 export function MarketingHeader({ menu }: { menu: MobileMenuControls }) {
   return (
-    <StickyHeader className="on-dark top-0 border-b border-white/10 bg-[#8b1e3f] transition-shadow duration-[180ms] ease-[var(--ease-standard)] data-[scrolled]:shadow-[0_6px_18px_rgba(26,8,16,0.18)]">
+    <StickyHeader className="on-dark top-0 border-b border-white/10 bg-[#841d26] transition-shadow duration-[180ms] ease-[var(--ease-standard)] data-[scrolled]:shadow-[0_6px_18px_rgba(26,8,16,0.18)]">
       <div className="flex h-[78px] items-center justify-between overflow-clip px-5 xl:hidden">
         <HomeLink compact />
         <MenuButton menu={menu} />
@@ -126,17 +114,12 @@ export function MarketingFooter() {
       <div data-reveal="fade" className="flex flex-col items-start max-w-[1440px] mx-auto px-6 sm:px-10 xl:px-[80px] pb-[48px] pt-[72px]">
         <div className="flex flex-col xl:flex-row gap-[48px] xl:gap-[401px] items-start w-full">
           <div className="flex flex-col gap-[24px] items-start w-full max-w-[360px]">
-            <p className="font-sans font-bold leading-[18px] text-[#b8962e] text-[12px] tracking-[1.2px] uppercase" style={opsz}>
-              RCCG Young Adults &amp; Youth
-            </p>
-            <p className="font-sans font-bold leading-[34px] text-[#f4efe6] text-[28px]" style={opsz}>
-              The School of Purpose Project
-            </p>
-            <p className="font-sans font-normal leading-[22px] text-[14px] text-[rgba(244,239,230,0.72)]" style={opsz}>
+            <BrandLockup on="dark" className="h-[64px]" />
+            <p className="font-sans font-normal leading-[22px] text-[14px] text-[rgba(243,240,230,0.72)]" style={opsz}>
               Raising a generation of purpose-driven young Christians to influence the Church, transform the marketplace and impact the nation.
             </p>
             {site.contactEmail && (
-              <p className="font-sans text-[14px] text-[rgba(244,239,230,0.85)]">
+              <p className="font-sans text-[14px] text-[rgba(243,240,230,0.85)]">
                 Questions? Email{' '}
                 <a className="underline underline-offset-4 hover:text-white" href={`mailto:${site.contactEmail}`}>
                   {site.contactEmail}
@@ -145,8 +128,8 @@ export function MarketingFooter() {
             )}
           </div>
           <nav aria-label="Footer" className="flex flex-col gap-[20px] items-start w-[220px]">
-            <p className="font-sans font-bold leading-[18px] text-[#b8962e] text-[12px] tracking-[1.2px] uppercase whitespace-nowrap" style={opsz}>Navigation</p>
-            <ul className="flex flex-col gap-[12px] items-start font-sans font-normal leading-[20px] text-[14px] text-[rgba(244,239,230,0.85)]" style={opsz}>
+            <p className="font-sans font-bold leading-[18px] text-[#b69b63] text-[12px] tracking-[1.2px] uppercase whitespace-nowrap" style={opsz}>Navigation</p>
+            <ul className="flex flex-col gap-[12px] items-start font-sans font-normal leading-[20px] text-[14px] text-[rgba(243,240,230,0.85)]" style={opsz}>
               {MAIN_NAV.map((item) => (
                 <li key={item.to}>
                   <NavLink to={item.to} end className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
@@ -188,10 +171,10 @@ export function MarketingFooter() {
             </ul>
           </nav>
         </div>
-        <div className="border-[rgba(244,239,230,0.06)] border-b mt-[40px] w-full" />
+        <div className="border-[rgba(243,240,230,0.06)] border-b mt-[40px] w-full" />
         <div className="flex flex-col xl:flex-row font-sans font-normal gap-[8px] xl:gap-0 xl:items-center xl:justify-between pt-[20px] text-[12px] w-full" style={opsz}>
-          <p className="text-[rgba(244,239,230,0.62)]">© {new Date().getFullYear()} RCCG National Young Adults &amp; Youth. All rights reserved.</p>
-          <p className="text-[rgba(244,239,230,0.62)]">Built for the School of Purpose community</p>
+          <p className="text-[rgba(243,240,230,0.62)]">© {new Date().getFullYear()} RCCG National Young Adults &amp; Youth. All rights reserved.</p>
+          <p className="text-[rgba(243,240,230,0.62)]">Built for the School of Purpose community</p>
         </div>
       </div>
     </footer>
@@ -203,10 +186,10 @@ export function LightCta({ to, children }: { to: string; children: ReactNode }) 
   return (
     <Link
       to={to}
-      className="motion-button bg-[#f7f3eb] hover:bg-white cursor-pointer flex sm:flex-1 xl:flex-none h-[56px] items-center justify-between gap-[12px] pl-[22px] pr-[11px] rounded-[999px] xl:gap-[14px] xl:pl-[26px]"
+      className="motion-button bg-[#f3f0e6] hover:bg-white cursor-pointer flex sm:flex-1 xl:flex-none h-[56px] items-center justify-between gap-[12px] pl-[22px] pr-[11px] rounded-[999px] xl:gap-[14px] xl:pl-[26px]"
     >
-      <span className="font-sans font-bold text-[15px] text-[#8b1e3f] whitespace-nowrap">{children}</span>
-      <span aria-hidden="true" className="motion-arrow bg-[#8b1e3f] flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[34px]">
+      <span className="font-sans font-bold text-[15px] text-[#841d26] whitespace-nowrap">{children}</span>
+      <span aria-hidden="true" className="motion-arrow bg-[#841d26] flex flex-col items-center justify-center rounded-[999px] shrink-0 size-[34px]">
         <span className="font-sans font-bold text-[17px] text-white">→</span>
       </span>
     </Link>
@@ -251,7 +234,7 @@ export function MoreLink({ to, children, tone = 'light' }: { to: string; childre
 
 /** Section eyebrow: short rule + tracked capitals, as used across the homepage. */
 export function Eyebrow({ children, tone = 'light' }: { children: ReactNode; tone?: 'light' | 'dark' }) {
-  const rule = tone === 'dark' ? 'bg-[#b89b5e]' : 'bg-brand';
+  const rule = tone === 'dark' ? 'bg-[#b69b63]' : 'bg-brand';
   const text = tone === 'dark' ? 'text-gold-light' : 'text-brand';
   return (
     <div className="flex items-center gap-[10px] xl:gap-[16px]">

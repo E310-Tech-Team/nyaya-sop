@@ -15,7 +15,7 @@ type Shell = { label: ReactNode; hint?: ReactNode; error?: string; className?: s
 
 const control = (invalid: boolean) =>
   `w-full rounded-[8px] border bg-white px-3 font-sans text-[15px] text-ink outline-none placeholder:text-muted ` +
-  `focus:border-brand focus:shadow-[0_0_0_3px_rgba(139,30,63,0.22)] disabled:bg-cream disabled:text-muted ` +
+  `focus:border-brand focus:shadow-[0_0_0_3px_rgba(132,29,38,0.22)] disabled:bg-cream disabled:text-muted ` +
   (invalid ? 'border-brand' : 'border-line-strong');
 
 function useFieldIds(explicit: string | undefined, hint: unknown, error: unknown) {
@@ -232,7 +232,7 @@ export function Panel({
 const NOTICE_TONES = {
   info: 'border-line bg-white',
   success: 'border-[#2e7d32]/40 bg-[#eef7ee]',
-  warning: 'border-[#b8962e]/60 bg-[#fbf5e6]',
+  warning: 'border-[#b69b63]/60 bg-[#fbf5e6]',
   error: 'border-brand/50 bg-[#fbeef1]',
 } as const;
 

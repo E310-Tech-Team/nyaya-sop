@@ -3,7 +3,7 @@
 **Product:** School of Purpose (SOP): Purpose Boot Camp, Expression of Interest site
 **Owner organisation:** RCCG National Young Adults & Youth
 **Programme edition:** First Edition, "The Called Generation"
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 **Current stage:** **Built and deployment-ready.** Applications are validated and stored in PostgreSQL. The site is an installable web app with optional notifications and applicant accounts, and the Programme team has an admin platform. Not yet deployed to a live domain; email and push keys are configured at deployment.
 
 > **Status labels used across these docs**
@@ -176,7 +176,7 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | Q5 | How is eligibility (18–30, RCCG) enforced? | Open: currently self-declared via the consent statement and age ranges |
 | Q6 | Application window dates? | Open: set them in Admin → Cohorts when known |
 | Q7 | What should the nav items do? | ✅ Each opens its own page (`/about`, `/programme`, `/journey`, `/faq`; 2026-09-26, previously in-page anchors); "Experience" and "Speakers" removed (no content) |
-| Q8 | "SOC" or "SOP"? Canonical organisation name? | ✅ "SOP" used everywhere. **Confirm** the org-name variants (see [04 §9](04-UI-UX-Design-Brief.md#9-design-inconsistencies-from-the-prototype)) |
+| Q8 | "SOC" or "SOP"? Canonical organisation name? | ✅ The brand guideline settles the logo: the official lockup "RCCG NYAYA School of Purpose" is in every header (2026-09-28); "SOP" stays the short name. **Confirm** the written org-name variants (see [04 §9](04-UI-UX-Design-Brief.md#9-design-inconsistencies-from-the-prototype)) |
 | Q9 | Privacy notice at the consent step? | **Open, launch blocker:** the Programme team needs to provide wording (what's collected, who sees it, how long it's kept, how to request deletion) |
 | Q10 | Should search engines index the site? | ✅ Yes (`robots.txt` allows everything except `/api/`, `/admin` and `/account`; those pages also send `X-Robots-Tag: noindex`) |
 | Q11 | How long are applications kept? | Open: needed for the privacy notice and backup policy |

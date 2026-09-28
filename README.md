@@ -37,6 +37,7 @@ Open http://localhost:5173. `pnpm dev` starts Vite (web, with hot reload) and th
 | `pnpm admin create-owner --email … --name …` | Create the first owner (prints a single-use setup link). Also `reset-mfa --email …`, `list` |
 | `pnpm push:keys` | Generate a VAPID key pair for Web Push (once per site) |
 | `pnpm worker` | Run background jobs as a separate process (with `WORKER_MODE=off` on the web server) |
+| `python3 scripts/brand-assets.py` | Rebuild the logo lockups, favicons and app icons from the brand masters in `design/brand/` (needs Pillow; outputs are committed) |
 
 ## Project layout
 
@@ -50,16 +51,16 @@ src/                 React app
   lib/               API client, install and push helpers, service-worker registration and updates
   state/             Application draft (React context, saved in sessionStorage)
   shared/            Option lists + validation shared with the server (single source of truth)
-  assets/            Images (WebP/SVG, content-hashed at build)
+  assets/            Images (WebP/SVG, content-hashed at build), including brand/ (the logo lockups)
 server/              Fastify API: app.ts, config.ts, db.ts, migrate.ts
   auth/              Staff and applicant sessions, CSRF, staff sign-in with two-step verification
   account/ admin/    Applicant account routes; admin routes (applicants, accounts, cohorts, campaigns, staff…)
   push/ jobs/        Web Push (SSRF-safe transport, VAPID, subscriptions); Postgres job queue and worker
   notifications/     Campaign audience, dispatch and delivery
   migrations/        SQL migrations (schema + first cohort)
-deploy/              Caddyfile, backup script, systemd unit, Nginx example
+deploy/              One-command VPS installer, Caddyfile, backup script, systemd unit, Nginx example
 docs/                Product & technical docs (PRD, TRD, flows, design, schema, plan, deployment)
-design/              Design reference (compressed render of the Figma prototype)
+design/              brand/: logo masters, palette and usage rules; the Figma prototype's reference render
 Dockerfile, docker-compose.yml, .env.example
 ```
 

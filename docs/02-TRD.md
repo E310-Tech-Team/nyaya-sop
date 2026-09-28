@@ -1,6 +1,6 @@
 # 02 — Technical Requirements Document (TRD)
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 **Architecture:** React single-page app (installable PWA with a service worker) + Fastify API, backed by **PostgreSQL**, with a **background worker** for notifications and clean-up, deployed on a **single VPS** behind Caddy (HTTPS).
 **Origin:** Figma Make export (2026-09-25), rebuilt as a standalone project on 2026-09-26. The Figma Make tooling has been removed.
 
@@ -72,12 +72,12 @@ flowchart TB
 
 | Piece | Implementation |
 |---|---|
-| Manifest | `public/manifest.webmanifest`: `id` and `start_url` `/`, `scope` `/`, `display: standalone`, `theme_color #8b1e3f`, `background_color #f7f3eb`, 192/512 icons in `any` and `maskable` versions, shortcuts (Apply, My application) |
-| Icons | `public/icons/*` rendered from the SOP monogram by `scripts/generate-icons.mjs` (headless Chrome); `badge-96.png` for Android's status bar; `apple-touch-icon.png` 180 px full-bleed |
+| Manifest | `public/manifest.webmanifest`: `id` and `start_url` `/`, `scope` `/`, `display: standalone`, `theme_color #841d26` (brand burgundy), `background_color #f3f0e6` (brand cream), 192/512 icons in `any` and `maskable` versions, shortcuts (Apply, My application) |
+| Icons | Resized from the brand mark in `design/brand/` by `scripts/brand-assets.py` (Python 3 + Pillow; outputs committed): `public/icons/*` (192/512 `any` and `maskable`, `badge-96.png` for Android's status bar), `favicon.ico` (16/32/48), `favicon-32.png`, `apple-touch-icon.png` (180 px, opaque). The header and footer logo lockups are two WebP files in `src/assets/brand/` ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
 | HTML | `<link rel="manifest">`, `theme-color`, `apple-mobile-web-app-*` and `mobile-web-app-capable` metadata. The default `viewport-fit` keeps all content inside the safe areas (notch, home indicator) in portrait and landscape; fixed UI (the update prompt) also pads with `env(safe-area-inset-bottom)` |
-| Service worker | `dist/sw.js`, built from `src/sw/sw.ts` by `scripts/vite-pwa.ts` with the precache list (app shell, offline page, manifest, icons, the first page load's JS and CSS) and the release id injected |
+| Service worker | `dist/sw.js`, built from `src/sw/sw.ts` by `scripts/vite-pwa.ts` with the precache list (app shell, offline page, manifest, icons, the two logo lockups, the first page load's JS and CSS) and the release id injected |
 | Caching policy | `src/sw/routing.ts` ([03 §6](03-App-Flow.md#6-offline-and-updates)): **never** `/api/*`, non-GET requests, other origins, or anything under `/admin` or `/account`; public pages network-first with the cached shell offline; hashed assets cache-first; other static files network-first |
-| Updates | A new version waits; the page offers **Update now** and reloads only when the person chooses. Old precaches are deleted on activation (their `/assets` files move to a small runtime cache for tabs still on the old version) |
+| Updates | A new version waits; the page offers **Update now** and reloads only when the person chooses. Other open tabs then say a newer version is available (**Reload**). The very first install takes control of the page silently: it is not an update, so nothing is offered. Old precaches are deleted on activation (their `/assets` files move to a small runtime cache for tabs still on the old version) |
 | Release id | `BUILD_ID` (or a timestamp) is written to `dist/build-id.txt`; the server sends it as `X-App-Build` on API responses so an open page notices a new release |
 | Rollback | A build with `SW_KILL_SWITCH=1` produces a worker that deletes every cache and unregisters itself, and a page that removes any registration ([DEPLOYMENT](DEPLOYMENT.md#service-worker-rollback)) |
 | Registration | Production builds on secure origins only (`https`, or `localhost`) |
@@ -98,7 +98,8 @@ src/            React app
   pages/        public pages, the form, Install, Notifications, Updates
   account/      applicant account area (lazy chunk)
   admin/        admin platform (lazy chunk): AdminApp, AuthPages, pages/*
-  components/   layout, fields, ui.tsx kit, InstallGuide, notifications/*, AppStatus (offline notice, update prompt)
+  components/   layout, fields, ui.tsx kit, BrandLockup, InstallGuide, notifications/*, AppStatus (offline notice, update prompt)
+  assets/       landing and success artwork, brand/ (logo lockups built by scripts/brand-assets.py)
   lib/          api (CSRF-aware client), pwa (registration/updates), install, push, account, config, events
   sw/           sw.ts (service worker), routing.ts (+ tests)
   shared/       application, validation, permissions, platform (topics, statuses, link allowlist), time
@@ -110,8 +111,9 @@ server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts
   jobs/         queue, worker
   notifications/  audience, dispatch
   migrations/   0001_init … 0005_notifications_jobs
-scripts/        build-server.mjs, vite-pwa.ts, generate-icons.mjs
-deploy/         Caddyfile, backup.sh, school-of-purpose.service (systemd), nginx.conf.example
+scripts/        build-server.mjs, vite-pwa.ts, brand-assets.py
+deploy/         install.sh (one-command VPS install), Caddyfile, backup.sh, school-of-purpose.service (systemd), nginx.conf.example
+design/         brand/ (logo masters, palette, usage rules), landing-reference.webp
 public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.jpg, robots.txt
 ```
 

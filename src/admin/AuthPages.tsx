@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router';
+import { BrandLockup } from '../components/BrandLockup';
 import { Button, Input, Loading, Notice, errorMessage } from '../components/ui';
 import { usePageTitle } from '../components/RouteEffects';
 import { ApiError, setCsrfToken } from '../lib/api';
@@ -14,9 +15,9 @@ function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main id="main" className="flex min-h-screen w-full items-start justify-center bg-cream px-5 py-10 sm:items-center">
       <div className="flex w-full max-w-[460px] flex-col gap-5 rounded-[16px] border border-line bg-white p-6 shadow-[0px_12px_30px_0px_rgba(45,9,20,0.07)] sm:p-8">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-[36px] items-center justify-center rounded-full bg-brand font-sans text-[11px] font-black text-white">SOP</span>
-          <span className="font-sans text-[12px] font-black tracking-[0.4px] text-brand">SCHOOL OF PURPOSE · ADMIN</span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <BrandLockup on="light" className="h-[44px]" />
+          <span className="rounded-full bg-rose px-3 py-1 font-sans text-[11px] font-bold uppercase tracking-[1.2px] text-brand">Admin</span>
         </div>
         <h1 data-page-heading tabIndex={-1} className="font-display text-[32px] leading-[1.05] text-ink outline-none">
           {title}

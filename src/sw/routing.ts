@@ -25,7 +25,7 @@ export const SHELL_URL = '/index.html';
 export const OFFLINE_URL = '/offline.html';
 
 const PRIVATE_PAGE = /^\/(admin|account)(\/|$)/;
-const STATIC_FILES = new Set(['/favicon.svg', '/favicon-32.png', '/apple-touch-icon.png', '/manifest.webmanifest', OFFLINE_URL, '/og-image.jpg']);
+const STATIC_FILES = new Set(['/favicon.ico', '/favicon-32.png', '/apple-touch-icon.png', '/manifest.webmanifest', OFFLINE_URL, '/og-image.jpg']);
 
 export const isPrivatePath = (pathname: string) => PRIVATE_PAGE.test(pathname);
 
