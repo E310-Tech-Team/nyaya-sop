@@ -96,12 +96,6 @@
     scale: var(--depth-scale);
   }
 }
-@keyframes enter-ring {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-}
 /* Journey route lines draw in the direction of travel. The negative inset clips nothing once
    drawn, and the animation (not a transition) ends back on the element's own style: no clip. */
 @keyframes wipe-right {
@@ -229,11 +223,6 @@
     transform-origin: left center;
   }
 
-  /* Entrance tempo: `.enter-feature` for the hero's lead elements. */
-  .enter-feature {
-    --enter-duration: var(--duration-feature);
-    --enter-shift: var(--shift-feature);
-  }
   [data-reveal-tempo='feature'] {
     --reveal-duration: var(--duration-feature);
     --reveal-shift: var(--shift-feature);
@@ -294,9 +283,6 @@
   }
   .enter-depth {
     animation: enter-depth var(--duration-feature) var(--ease-enter) var(--enter-delay, 0ms) both;
-  }
-  .enter-ring {
-    animation: enter-ring var(--duration-feature) var(--ease-enter) var(--enter-delay, 0ms) both;
   }
   .enter-check {
     animation: enter-check 480ms var(--ease-enter) var(--enter-delay, 0ms) both;

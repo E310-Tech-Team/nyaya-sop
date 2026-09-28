@@ -2,7 +2,7 @@
   "name": "school-of-purpose",
   "private": true,
   "version": "1.0.0",
-  "description": "School of Purpose \u00b7 Purpose Boot Camp expression-of-interest site (RCCG Young Adults & Youth)",
+  "description": "School of Purpose · Purpose Boot Camp expression-of-interest site (RCCG Young Adults & Youth)",
   "type": "module",
   "packageManager": "pnpm@11.4.0",
   "engines": {
@@ -33,6 +33,7 @@
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.4",
     "fastify": "^5.12.5",
+    "gsap": "^3.15.0",
     "nodemailer": "^10.0.10",
     "otpauth": "^9.5.2",
     "pg": "^8.23.0",
