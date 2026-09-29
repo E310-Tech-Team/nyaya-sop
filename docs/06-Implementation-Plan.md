@@ -1,7 +1,7 @@
 # 06 — Implementation Plan
 
-**Last updated:** 2026-09-28
-**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)** and **13 (brand identity)** are **done**; 7 (launch) is in progress; 10 (photography) waits for permission. 265 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** choose an email provider and generate VAPID keys, deploy to the VPS with a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Last updated:** 2026-09-29
+**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) is in progress; 10 (photography) waits for permission. 269 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** choose an email provider and generate VAPID keys, deploy to the VPS with a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
 
 Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
 
@@ -191,6 +191,17 @@ From the brand guideline ("School of Purpose 4.pdf": lockups, rationale, palette
 | 13.6 | Fix found while verifying | Done: the first service-worker install claimed the page and every first-time visitor was offered "A newer version of the site is available". The first claim is now silent; the real update flow was re-checked end to end |
 | 13.7 | Verification | Done: `pnpm check` (265 tests); production build in headless Chrome, 30/30 (icons served and decoded at their sizes, installable, lockups precached, offline page, first visit silent, two-tab update flow); text-contrast scan of 13 pages at 390 and 1440 px (no failures); UI walk-through at 375, 1280 and 1440 px. **Not yet:** the new icons on real devices (Android maskable shape and status-bar badge, iOS Home Screen) |
 
+### Phase 14: Homepage hero entrance (**Done**, 2026-09-29)
+
+The first step of the animation work (branch `feat/animation`). The rest of the motion plan (scroll storytelling, Journey route drawing, page transitions, Three.js, micro-interactions) waits for decisions on 3D placement, the new path line, the budgets and Safari testing.
+
+| # | Task | Status |
+|---|---|---|
+| 14.1 | Baseline | Done: bundle sizes, frame pacing, load metrics and 104 settled screenshots (13 pages × 4 widths × motion/reduced) of the build before any change. Headless Chrome here runs at 60 Hz, so the old "p95 9.2 ms" (120 Hz) was re-baselined. Found on the way: Chrome's full-page capture restarts entrance animations mid-shot, so captures now grow the viewport height instead |
+| 14.2 | Hero entrance | Done: one GSAP timeline per layout (`src/lib/heroMotion.ts`, timing tables tested), ≈ 2.3 s on desktop and ≈ 2 s on phones instead of ≈ 1 s ([04 §6](04-UI-UX-Design-Brief.md#homepage-hero-gsap-2026-09-29)). The photograph is decoded before it appears (it froze the phone entrance for ≈ 360 ms) |
+| 14.3 | Extras | Done: the glow breathes after the entrance (CSS, paused off-screen); on desktop the participants drift and recede as the page scrolls away (CSS scroll-driven, attached only once scrolled, feet always inside the frame) |
+| 14.4 | Verification | Done: `pnpm check` (269 tests); settled hero equals the page without motion pixel for pixel at 390–1920 px and every other page matches the previous build; entrance 0 dropped frames; LCP 676 ms (390 px, 4× CPU) and 64 ms (1440 px); first-load JS +28.8 KB gzipped. **Not yet:** real phones, Safari (automation not enabled), Firefox (no scroll-driven animations: no drift there, by design) |
+
 ## Content needed from the Programme team
 
 The UX pass only uses facts already in the site copy. These need an owner's answer before they can be added:
@@ -244,6 +255,7 @@ flowchart LR
     P12 --> DEV[Device tests<br/>need staging]
     P9 --> P13[Phase 13 ✓<br/>brand identity]
     P12 --> P13
+    P13 --> P14[Phase 14 ✓<br/>hero entrance]
     DEV --> P7
 ```
 
@@ -260,7 +272,7 @@ flowchart LR
 | D-6 | 2026-09-26 | Dev/test database: PGlite (in-process Postgres 17), so no local install is needed | Decided |
 | D-7 | 2026-09-26 | Programme team access via password-protected CSV export first; dashboard later | Superseded by D-16/Phase 12 (individual staff accounts, roles, audited export) |
 | D-8 | 2026-09-26 | Landing page 1280–1440 px: scale the fixed 1440 px design with CSS `zoom` rather than rebuilding it fluid | Decided (a fluid rebuild would remove the separate mobile/desktop trees; see 02 §9) |
-| D-9 | 2026-09-26 | Motion with CSS keyframes/transitions + one IntersectionObserver hook; no animation library; content visible unless the hook arms the page | Decided |
+| D-9 | 2026-09-26 | Motion with CSS keyframes/transitions + one IntersectionObserver hook; no animation library; content visible unless the hook arms the page | Decided; superseded for the homepage hero by D-25 |
 | D-10 | 2026-09-26 | New landing sections (What to expect, FAQ) are single responsive trees scaled with `.landing-scale`, not new mobile/desktop duplicates | Decided |
 | D-11 | 2026-09-26 | Programme facts shown in several places live in `src/config/programme.ts`; only verified site copy, no invented dates/criteria/response times | Decided |
 | D-12 | 2026-09-26 | Motion may never change the settled UI: every entrance ends on the element's own style; checked with pixel comparisons of settled headless captures before/after | Decided |
@@ -277,6 +289,7 @@ flowchart LR
 | D-22 | 2026-09-26 | Analytics: an allowlist of anonymous events with coarse properties only; "observed installs" and "standalone launches" reported separately | Decided (brief) |
 | D-23 | 2026-09-28 | The brand guideline's palette replaces the prototype's colours site-wide (tokens and arbitrary values). The hero photo and artwork files stay untouched | Decided (brand guideline) |
 | D-24 | 2026-09-28 | Logos are the supplied raster artwork resized by `scripts/brand-assets.py` (Python + Pillow, outputs committed), never redrawn or traced; emails keep a text header, with no remote logo that would reveal when a sign-in email is opened | Decided |
+| D-25 | 2026-09-29 | The homepage hero's entrance is a GSAP (core) timeline, in the first-load bundle so nothing waits; every other screen keeps the CSS system. An element is animated by GSAP or CSS, never both. The glow's breathing and the desktop scroll drift are the only sanctioned loop and scroll-linked motion | Decided (user: "a real, visible animation"; extras approved) |
 
 ## Doc maintenance
 

@@ -2,15 +2,17 @@
  * The homepage hero's opening (docs/04 §6): a GSAP timeline, once per visit to the page.
  *
  * The ideas come from the brand mark: the gold glow is the bullseye (fulfilment), the ring is
- * the target locking on, the leap is the journey. Desktop plays one composition of about 2.5 s;
+ * the target locking on, the leap is the journey. Desktop plays one composition of about 2.3 s;
  * phones and tablets play the copy on load and the photograph when it scrolls into view.
+ * Afterwards the glow breathes very slowly (CSS, index.css), and on desktop the participants
+ * drift and recede a little as the page scrolls away (a CSS scroll-driven animation).
  *
  * Rules (docs/04 §6):
  * - Every move starts from, and returns to, the element's own resting style: inline styles are
  *   cleared as each move finishes, so the settled hero is exactly the page without motion.
  * - Only transform, opacity and clip-path. Buttons stay clickable throughout, and keyboard focus
  *   anywhere on the page finishes the entrance at once.
- * - Reduced motion: nothing is hidden or moved. The entrance also never replays when the
+ * - Reduced motion: nothing is hidden, moved or looped. The entrance also never replays when the
  *   viewport crosses the 1280px breakpoint; the other layout simply appears.
  *
  * Elements are marked in LandingPage with data-hero="…"; the desktop composition and the phone
@@ -20,46 +22,69 @@
 import gsap from 'gsap';
 import { useLayoutEffect, type RefObject } from 'react';
 
-/** Start times (s) of the desktop composition. */
+/** One move: when it starts and how long it takes (s); `step` staggers a group of `count`. */
+export type Beat = { at: number; for: number; step?: number; count?: number };
+
+/** The desktop composition. */
 export const HERO_DESKTOP = {
-  panel: 0,
-  glow: 0,
-  photo: 0.15,
-  ring: 0.3,
-  eyebrow: 0.35,
-  headline: 0.45,
-  headlineStep: 0.12,
-  header: 0.7,
-  summary: 0.9,
-  eligibility: 1.0,
-  tick: 1.15,
-  actions: 1.1,
-  actionStep: 0.1,
-  caption: 1.2,
-  dots: 1.4,
-} as const;
+  panel: { at: 0, for: 1.1 },
+  glow: { at: 0, for: 1.4 },
+  photoFade: { at: 0, for: 0.6 },
+  photo: { at: 0.15, for: 1.3 },
+  ring: { at: 0.3, for: 1.4 },
+  ringFade: { at: 0.3, for: 0.8 },
+  eyebrow: { at: 0.35, for: 0.9 },
+  lines: { at: 0.45, for: 1.1, step: 0.12, count: 2 },
+  header: { at: 0.7, for: 0.9 },
+  summary: { at: 0.9, for: 1 },
+  eligibility: { at: 1, for: 0.9 },
+  tick: { at: 1.15, for: 0.6 },
+  actions: { at: 1.1, for: 1, step: 0.1, count: 2 },
+  captionRule: { at: 1.2, for: 0.8 },
+  caption: { at: 1.3, for: 0.9 },
+  dots: { at: 1.4, for: 0.9 },
+} as const satisfies Record<string, Beat>;
 
 /** Phones and tablets: the copy, from first paint. */
-export const HERO_MOBILE_COPY = {
-  header: 0,
-  eyebrow: 0.1,
-  headline: 0.2,
-  headlineStep: 0.12,
-  summary: 0.6,
-  eligibility: 0.72,
-  tick: 0.85,
-  actions: 0.8,
-  actionStep: 0.1,
-} as const;
+export const HERO_PHONE_COPY = {
+  header: { at: 0, for: 0.9 },
+  eyebrow: { at: 0.1, for: 0.9 },
+  lines: { at: 0.2, for: 1.1, step: 0.12, count: 2 },
+  summary: { at: 0.6, for: 1 },
+  eligibility: { at: 0.72, for: 0.9 },
+  tick: { at: 0.85, for: 0.6 },
+  actions: { at: 0.8, for: 1, step: 0.1, count: 2 },
+} as const satisfies Record<string, Beat>;
 
-/** Phones and tablets: the photograph, when it comes into view (just after the headline starts if
-    it's already there: it's usually the largest element, so it mustn't wait long). */
-export const HERO_MOBILE_PHOTO = { glow: 0, photo: 0.1, ring: 0.2, caption: 0.7, whenVisibleAtLoad: 0.25 } as const;
+/** Phones and tablets: the photograph, when it comes into view. */
+export const HERO_PHONE_PHOTO = {
+  glow: { at: 0, for: 1.4 },
+  photoFade: { at: 0, for: 0.6 },
+  photo: { at: 0.1, for: 1.3 },
+  ring: { at: 0.2, for: 1.4 },
+  ringFade: { at: 0.2, for: 0.8 },
+  caption: { at: 0.7, for: 0.9 },
+} as const satisfies Record<string, Beat>;
 
-const MOVE = 'transform,opacity';
+/** If the photograph is already in view at load, it starts this long after the copy (s): it's
+    usually the largest element, so it mustn't wait long. */
+export const PHONE_PHOTO_DELAY = 0.25;
 
 /** How long the entrance waits for the photograph to be decoded before playing without it. */
 const PHOTO_WAIT_MS = 400;
+
+/** When the last move of a sequence lands (s). */
+export const entranceLength = (beats: Record<string, Beat>): number =>
+  Math.max(...Object.values(beats).map((b) => b.at + (b.step ?? 0) * ((b.count ?? 1) - 1) + b.for));
+
+const MOVE = 'transform,opacity';
+
+/** Headline lines rise out of masks: clip below the line box only while they move. The mask
+    reaches 30% below the line box and 40% above it, so no glyph is ever cut off. */
+const LINE_MASK = 'inset(-40% -8% -30% -8%)';
+
+type CopyBeats = typeof HERO_DESKTOP | typeof HERO_PHONE_COPY;
+type PhotoBeats = typeof HERO_DESKTOP | typeof HERO_PHONE_PHOTO;
 
 /**
  * Starts decoding the hero photograph now. A browser decodes a hidden image only when it first
@@ -72,63 +97,81 @@ function photoReady(scope: HTMLElement): Promise<void> {
   return Promise.race([decoded, new Promise((resolve) => window.setTimeout(resolve, PHOTO_WAIT_MS))]).then(() => undefined);
 }
 
-/** Headline lines rise out of masks: clip below the line box only while they move. The mask
-    reaches 30% below the line box and 40% above it, so no glyph is ever cut off. */
-const LINE_MASK = 'inset(-40% -8% -30% -8%)';
+/**
+ * Once the glow has landed it breathes (index.css: an 8 s cycle, compositor-only), paused while
+ * the hero is off-screen or the tab is hidden.
+ */
+function breathe(glow: Element | null, area: Element, cleanups: (() => void)[]) {
+  if (!glow) return;
+  let onScreen = true;
+  const update = () => glow.setAttribute('data-breathing', onScreen && document.visibilityState === 'visible' ? '' : 'paused');
+  const observer = new IntersectionObserver(([entry]) => {
+    onScreen = entry.isIntersecting;
+    update();
+  });
+  observer.observe(area);
+  document.addEventListener('visibilitychange', update);
+  update();
+  cleanups.push(() => {
+    observer.disconnect();
+    document.removeEventListener('visibilitychange', update);
+    glow.removeAttribute('data-breathing');
+  });
+}
 
-function copyMoves(tl: gsap.core.Timeline, scope: HTMLElement, t: typeof HERO_DESKTOP | typeof HERO_MOBILE_COPY, lift: number) {
+function copyMoves(tl: gsap.core.Timeline, scope: HTMLElement, b: CopyBeats, lift: number) {
   const q = gsap.utils.selector(scope);
   const masks = q('[data-hero="mask"]');
   const lines = q('[data-hero="line"]');
   const ctas = q('[data-hero="cta"]');
   const tick = scope.querySelector<SVGPathElement>('[data-hero="tick"]');
 
-  tl.from(q('[data-hero="eyebrow"]'), { y: 14, opacity: 0, duration: 0.9, ease: 'power3.out', clearProps: MOVE }, t.eyebrow);
+  tl.from(q('[data-hero="eyebrow"]'), { y: 14, opacity: 0, duration: b.eyebrow.for, ease: 'power3.out', clearProps: MOVE }, b.eyebrow.at);
 
   gsap.set(masks, { clipPath: LINE_MASK });
-  tl.from(lines, { yPercent: 135, duration: 1.1, ease: 'power4.out', stagger: t.headlineStep, clearProps: 'transform' }, t.headline);
-  tl.set(masks, { clearProps: 'clipPath' }, t.headline + t.headlineStep * (lines.length - 1) + 1.1);
+  tl.from(lines, { yPercent: 135, duration: b.lines.for, ease: 'power4.out', stagger: b.lines.step, clearProps: 'transform' }, b.lines.at);
+  tl.set(masks, { clearProps: 'clipPath' }, b.lines.at + b.lines.step * (lines.length - 1) + b.lines.for);
 
-  tl.from(q('[data-hero="summary"]'), { y: lift, opacity: 0, duration: 1, ease: 'power3.out', clearProps: MOVE }, t.summary);
-  tl.from(q('[data-hero="eligibility"]'), { y: lift * 0.7, opacity: 0, duration: 0.9, ease: 'power3.out', clearProps: MOVE }, t.eligibility);
-  tl.from(q('[data-hero="tick-disc"]'), { scale: 0.4, duration: 0.9, ease: 'expo.out', clearProps: 'transform' }, t.eligibility);
+  tl.from(q('[data-hero="summary"]'), { y: lift, opacity: 0, duration: b.summary.for, ease: 'power3.out', clearProps: MOVE }, b.summary.at);
+  tl.from(q('[data-hero="eligibility"]'), { y: lift * 0.7, opacity: 0, duration: b.eligibility.for, ease: 'power3.out', clearProps: MOVE }, b.eligibility.at);
+  tl.from(q('[data-hero="tick-disc"]'), { scale: 0.4, duration: b.eligibility.for, ease: 'expo.out', clearProps: 'transform' }, b.eligibility.at);
   if (tick) {
     const length = tick.getTotalLength();
     tl.fromTo(
       tick,
       { strokeDasharray: length, strokeDashoffset: length, opacity: 0 },
-      { strokeDashoffset: 0, opacity: 1, duration: 0.6, ease: 'power2.inOut', clearProps: 'strokeDasharray,strokeDashoffset,opacity' },
-      t.tick,
+      { strokeDashoffset: 0, opacity: 1, duration: b.tick.for, ease: 'power2.inOut', clearProps: 'strokeDasharray,strokeDashoffset,opacity' },
+      b.tick.at,
     );
   }
 
   // The buttons' own CSS transition includes opacity (hover feedback); pause it while GSAP
   // moves them, or the browser would chase every frame 160 ms behind.
   gsap.set(ctas, { transition: 'none' });
-  tl.from(ctas, { y: lift * 1.2, opacity: 0, duration: 1, ease: 'power3.out', stagger: t.actionStep, clearProps: MOVE }, t.actions);
-  tl.set(ctas, { clearProps: 'transition' }, t.actions + t.actionStep * (ctas.length - 1) + 1);
+  tl.from(ctas, { y: lift * 1.2, opacity: 0, duration: b.actions.for, ease: 'power3.out', stagger: b.actions.step, clearProps: MOVE }, b.actions.at);
+  tl.set(ctas, { clearProps: 'transition' }, b.actions.at + b.actions.step * (ctas.length - 1) + b.actions.for);
 }
 
 /** The glow blooms, the participants rise and land, the ring locks on. */
-function photoMoves(tl: gsap.core.Timeline, scope: HTMLElement, t: { glow: number; photo: number; ring: number }, rise: number, ringFrom: number) {
+function photoMoves(tl: gsap.core.Timeline, scope: HTMLElement, b: PhotoBeats, rise: number, ringFrom: number) {
   const q = gsap.utils.selector(scope);
-  tl.from(q('[data-hero="glow"]'), { scale: 0.6, opacity: 0, duration: 1.4, ease: 'expo.out', clearProps: MOVE }, t.glow);
+  tl.from(q('[data-hero="glow"]'), { scale: 0.6, opacity: 0, duration: b.glow.for, ease: 'expo.out', clearProps: MOVE }, b.glow.at);
   const photo = q('[data-hero="photo"]');
-  tl.from(photo, { y: rise, scale: 1.06, transformOrigin: '50% 85%', duration: 1.3, ease: 'expo.out', clearProps: 'transform,transformOrigin' }, t.photo);
-  tl.from(photo, { opacity: 0, duration: 0.6, ease: 'power2.out', clearProps: 'opacity' }, t.glow); // visible with the glow
+  tl.from(photo, { opacity: 0, duration: b.photoFade.for, ease: 'power2.out', clearProps: 'opacity' }, b.photoFade.at);
+  tl.from(photo, { y: rise, scale: 1.06, transformOrigin: '50% 85%', duration: b.photo.for, ease: 'expo.out', clearProps: 'transform,transformOrigin' }, b.photo.at);
   const ring = q('[data-hero="ring"]');
-  tl.from(ring, { scale: ringFrom, rotation: -8, duration: 1.4, ease: 'expo.out', clearProps: 'transform' }, t.ring);
-  tl.from(ring, { opacity: 0, duration: 0.8, ease: 'power2.out', clearProps: 'opacity' }, t.ring);
+  tl.from(ring, { scale: ringFrom, rotation: -8, duration: b.ring.for, ease: 'expo.out', clearProps: 'transform' }, b.ring.at);
+  tl.from(ring, { opacity: 0, duration: b.ringFade.for, ease: 'power2.out', clearProps: 'opacity' }, b.ringFade.at);
 }
 
 function desktopEntrance(root: HTMLElement, cleanups: (() => void)[]): gsap.core.Timeline[] {
   const scope = root.querySelector<HTMLElement>('[data-hero-layout="desktop"]');
   if (!scope) return [];
   const q = gsap.utils.selector(scope);
-  const t = HERO_DESKTOP;
+  const b = HERO_DESKTOP;
   // Everything is in its start state from the first paint; it plays once the photograph is
   // decoded (or after PHOTO_WAIT_MS on a slow connection).
-  const tl = gsap.timeline({ paused: true });
+  const tl = gsap.timeline({ paused: true, onComplete: () => breathe(scope.querySelector('[data-hero="glow"]'), scope, cleanups) });
   let live = true;
   cleanups.push(() => {
     live = false;
@@ -139,21 +182,20 @@ function desktopEntrance(root: HTMLElement, cleanups: (() => void)[]): gsap.core
 
   // The white panel and the split-sweep artwork arrive from the right as one piece (same
   // distance, same curve), so their seam never opens.
-  const distance = scope.offsetWidth;
-  tl.from(q('[data-hero="panel"], [data-hero="sweep"]'), { x: distance, duration: 1.1, ease: 'power3.inOut', clearProps: 'transform' }, t.panel);
-  photoMoves(tl, scope, t, 100, 1.25);
+  tl.from(q('[data-hero="panel"], [data-hero="sweep"]'), { x: scope.offsetWidth, duration: b.panel.for, ease: 'power3.inOut', clearProps: 'transform' }, b.panel.at);
+  photoMoves(tl, scope, b, 100, 1.25);
 
   const header = root.querySelector('[data-hero="header-desktop"]');
-  if (header) tl.from(header, { y: -14, opacity: 0, duration: 0.9, ease: 'power3.out', clearProps: MOVE }, t.header);
-  copyMoves(tl, scope, t, 24);
+  if (header) tl.from(header, { y: -14, opacity: 0, duration: b.header.for, ease: 'power3.out', clearProps: MOVE }, b.header.at);
+  copyMoves(tl, scope, b, 24);
 
-  tl.from(q('[data-hero="caption-rule"]'), { scaleX: 0, transformOrigin: 'left center', duration: 0.8, ease: 'power3.inOut', clearProps: 'transform,transformOrigin' }, t.caption);
-  tl.from(q('[data-hero="caption"]'), { y: 10, opacity: 0, duration: 0.9, ease: 'power3.out', clearProps: MOVE }, t.caption + 0.1);
+  tl.from(q('[data-hero="caption-rule"]'), { scaleX: 0, transformOrigin: 'left center', duration: b.captionRule.for, ease: 'power3.inOut', clearProps: 'transform,transformOrigin' }, b.captionRule.at);
+  tl.from(q('[data-hero="caption"]'), { y: 10, opacity: 0, duration: b.caption.for, ease: 'power3.out', clearProps: MOVE }, b.caption.at);
   tl.fromTo(
     q('[data-hero="dots"]'),
     { clipPath: 'inset(-10% 100% -10% -10%)' },
-    { clipPath: 'inset(-10% -10% -10% -10%)', duration: 0.9, ease: 'power2.out', clearProps: 'clipPath' },
-    t.dots,
+    { clipPath: 'inset(-10% -10% -10% -10%)', duration: b.dots.for, ease: 'power2.out', clearProps: 'clipPath' },
+    b.dots.at,
   );
   return [tl];
 }
@@ -163,18 +205,18 @@ function mobileEntrance(root: HTMLElement, cleanups: (() => void)[]): gsap.core.
   if (!scope) return [];
   const copy = gsap.timeline();
   const header = root.querySelector('[data-hero="header-mobile"]');
-  if (header) copy.from(header, { y: -10, opacity: 0, duration: 0.8, ease: 'power3.out', clearProps: MOVE }, HERO_MOBILE_COPY.header);
-  copyMoves(copy, scope, HERO_MOBILE_COPY, 18);
+  if (header) copy.from(header, { y: -10, opacity: 0, duration: HERO_PHONE_COPY.header.for, ease: 'power3.out', clearProps: MOVE }, HERO_PHONE_COPY.header.at);
+  copyMoves(copy, scope, HERO_PHONE_COPY, 18);
 
   const portrait = scope.querySelector<HTMLElement>('[data-hero="portrait"]');
   if (!portrait) return [copy];
-  const t = HERO_MOBILE_PHOTO;
-  const photo = gsap.timeline({ paused: true });
-  photoMoves(photo, portrait, t, 70, 1.2);
+  const b = HERO_PHONE_PHOTO;
+  const photo = gsap.timeline({ paused: true, onComplete: () => breathe(portrait.querySelector('[data-hero="glow"]'), portrait, cleanups) });
+  photoMoves(photo, portrait, b, 70, 1.2);
   const caption = scope.querySelector('[data-hero="caption"]');
-  if (caption) photo.from(caption, { y: 10, opacity: 0, duration: 0.8, ease: 'power3.out', clearProps: MOVE }, t.caption);
+  if (caption) photo.from(caption, { y: 10, opacity: 0, duration: b.caption.for, ease: 'power3.out', clearProps: MOVE }, b.caption.at);
 
-  // Played when the photograph comes into view (after the headline if it's in view at load),
+  // Played when the photograph comes into view (just after the copy if it's in view at load),
   // once it's decoded; shown at once if it was scrolled past first. (Timers, observers and
   // promises that act later aren't tracked by gsap.matchMedia, so they're cleaned up here.)
   const ready = photoReady(portrait);
@@ -188,7 +230,7 @@ function mobileEntrance(root: HTMLElement, cleanups: (() => void)[]): gsap.core.
   const observer = new IntersectionObserver(
     ([entry]) => {
       if (entry.intersectionRatio >= 0.3) {
-        if (atLoad) timer = window.setTimeout(play, t.whenVisibleAtLoad * 1000);
+        if (atLoad) timer = window.setTimeout(play, PHONE_PHOTO_DELAY * 1000);
         else play();
       } else if (entry.boundingClientRect.top < 0) {
         photo.progress(1);

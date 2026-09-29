@@ -425,6 +425,48 @@
   }
 }
 
+/*
+ * The homepage hero after its entrance (src/lib/heroMotion.ts). The gold glow breathes very
+ * slowly: an 8 s cycle, compositor-only, paused off-screen or in a hidden tab
+ * (data-breathing="paused"). On desktop the participants drift and recede a little as the page
+ * scrolls away: a scroll-driven animation (no JavaScript; simply skipped where unsupported) that
+ * is at rest at the top of the page. Both run on inner elements, never on ones GSAP animates. The recede keeps their feet inside the hero's frame, which
+ * drift alone would cut off (they sit 63 px above its bottom edge).
+ */
+@keyframes hero-breathe {
+  to {
+    scale: 1.045;
+    opacity: 0.82;
+  }
+}
+@keyframes hero-drift {
+  to {
+    translate: 0 90px;
+    scale: 0.94;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* On the glow's inner layer: GSAP owns the glow element itself during the entrance. */
+  [data-hero='glow'][data-breathing] > * {
+    animation: hero-breathe 4s ease-in-out infinite alternate;
+  }
+  [data-hero='glow'][data-breathing='paused'] > * {
+    animation-play-state: paused;
+  }
+  /* Attached only once the page has left the top (the sticky header's data-scrolled): any attached
+     scroll animation keeps the image on its own compositor layer, which draws its edges slightly
+     differently, so at rest the hero stays exactly the page without motion. Scroll-linked, so
+     attaching it mid-scroll lands where it would have been anyway. */
+  @supports (animation-timeline: scroll()) {
+    :root:has(header[data-scrolled]) .hero-drift {
+      transform-origin: 50% 0;
+      animation: hero-drift linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 900px;
+    }
+  }
+}
+
 /* …and a 2px lift + arrow nudge only where hover is precise. */
 @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
   .motion-button:not(:disabled):hover {

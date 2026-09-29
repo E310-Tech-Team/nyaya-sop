@@ -196,7 +196,9 @@ export default function LandingPage() {
           {/* Participants. Decorative layers take no pointer events (they reach up under the
               header's area). */}
           <div data-hero="photo" className="pointer-events-none absolute h-[942px] left-[430px] top-[-3px] w-[833px]">
-            <img alt="Two young adults in smart clothes leaping in celebration" fetchPriority="high" className="absolute inset-0 max-w-none object-contain pointer-events-none size-full" src={imgParticipants} />
+            {/* The entrance moves the frame (GSAP); the scroll drift moves the image inside it (CSS), so
+                the two never drive the same element. */}
+            <img alt="Two young adults in smart clothes leaping in celebration" fetchPriority="high" className="hero-drift absolute inset-0 max-w-none object-contain pointer-events-none size-full" src={imgParticipants} />
           </div>
           {/* Circle check */}
           <div data-hero="ring" className="pointer-events-none absolute h-[879px] left-[452px] top-[41px] w-[790px]">

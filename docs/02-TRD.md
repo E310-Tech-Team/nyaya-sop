@@ -1,6 +1,6 @@
 # 02 — Technical Requirements Document (TRD)
 
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-29
 **Architecture:** React single-page app (installable PWA with a service worker) + Fastify API, backed by **PostgreSQL**, with a **background worker** for notifications and clean-up, deployed on a **single VPS** behind Caddy (HTTPS).
 **Origin:** Figma Make export (2026-09-25), rebuilt as a standalone project on 2026-09-26. The Figma Make tooling has been removed.
 
@@ -18,6 +18,7 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md) · [05-Backend-Sch
 | Routing | React Router | 8.4 (declarative mode) | Real URLs per screen ([03](03-App-Flow.md)) |
 | Styling | Tailwind CSS v4 (`@tailwindcss/vite`) | 4.2 | Design tokens in `src/index.css` `@theme` ([04](04-UI-UX-Design-Brief.md)) |
 | Fonts | `@fontsource/anton`, `@fontsource-variable/inter`, `@fontsource-variable/cormorant-garamond` | 5.3 | Self-hosted, bundled by Vite |
+| Animation | `gsap` (core only) | 3.15 | The homepage hero's entrance timeline (`src/lib/heroMotion.ts`), in the first-load bundle so nothing waits on the network (+28.8 KB gzipped). Everything else animates with CSS ([04 §6](04-UI-UX-Design-Brief.md#6-motion)) |
 | Web build | Vite | 8.0 | Output `dist/` with content-hashed assets. `scripts/vite-pwa.ts` builds the service worker after the site |
 | Service worker | Hand-written (`src/sw/sw.ts`), bundled with esbuild | — | Caching policy in `src/sw/routing.ts` (pure, unit-tested). No Workbox |
 | API server | Fastify | 5.12 | `@fastify/static`, `@fastify/helmet` (headers/CSP), `@fastify/rate-limit`, `@fastify/cookie` |
