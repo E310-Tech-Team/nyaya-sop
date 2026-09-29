@@ -1,6 +1,6 @@
 # Agent notes: School of Purpose
 
-Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed.
+Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed. It runs on one VPS, or with the website on Vercel and `/api` forwarded to the VPS (`docs/DEPLOYMENT.md` §C).
 
 ## Before you change things
 
@@ -45,3 +45,10 @@ Expression-of-interest site: React SPA (Vite, installable PWA with a service wor
 - **SQL:** a `$n` parameter used in two places needs an explicit cast in both (`$2::delivery_status`); Postgres deduces one type per parameter. `ON DELETE SET NULL` re-checks table constraints on the child row (see `server/account/delete.ts`).
 - **Time:** store UTC; show and enter times in a named zone (default `Africa/Lagos`, "WAT") with `src/shared/time.ts`.
 - Install/notification copy must stay honest: feature detection decides what's possible, the user agent only picks instructions; never claim to detect installs universally or to force another browser.
+
+### Website on Vercel
+
+- `vercel.json` gives the website the server's security headers, cache rules and SPA fallback (`server/app.ts`): change both together; `server/vercel-config.test.ts` compares them. It uses Vercel's routing phases: long caching sits in `hit` (existing files only, so 404s are never cached), and there the **first** matching rule wins, so never let two rules set the same header on a path (the test rejects it).
+- `middleware.ts` forwards `/api/*` to `API_ORIGIN`. Vercel runs it as an unbundled Node ES module: its relative imports need the `.js` extension (tested).
+- The API trusts `x-edge-client-ip` only with the right `EDGE_PROXY_SECRET` (`server/edge-proxy.ts`, before Fastify logs or rate-limits the request). Never log the secret or put it in a command line.
+- Deploy with the CLI only from a clean export of committed files, never from the working folder (it holds `.env`, local databases and dumps; `.vercelignore` is only a backstop).

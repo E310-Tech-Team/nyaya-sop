@@ -17,6 +17,11 @@ export type AppConfig = {
    * false, true, or addresses/CIDRs/keywords such as "loopback,uniquelocal".
    */
   trustProxy: boolean | string;
+  /**
+   * Shared with the Vercel project when Vercel serves the website and forwards /api here: requests
+   * carrying it may name the visitor's address (server/edge-proxy.ts). Null when not used.
+   */
+  edgeProxySecret: string | null;
   /** Built SPA (vite build output). Served with an index.html fallback when present. */
   staticDir: string;
   runMigrations: boolean;
@@ -174,6 +179,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new ConfigError('APP_SECRET must be at least 32 characters (generate one with: openssl rand -base64 48)');
   }
 
+  const edgeProxySecret = env.EDGE_PROXY_SECRET?.trim() || null;
+  if (edgeProxySecret && edgeProxySecret.length < 32) {
+    throw new ConfigError('EDGE_PROXY_SECRET must be at least 32 characters (generate one with: openssl rand -base64 48)');
+  }
+  if (edgeProxySecret && edgeProxySecret === appSecret) {
+    throw new ConfigError('EDGE_PROXY_SECRET must differ from APP_SECRET: it is shared with the Vercel project');
+  }
+  const proxies = trustProxy(env.TRUST_PROXY);
+  if (edgeProxySecret && proxies === false) {
+    warnings.push('EDGE_PROXY_SECRET has no effect without TRUST_PROXY: set it to the proxy in front of the app (e.g. loopback,uniquelocal)');
+  }
+
   if (env.ADMIN_PASSWORD?.trim()) {
     warnings.push('ADMIN_PASSWORD is no longer used: the CSV export needs a staff account with export permission (see docs/DEPLOYMENT.md)');
   }
@@ -193,7 +210,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           poolMax: int('DB_POOL_MAX', env.DB_POOL_MAX, 10, 1, 100),
         }
       : { driver: 'pglite', dataDir: resolve(env.PGLITE_DATA_DIR?.trim() || '.data/pglite') },
-    trustProxy: trustProxy(env.TRUST_PROXY),
+    trustProxy: proxies,
+    edgeProxySecret,
     staticDir,
     runMigrations: bool('RUN_MIGRATIONS', env.RUN_MIGRATIONS, true),
     rateLimit: {

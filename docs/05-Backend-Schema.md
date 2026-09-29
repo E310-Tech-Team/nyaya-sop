@@ -190,7 +190,7 @@ Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_
 
 ## 3. API
 
-JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors: `{ "code", "message", "fieldErrors"? }`. **Every state-changing request** from a signed-in area needs the `X-CSRF-Token` header and an allowed `Origin`; public POSTs check `Origin`. Rate limits are per visitor IP.
+JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors: `{ "code", "message", "fieldErrors"? }`. **Every state-changing request** from a signed-in area needs the `X-CSRF-Token` header and an allowed `Origin`; public POSTs check `Origin`. Rate limits are per visitor IP: the address from `X-Forwarded-For` as set by a trusted proxy (`TRUST_PROXY`). When the website is on Vercel ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), its middleware adds `x-edge-client-ip` and `x-edge-proxy-secret`; with the right secret (`EDGE_PROXY_SECRET`) that address is used, and such responses leave `X-App-Build` to Vercel, which adds its own release. Both headers are removed from every request before anything else sees them.
 
 ### Public
 

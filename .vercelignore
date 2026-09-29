@@ -1,0 +1,15 @@
+# What a CLI deploy (vercel deploy) must never upload from a working copy: local secrets and
+# data, dumps and archives, build output and dependencies. Git deploys only see committed files.
+.env
+.env.*
+.data/
+backups/
+*.dump
+*.gz
+*.zip
+dist/
+server-dist/
+node_modules/
+.pnpm-store/
+design/*-figma.png
+.claude/

@@ -62,6 +62,19 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ TRUST_PROXY: '1' })).toThrow(/hop count/);
   });
 
+  it('checks the secret shared with the website on Vercel', () => {
+    const secret = 'edge-proxy-secret-0123456789abcdefghijkl';
+    expect(loadConfig(PRODUCTION).edgeProxySecret).toBeNull();
+    expect(loadConfig({ ...PRODUCTION, TRUST_PROXY: 'loopback,uniquelocal', EDGE_PROXY_SECRET: ` ${secret} ` })).toMatchObject({
+      edgeProxySecret: secret,
+      warnings: [],
+    });
+    expect(() => loadConfig({ ...PRODUCTION, EDGE_PROXY_SECRET: 'too-short' })).toThrow(/at least 32/);
+    expect(() => loadConfig({ ...PRODUCTION, EDGE_PROXY_SECRET: PRODUCTION.APP_SECRET })).toThrow(/differ from APP_SECRET/);
+    // Without a trusted proxy the forwarded address can't be used, so say so.
+    expect(loadConfig({ ...PRODUCTION, EDGE_PROXY_SECRET: secret }).warnings[0]).toMatch(/TRUST_PROXY/);
+  });
+
   it('rejects unsafe or malformed values', () => {
     expect(() => loadConfig({ PORT: 'eighty' })).toThrow(/PORT/);
     expect(() => loadConfig({ DATABASE_URL: 'mysql://x' })).toThrow(/postgres/);

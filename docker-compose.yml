@@ -15,7 +15,8 @@ x-logging: &logging
 x-build: &build
   context: .
   args:
-    SITE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+    # The public website address: https://DOMAIN, unless the website is served elsewhere (SITE_URL, e.g. Vercel).
+    SITE_URL: ${SITE_URL:-https://${DOMAIN:?Set DOMAIN in .env}}
     VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
     # Optional release id shown in the admin area (e.g. the git commit); a timestamp otherwise.
     BUILD_ID: ${BUILD_ID:-}
@@ -31,7 +32,7 @@ x-app-env: &app-env
   PGDATABASE: ${POSTGRES_DB:-sop}
   PGUSER: ${POSTGRES_USER:-sop}
   PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-  SITE_URL: https://${DOMAIN}
+  SITE_URL: ${SITE_URL:-https://${DOMAIN}}
   APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env (openssl rand -base64 48)}
   # Email (optional). Without it, applicant sign-in and emailed staff invitations stay switched off.
   SMTP_URL: ${SMTP_URL:-}
@@ -76,6 +77,9 @@ services:
       PORT: "3000"
       # Caddy's container address is on the private Docker network.
       TRUST_PROXY: loopback,uniquelocal
+      # Only when Vercel serves the website and forwards /api here (docs/DEPLOYMENT.md "C"): the
+      # secret shared with the Vercel project, so visitors keep their own rate limits.
+      EDGE_PROXY_SECRET: ${EDGE_PROXY_SECRET:-}
       RATE_LIMIT_SUBMIT_MAX: ${RATE_LIMIT_SUBMIT_MAX:-20}
       RATE_LIMIT_SUBMIT_WINDOW_MINUTES: ${RATE_LIMIT_SUBMIT_WINDOW_MINUTES:-10}
       # Background jobs run in the worker service below.

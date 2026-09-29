@@ -10,7 +10,7 @@ The expression-of-interest website for the **RCCG Young Adults & Youth School of
 - **Website:** React 19 + React Router, Tailwind CSS v4, built with Vite
 - **API:** Fastify 5 (Node 22) serving the built website and `/api/*`
 - **Database:** PostgreSQL 17 (embedded PGlite for local development and tests)
-- **Hosting:** one VPS: Docker Compose with Caddy for automatic HTTPS (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
+- **Hosting:** one VPS: Docker Compose with Caddy for automatic HTTPS; or the website on Vercel with `/api` forwarded to the VPS (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
 
 ## Quick start (local development)
 
@@ -62,6 +62,7 @@ deploy/              One-command VPS installer, Caddyfile, backup script, system
 docs/                Product & technical docs (PRD, TRD, flows, design, schema, plan, deployment)
 design/              brand/: logo masters, palette and usage rules; the Figma prototype's reference render
 Dockerfile, docker-compose.yml, .env.example
+vercel.json, middleware.ts   The website on Vercel: headers, caching, SPA fallback; /api forwarded to the VPS
 ```
 
 ## Deploying
@@ -74,6 +75,8 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. In short, on an Ubuntu VPS (as
 
 It installs Docker, generates the secrets on the server, builds and starts Caddy (HTTPS), the app, the worker and Postgres, creates the first owner and schedules backups. Run it again after `git pull` to update.
 
+To serve the website from Vercel instead (the VPS keeps the API, worker and database), see [DEPLOYMENT §C](docs/DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps).
+
 ## Documentation
 
 | Doc | Contents |
@@ -84,4 +87,4 @@ It installs Docker, generates the secrets on the server, builds and starts Caddy
 | [04-UI-UX-Design-Brief](docs/04-UI-UX-Design-Brief.md) | Design tokens, typography, components, accessibility |
 | [05-Backend-Schema](docs/05-Backend-Schema.md) | Database schema and API reference |
 | [06-Implementation-Plan](docs/06-Implementation-Plan.md) | What's built, what's next, decisions log |
-| [DEPLOYMENT](docs/DEPLOYMENT.md) | VPS runbook, backups, operating the site |
+| [DEPLOYMENT](docs/DEPLOYMENT.md) | VPS runbook, website on Vercel, backups, operating the site |
