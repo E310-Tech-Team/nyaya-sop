@@ -65,6 +65,7 @@ flowchart TB
 ```
 
 - **One origin:** the site, the API and the service worker share a domain. No CORS; `connect-src 'self'`; the service worker's scope is `/`.
+- **Or the website on Vercel** ([DEPLOYMENT.md §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)): Vercel serves `dist/` with the same headers ([`vercel.json`](../vercel.json)) and its middleware ([`middleware.ts`](../middleware.ts)) forwards `/api/*` to the VPS (Caddy → app, worker and Postgres unchanged). The browser still sees one origin. The middleware adds the visitor's address and a shared secret (`EDGE_PROXY_SECRET`), so the API rate-limits and logs each visitor ([`server/edge-proxy.ts`](../server/edge-proxy.ts)), and stamps Vercel's release id on API responses. [`server/vercel-config.test.ts`](../server/vercel-config.test.ts) keeps `vercel.json`'s security headers, caching and SPA fallback in step with the server.
 - **Shared domain code:** [`src/shared/`](../src/shared/) holds option lists, validation, permissions, notification topics, the link allowlist and time-zone maths. The browser, the service worker and the server all import it.
 - **Background work** runs from a PostgreSQL job queue ([05 §4](05-Backend-Schema.md)), inside the web process (`WORKER_MODE=inline`, the default) or as a separate process (`WORKER_MODE=off` on the web server + `node server-dist/worker.js`; Docker Compose does this).
 - **SPA fallback:** extension-less `GET` paths outside `/api` get `index.html` (with `X-Robots-Tag: noindex` under `/admin` and `/account`); missing asset files get a real 404.
@@ -159,6 +160,7 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 | `DATABASE_URL` or `PG*` | — (dev: PGlite) | PostgreSQL connection |
 | `DATABASE_SSL`, `DB_POOL_MAX` | false, 10 | Managed-DB TLS; pool size |
 | `TRUST_PROXY` | false | Proxy addresses allowed to set `X-Forwarded-For` (`loopback`, `loopback,uniquelocal`). Hop counts are rejected |
+| `EDGE_PROXY_SECRET` | — | Website on Vercel only: shared with the Vercel project (≥ 32 characters, not `APP_SECRET`). Requests carrying it may name the visitor's address (`x-edge-client-ip`); needs `TRUST_PROXY` |
 | `SMTP_URL`, `EMAIL_FROM` | — | Email. Without them, production email is **off** (sign-in by email disabled, never faked) |
 | `EMAIL_TRANSPORT` | smtp if `SMTP_URL`, else none (production) / outbox (development) | `outbox` is a local test adapter, refused in production |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | — | Web Push. Both keys or neither; subject `mailto:` or `https:`. Without keys, push is off |
@@ -170,7 +172,8 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 | `RATE_LIMIT_SUBMIT_MAX` / `…_WINDOW_MINUTES` | 20 / 10 | Submissions per visitor address |
 | `RUN_MIGRATIONS`, `LOG_LEVEL` | true, info | |
 | `VITE_CONTACT_EMAIL` *(build)* | — | Shows "Contact" links and the contact line |
-| `BUILD_ID`, `SW_KILL_SWITCH` *(build)* | timestamp, off | Release id; emergency service-worker rollback |
+| `BUILD_ID`, `SW_KILL_SWITCH` *(build)* | timestamp (on Vercel: the commit), off | Release id; emergency service-worker rollback |
+| `API_ORIGIN`, `EDGE_PROXY_SECRET` *(Vercel project)* | — | Website on Vercel: the VPS's `https://` origin that `/api/*` goes to, and the same secret as the VPS. Until both are set, `/api` answers 503. `ENABLE_EXPERIMENTAL_COREPACK=1` makes Vercel's build use the pinned pnpm |
 | `API_PORT`, `PGLITE_DATA_DIR` *(dev)* | 3000, `.data/pglite` | |
 
 `ADMIN_USERNAME`/`ADMIN_PASSWORD` (the old Basic-auth CSV export) are no longer used; if set, the server logs a warning. The old CSV address now redirects signed-in staff with export permission to the audited export.
@@ -182,6 +185,7 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 | Host | **Single VPS** (Linode or similar), Ubuntu 24.04 |
 | Recommended | **Docker Compose** ([`docker-compose.yml`](../docker-compose.yml)): `caddy:2-alpine` → app → `postgres:17-alpine` (volume), plus a **worker** container from the same image. App and worker containers are read-only, non-root, `no-new-privileges`; the app is health-checked and the worker waits for it (migrations) |
 | Alternative | Bare metal: Node 22 + apt Postgres 17 + Nginx + certbot + systemd, with the worker inline ([`deploy/`](../deploy/)) |
+| Website on Vercel | Optional split: Vercel serves the website and forwards `/api/*` to the VPS, which keeps the API, worker and database. `SITE_URL` on the VPS is then the Vercel address ([DEPLOYMENT.md §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)) |
 | HTTPS | Required for the service worker, push, secure cookies and install prompts. Caddy automatic certificates (or certbot); HTTP → HTTPS redirect |
 | Backups | [`deploy/backup.sh`](../deploy/backup.sh) nightly `pg_dump` + off-site copies. Back up `.env` separately (it holds `APP_SECRET` and the VAPID private key) |
 | CI | GitHub Actions: typecheck, tests, build, Docker image build |

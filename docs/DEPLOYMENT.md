@@ -1,6 +1,6 @@
 # Deployment and operations runbook: VPS (Linode or similar)
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-29
 
 This deploys the whole site (website + installable app + API + background worker + PostgreSQL) to **one Linux VPS**. There are two options:
 
@@ -10,6 +10,8 @@ This deploys the whole site (website + installable app + API + background worker
 | HTTPS | Automatic (Caddy / Let's Encrypt) | certbot |
 | Updating | `git pull && docker compose up -d --build` | `git pull && pnpm install && pnpm build && systemctl restart` |
 | Best for | Most setups; reproducible | Servers where Docker isn't allowed |
+
+**C. Website on Vercel, API on the VPS** ([below](#c-website-on-vercel-api-on-the-vps)) splits it: Vercel serves the website and installable app, and forwards `/api` to a VPS set up with A or B, which keeps the API, worker and database.
 
 Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend-Schema.md) (database, API, retention) · [`.env.example`](../.env.example) (every setting)
 
@@ -35,7 +37,7 @@ Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend
 On a fresh Ubuntu 24.04 / Debian 12 VPS (e.g. a Hostinger KVM plan), as root:
 
 ```bash
-# 1. The repository is private: give this server a read-only deploy key
+# 1. If the repository is private, give this server a read-only deploy key (a public one clones over HTTPS)
 ssh-keygen -t ed25519 -N "" -f ~/.ssh/sop_deploy -C sop-vps && cat ~/.ssh/sop_deploy.pub
 #    → GitHub: E310-Tech-Team/nyaya-sop → Settings → Deploy keys → Add (leave "write access" off)
 
@@ -207,6 +209,81 @@ First admin: `sudo -u sop node server-dist/admin.js create-owner --email … --n
 
 ---
 
+## C. Website on Vercel, API on the VPS
+
+Vercel serves the website and installable app; the VPS (set up with A or B) keeps the API, background worker and database. People only ever use the Vercel address: Vercel's middleware ([`middleware.ts`](../middleware.ts)) forwards `/api/*` to the VPS, so the browser talks to one origin, sign-in cookies stay first-party and there is no CORS.
+
+```mermaid
+flowchart LR
+    Browser["Browser / installed app"] -->|pages and files| CDN["Vercel: dist/ + vercel.json headers"]
+    Browser -->|/api/*| MW["Vercel middleware"]
+    MW -->|"+ visitor's address, shared secret"| VPS["VPS: Caddy → app"]
+    VPS --> PG[("PostgreSQL")]
+    Worker["worker"] --> PG
+```
+
+What stays the same as a single VPS:
+
+- **Headers, caching, deep links:** [`vercel.json`](../vercel.json) sends the server's security headers (CSP, HSTS, frame and referrer policy…), its cache rules (`no-cache` for pages, `sw.js`, the manifest and `offline.html`; a year for `/assets/`, only for files that exist, so a 404 is never cached) and the `index.html` fallback. [`server/vercel-config.test.ts`](../server/vercel-config.test.ts) fails if the two drift apart: change both together. It uses Vercel's routing phases (`routes` with `handle: filesystem` and `hit`); in `hit` the *first* matching rule wins, so no two rules may set the same header (the test checks). Vercel also adds `Access-Control-Allow-Origin: *` to static files (all public); API responses don't get it.
+- **Rate limits per visitor:** the VPS would otherwise see only Vercel's addresses. The middleware passes on each visitor's address with a secret shared by both sides (`EDGE_PROXY_SECRET`); the API believes the address only with the right secret ([`server/edge-proxy.ts`](../server/edge-proxy.ts)).
+- **Update offers:** API responses through Vercel carry the Vercel release (the commit), so open pages offer "Update" after each website deploy, whatever release the VPS runs.
+
+### C1. The VPS (API, worker, database)
+
+1. Set it up with A (or B) under its own name, e.g. `api.yourchurch.org` (or the Hostinger `srvNNNNNN.hstgr.cloud` name). `DOMAIN` stays that name: Caddy's certificate is for it.
+2. Add to `.env`:
+   ```bash
+   SITE_URL=https://your-project.vercel.app    # the website's address (or its own domain on Vercel)
+   EDGE_PROXY_SECRET=                          # openssl rand -base64 48; the same value goes into Vercel (C2)
+   ```
+   `SITE_URL` is where people use the site: email links point there, and the API accepts changes only from pages there.
+3. `docker compose up -d --build` (bare metal: keep `TRUST_PROXY=loopback`, then restart).
+4. `curl -s https://api.yourchurch.org/api/health` → `{"status":"ok","database":"ok"}`.
+
+### C2. The Vercel project
+
+1. **Add New → Project** and import the GitHub repository (or deploy a clean checkout with the CLI: `vercel deploy --prod`). `vercel.json` sets the build: `pnpm run build:web`, output `dist/`.
+2. **Settings → Environment Variables**, for Production:
+
+   | Name | Value |
+   |---|---|
+   | `API_ORIGIN` | the VPS, e.g. `https://api.yourchurch.org` (https, no path) |
+   | `EDGE_PROXY_SECRET` | the same value as the VPS's `.env` (mark it Sensitive) |
+   | `ENABLE_EXPERIMENTAL_COREPACK` | `1`: the build then uses the pnpm version pinned in `package.json` |
+   | `VITE_CONTACT_EMAIL` | optional, as on the VPS |
+
+   `SITE_URL` isn't needed here: the build uses the project's production address for social cards. The release id is the commit (`BUILD_ID` overrides it).
+3. **Redeploy** after changing variables (Deployments → ⋯ → Redeploy): a deployment keeps the values it was built with.
+4. Keep `API_ORIGIN` and `EDGE_PROXY_SECRET` on Production only. Preview deployments then answer `/api` with 503 and never touch real data (and the API refuses changes from any address but `SITE_URL` anyway).
+
+Until both variables are set, the website works and every `/api` call answers `503` with "This service is temporarily unavailable", which forms show; nothing pretends to have been sent.
+
+### C3. Check
+
+```bash
+SITE=https://your-project.vercel.app
+curl -s $SITE/api/health                                  # {"status":"ok","database":"ok"}; 503 SERVICE_UNAVAILABLE = C2 not done
+curl -sI $SITE/api/health | grep -i x-app-build           # the Vercel release (the commit)
+curl -sI $SITE/sw.js | grep -i -E "cache-control|service-worker-allowed"   # no-cache, /
+curl -sI $SITE/apply | grep -i -E "content-security-policy|cache-control"
+```
+
+Then A6's browser checks on the Vercel address: a test application, `/admin` sign-in (**Settings → Integrations and health** shows the Vercel site address, and one release id when both sides run the same commit), a test notification, then delete the test application. `docker compose logs app` shows visitors' addresses; the warning "edge proxy secret did not match" means the two secrets differ.
+
+### C4. Updating
+
+- **Website:** Vercel builds every push (production from `main`, previews from other branches). **API:** A8 on the VPS, as before (migrations run there).
+- A website change that needs a new API (a new endpoint or field): update the VPS first, then merge the website.
+- Service worker rollback: set `SW_KILL_SWITCH=1` in Vercel's environment variables and redeploy; remove it and redeploy after a few days ([below](#service-worker-rollback)).
+
+### C5. Good to know
+
+- The VPS's own address still serves a copy of the website, but its forms don't work there (the API only accepts changes from `SITE_URL`). Share only the Vercel address.
+- Vercel's Hobby plan is for personal, non-commercial use, and deploying an organisation's private repository needs Pro; check the current terms fit.
+- A CLI deploy uploads the folder it runs in. [`.vercelignore`](../.vercelignore) keeps `.env`, local databases, dumps and archives out, but a clean checkout is safer.
+
+---
+
 ## Operating the site
 
 ### The admin area
@@ -277,7 +354,7 @@ They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, ea
 If a release's service worker misbehaves (e.g. serves a broken page offline):
 
 1. **Normal fix:** deploy a corrected release. Browsers fetch `sw.js` without caching and offer the update.
-2. **Emergency kill switch:** `SW_KILL_SWITCH=1 docker compose up -d --build`. That release's page removes any service worker registration, and its `sw.js` deletes every School of Purpose cache and unregisters itself on the next update check (at the latest when the site is next opened). The site keeps working without offline support.
+2. **Emergency kill switch:** `SW_KILL_SWITCH=1 docker compose up -d --build` (website on Vercel: the variable in Vercel's settings, then redeploy). That release's page removes any service worker registration, and its `sw.js` deletes every School of Purpose cache and unregisters itself on the next update check (at the latest when the site is next opened). The site keeps working without offline support.
 3. After a few days (once people have opened the site), deploy a normal build again (`SW_KILL_SWITCH=` empty) to restore offline support.
 
 Never serve `sw.js` with long cache headers; the app sends `Cache-Control: no-cache` for it (and for `index.html`, the manifest and `offline.html`).

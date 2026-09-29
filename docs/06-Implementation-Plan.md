@@ -1,7 +1,7 @@
 # 06 — Implementation Plan
 
 **Last updated:** 2026-09-29
-**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) is in progress; 10 (photography) waits for permission. 269 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** choose an email provider and generate VAPID keys, deploy to the VPS with a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) and **15 (website on Vercel, API on the VPS)** are in progress; 10 (photography) waits for permission. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 289 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
 
 Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
 
@@ -20,7 +20,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | Applicants after applying | ✅ Optional account (email link): published status, messages, notification settings, devices, sessions, delete · ⏳ needs an email provider to switch on |
 | Installable app + offline | ✅ Manifest, icons, service worker (offline public pages, private pages never cached), update prompt, install guidance per device · ⏳ real-device checks |
 | Notifications | ✅ Web Push by topic with consent history, campaigns via a Postgres job queue and worker, neutral application-update alerts, in-app inbox · ⏳ needs VAPID keys; real-device checks |
-| Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ⏳ not yet deployed to the VPS |
+| Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ✅ website on Vercel (`vercel.json` + `/api` middleware, Phase 15) · ⏳ the VPS isn't deployed yet, so the Vercel site's `/api` answers 503 |
 | Launch content | ⏳ Privacy notice, domain, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)) |
 | Brand | ✅ Official lockup in every header, menu, footer and the admin area; brand palette; favicons, app icons and social card from the brand mark ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
 | Photography | ⏳ Prototype stock/AI photos still in place; authentic NYAYA (RISE) photos shortlisted, **awaiting permission** ([IMAGERY.md](IMAGERY.md)); hero images fixed |
@@ -104,7 +104,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 7.3 | Reduced motion | Done |
 | 7.4 | Working nav / "See how it works" | Done |
 | 7.5 | Analytics | Done: proportionate, anonymous first-party events only ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)); UTM attribution captured with applications |
-| 7.6 | Tests | Done: 264 Vitest tests in 14 files (unit, API/DB, auth, admin, push, jobs, service-worker policy, time zones, platform detection) + scripted Chrome checks · *Planned:* committed Playwright E2E, Lighthouse CI |
+| 7.6 | Tests | Done: 289 Vitest tests in 18 files (unit, API/DB, auth, admin, push, jobs, service-worker policy, time zones, platform detection) + scripted Chrome checks · *Planned:* committed Playwright E2E, Lighthouse CI |
 | 7.7 | SEO | Done: indexable, OG image, favicons (set `SITE_URL`) |
 | 7.8 | Deployment artifacts | Done: Dockerfile, Compose + Caddy, backups, systemd/Nginx alternative, runbook |
 | 7.9 | Verify the Docker image and stack | Done (2026-09-26): built and run locally against real PostgreSQL 17 through Caddy HTTPS; submissions, CSV export, backup/restore and graceful shutdown verified; re-verified the same day with the worker service, migrations 0003–0005 over existing data, owner bootstrap in the container and staff sign-in with two-step verification |
@@ -202,6 +202,20 @@ The first step of the animation work (branch `feat/animation`). The rest of the 
 | 14.3 | Extras | Done: the glow breathes after the entrance (CSS, paused off-screen); on desktop the participants drift and recede as the page scrolls away (CSS scroll-driven, attached only once scrolled, feet always inside the frame) |
 | 14.4 | Verification | Done: `pnpm check` (269 tests); settled hero equals the page without motion pixel for pixel at 390–1920 px and every other page matches the previous build; entrance 0 dropped frames; LCP 676 ms (390 px, 4× CPU) and 64 ms (1440 px); first-load JS +28.8 KB gzipped. **Not yet:** real phones, Safari (automation not enabled), Firefox (no scroll-driven animations: no drift there, by design) |
 
+### Phase 15: Website on Vercel, API on the VPS (**In progress**, 2026-09-29)
+
+Vercel (the owner's personal team "Zacchaeus' projects", project `school-of-purpose`) serves the website; the VPS keeps the API, worker and database ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps), D-26).
+
+| # | Task | Status |
+|---|---|---|
+| 15.1 | `vercel.json`: build (`pnpm run build:web`, pinned pnpm through Corepack), the server's security headers, cache rules and SPA fallback | Done: Vercel routing phases, so long caching applies only to existing files (404s uncached, like the server). `server/vercel-config.test.ts` compares every header and cache rule with the server and rejects two rules setting one header |
+| 15.2 | `/api` → VPS | Done: `middleware.ts` (Vercel Routing Middleware, Node.js) forwards to `API_ORIGIN` with the visitor's address and `EDGE_PROXY_SECRET`; 503 in the API's error format until both are set |
+| 15.3 | Per-visitor rate limits and logs behind Vercel | Done: `server/edge-proxy.ts` checks the secret (constant time) before Fastify logs the request or works out its address, and always removes both headers; `EDGE_PROXY_SECRET` config checks; `SITE_URL` can differ from `DOMAIN` in Compose |
+| 15.4 | Release ids | Done: Vercel builds are named after the commit; API responses through Vercel carry Vercel's release (the VPS leaves its own out), so update offers follow website deploys; Settings shows both ids when they differ |
+| 15.5 | Deploy | Done: production at https://school-of-purpose-two.vercel.app (`school-of-purpose.vercel.app` was taken), deployed with the CLI from a clean export of this branch. Checked live: headers and caching for every kind of path equal the server's, deep links, 404s, `/api` 503; headless Chrome shows no CSP violations or errors and the service worker installs |
+| 15.6 | Connect the VPS | Not started: needs the VPS (7.10). Then `API_ORIGIN` in Vercel, `SITE_URL` + `EDGE_PROXY_SECRET` on the VPS (the secret is in the gitignored `.env.edge-proxy` on the machine that set up Vercel), and DEPLOYMENT §C3's checks |
+| 15.7 | Git deploys | Not started: connect the GitHub repository in Vercel once this work is merged (so `main` has `vercel.json` and the middleware); until then deploys are made with the CLI |
+
 ## Content needed from the Programme team
 
 The UX pass only uses facts already in the site copy. These need an owner's answer before they can be added:
@@ -231,7 +245,7 @@ The UX pass only uses facts already in the site copy. These need an owner's answ
 
 1. **Content decisions:** privacy notice wording (Q9), retention periods (Q11, C17), contact email (Q12), email provider (C14), staff roles (C16), confirm "SOP"/org naming (Q8) and the state list (Q4), plus C3–C6.
 2. **Deploy a staging origin** (e.g. `staging.<domain>` with its own database and VAPID keys) and run the device tests in [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing): iPhone/iPad (Home Screen install + push), Android (Chrome, Samsung Internet), Safari on Mac, Firefox, Edge.
-3. **Deploy production:** create the VPS, point DNS, then run `deploy/install.sh` ([DEPLOYMENT: Quick install](DEPLOYMENT.md#quick-install-one-command): it generates `APP_SECRET` and the VAPID keys on the server and creates the first owner) or follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended); add `SMTP_URL`/`EMAIL_FROM`, back up `.env`, run the production checklist.
+3. **Deploy production:** create the VPS, point DNS, then run `deploy/install.sh` ([DEPLOYMENT: Quick install](DEPLOYMENT.md#quick-install-one-command): it generates `APP_SECRET` and the VAPID keys on the server and creates the first owner) or follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended); add `SMTP_URL`/`EMAIL_FROM`, back up `.env`, run the production checklist. With the website on Vercel (Phase 15), give the VPS its own API name and connect the two ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)).
 4. **Before announcing:** submit and delete a test application, set up nightly backups + off-site copies, add an uptime monitor, invite staff.
 5. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
 
@@ -256,6 +270,8 @@ flowchart LR
     P9 --> P13[Phase 13 ✓<br/>brand identity]
     P12 --> P13
     P13 --> P14[Phase 14 ✓<br/>hero entrance]
+    P12 --> P15[Phase 15<br/>website on Vercel · API on the VPS]
+    P15 -.-> P7
     DEV --> P7
 ```
 
@@ -290,6 +306,7 @@ flowchart LR
 | D-23 | 2026-09-28 | The brand guideline's palette replaces the prototype's colours site-wide (tokens and arbitrary values). The hero photo and artwork files stay untouched | Decided (brand guideline) |
 | D-24 | 2026-09-28 | Logos are the supplied raster artwork resized by `scripts/brand-assets.py` (Python + Pillow, outputs committed), never redrawn or traced; emails keep a text header, with no remote logo that would reveal when a sign-in email is opened | Decided |
 | D-25 | 2026-09-29 | The homepage hero's entrance is a GSAP (core) timeline, in the first-load bundle so nothing waits; every other screen keeps the CSS system. An element is animated by GSAP or CSS, never both. The glow's breathing and the desktop scroll drift are the only sanctioned loop and scroll-linked motion | Decided (user: "a real, visible animation"; extras approved) |
+| D-26 | 2026-09-29 | The website may be served by Vercel with the API, worker and database staying on the VPS (the owner's choice, "Site + VPS API"). `/api` goes through Vercel Routing Middleware rather than a `vercel.json` rewrite, so it can pass on the visitor's address with a shared secret that the VPS checks; one origin for the browser, the VPS stays the only place for data, jobs and secrets | Decided |
 
 ## Doc maintenance
 

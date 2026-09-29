@@ -22,6 +22,7 @@ import { staffAuthRoutes } from './auth/staff-routes';
 import { hasStaticBuild, type AppConfig } from './config';
 import { Secrets } from './crypto';
 import type { Db } from './db';
+import { cameViaEdgeProxy, edgeProxyCheck } from './edge-proxy';
 import { createEmailTransport, type EmailTransport } from './email';
 import { sendError } from './http';
 import { publicRoutes } from './public';
@@ -49,7 +50,8 @@ export function createServices(
   return { config, db, secrets: new Secrets(config.appSecret), email: overrides.email ?? createEmailTransport(config), push };
 }
 
-function cacheControlFor(filePath: string): string {
+/** Also the rules vercel.json gives the same files (server/vercel-config.test.ts). */
+export function cacheControlFor(filePath: string): string {
   const name = basename(filePath);
   // The service worker, manifest, offline page and build id must be re-checked every time,
   // so updates (and emergency rollbacks) reach everyone quickly.
@@ -72,6 +74,7 @@ export async function buildApp({
   logStream?: { write(line: string): void };
 }): Promise<FastifyInstance> {
   const services = provided ?? createServices(config, db);
+  const checkEdgeProxy = edgeProxyCheck(config.edgeProxySecret);
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -79,6 +82,11 @@ export async function buildApp({
       ...(logStream ? { stream: logStream } : {}),
     },
     trustProxy: config.trustProxy,
+    // Runs before Fastify logs a request or works out its address (server/edge-proxy.ts).
+    rewriteUrl(req) {
+      checkEdgeProxy(req, this.log);
+      return req.url ?? '/';
+    },
     bodyLimit: 16 * 1024,
     genReqId: () => randomUUID(),
     // Log API requests only (never their bodies: they contain personal data). Static files would
@@ -126,8 +134,9 @@ export async function buildApp({
   app.addHook('onSend', async (request, reply, payload) => {
     if (request.url.startsWith('/api/')) {
       if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
-      // Lets an out-of-date app notice a new release and offer to update.
-      reply.header('x-app-build', config.buildId);
+      // Lets an out-of-date app notice a new release and offer to update. When Vercel serves the
+      // website, the page belongs to Vercel's release, which the edge proxy adds instead.
+      if (!cameViaEdgeProxy(request)) reply.header('x-app-build', config.buildId);
     }
     return payload;
   });

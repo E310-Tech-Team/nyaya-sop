@@ -21,6 +21,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "server", "scripts/vite-pwa.ts", "vite.config.ts", "vitest.config.ts"],
+  "include": ["src", "server", "scripts/vite-pwa.ts", "vite.config.ts", "vitest.config.ts", "middleware.ts", "middleware.test.ts"],
   "exclude": ["src/sw/sw.ts"]
 }

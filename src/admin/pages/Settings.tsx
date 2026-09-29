@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader, Panel, errorMessage, when } from '../../components/ui';
+import { APP_BUILD } from '../../lib/pwa';
 import { useAsync } from '../../lib/useAsync';
 import { adminApi, type Health, type Settings } from '../api';
 
@@ -34,7 +35,8 @@ function HealthPanel({ health }: { health: Health }) {
     ['Job queue', `${health.queue.pending} waiting, ${health.queue.running} running, ${health.queue.failedLast7Days} failed in the last 7 days`],
     ['Site address', health.siteOrigin ?? 'Not set (development)'],
     ['Two-step verification', health.mfaRequired ? 'Required for all staff' : 'Optional (development setting)'],
-    ['Release', health.buildId],
+    // The website and the API can be released separately (the website on Vercel): show both when they differ.
+    ['Release', health.buildId === APP_BUILD ? health.buildId : `Server ${health.buildId} · this page ${APP_BUILD}`],
   ];
   return (
     <Panel title="Integrations and health" description="Status only: secret values are never shown here.">
