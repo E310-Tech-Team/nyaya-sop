@@ -1,6 +1,6 @@
 # 04 — UI/UX Design Brief
 
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-29
 **Brand source:** the brand guideline "School of Purpose 4.pdf" (logo lockups, rationale, palette), with the logo masters in [`design/brand/`](../design/brand/README.md) (§2).
 **Design source:** Figma Make project "Prototype Design". Compressed render of the desktop landing page: [`design/landing-reference.webp`](../design/landing-reference.webp). The 15 MB original, `design/landing-reference-figma.png`, is kept locally and git-ignored.
 **Implementation:** design tokens in [`src/index.css`](../src/index.css) `@theme` (colour, type) and `:root` (motion). The application screens use the shared components in `src/components/`. The homepage hero and the reused editorial sections (Vision & Mission, Doctrine, Blueprint, the Journey cascade) still use the Figma export's arbitrary values; the newer sections and the shared marketing chrome ([`src/components/marketing/`](../src/components/marketing/)) use the tokens. Programme wording shared across screens lives in [`src/config/programme.ts`](../src/config/programme.ts).
@@ -189,9 +189,9 @@ Consent uses a native checkbox styled as the original custom box; it is never pr
 
 **Feel:** elegant, confident and youthful, the quality bar of a flagship product launch without copying one. Choreography carries the hierarchy: overlapping entrances with precise timing, a quick start with a long soft landing, subtle depth in the existing photography, immediate interaction feedback, and generous stillness in between. The most expressive moments are the **hero**, the **Biblical Blueprint** deck and the **Participant Journey**; supporting sections are quieter, and no single fade-up is applied to everything.
 
-**Implementation:** CSS keyframes/transitions plus one hook ([`src/lib/motion.ts`](../src/lib/motion.ts): `useScrollReveal`, `animateDisclosure`), no animation library. Only `opacity`, the individual `translate`/`scale` properties (which compose with existing transforms such as the rotated Blueprint cards) and, for journey route lines, `clip-path` animate, plus the FAQ panel's height (the interaction itself). No `transition-all`, permanent `will-change`, blur, filters, loops (except the submit spinner while busy), scroll hijacking, pinning, cursor effects, bouncing or typewriter text.
+**Implementation:** CSS keyframes/transitions plus one hook ([`src/lib/motion.ts`](../src/lib/motion.ts): `useScrollReveal`, `animateDisclosure`) for every screen, except the **homepage hero**, which is one GSAP timeline (`gsap` core, [`src/lib/heroMotion.ts`](../src/lib/heroMotion.ts); see *Homepage hero* below). Only `opacity`, the individual `translate`/`scale` properties (which compose with existing transforms such as the rotated Blueprint cards) and, for journey route lines and the hero's masks and dots, `clip-path` animate, plus the FAQ panel's height (the interaction itself). **One owner per element:** an element is animated by GSAP or by CSS, never both (the hero's CSS extras run on inner elements). No `transition-all`, permanent `will-change`, blur, filters, scroll hijacking, pinning, cursor effects, bouncing or typewriter text. The only loops are the submit spinner while busy and the hero glow's breathing; the only scroll-linked motion is the hero participants' drift on desktop.
 
-**Settled UI is unchanged by motion:** every one-shot entrance ends on the element's own resting style. Verified with deterministic headless captures (8 screens × 7 widths): after the motion upgrade all 56 settled captures were **pixel-identical** to the pre-upgrade baseline (the only later changes are the intentional hero redesign; everything below it and every application screen still matches).
+**Settled UI is unchanged by motion:** every one-shot entrance ends on the element's own resting style. Verified with deterministic headless captures (8 screens × 7 widths): after the motion upgrade all 56 settled captures were **pixel-identical** to the pre-upgrade baseline (the only later changes are the intentional hero redesign; everything below it and every application screen still matches). The GSAP hero goes further: it clears its inline styles as each move lands, so its settled state equals the page *without* motion pixel for pixel (2026-09-29, 5 widths). CSS entrances that hold their last frame (`fill-mode: both`, the photos' depth settle) keep those elements on their own compositor layers, so photo edges and some text render a few levels differently from the reduced-motion page (About, Apply, Install, Journey, Programme; the old hero too: up to 214/255 on the photo's edge pixels at 1280 px). Invisible, but worth fixing if those sections are reworked.
 
 ### Tokens (`src/index.css` `:root`; stagger mirrored in `MOTION` in `src/lib/motion.ts`)
 
@@ -217,7 +217,7 @@ Reveal opacity resolves in about two-thirds of the travel time, so content is le
 
 | Section | Desktop (≥ 1280 px) | Phones / tablets |
 |---|---|---|
-| **Hero** (load) | brand 0 → eyebrow 40 → headline line 1 60 / line 2 120 → photograph depth settle 140 (visible from first paint: scale 1.02 → 1 + small rise) → glow 160 → sentence 180 → eligibility + CTAs 240 → ring 300 → caption 340 → dots 380; finished ≈ 1 s. The split-sweep artwork is part of the background and stays still | brand 0 → eyebrow 30 → headline (one block) 60 → sentence 120 → eligibility + CTAs 180; finished ≈ 0.6 s. The photograph, glow, ring and caption play when the photograph is actually in view |
+| **Hero** (load; GSAP, see below) | ≈ 2.3 s: the gold glow blooms on an all-burgundy stage, the participants rise and land, the white panel and split sweep arrive from the right as one piece, the ring locks on, the headline lines rise out of masks, then sentence, eligibility (the tick draws itself), buttons, header, caption and dots. Afterwards the glow breathes; scrolling away, the participants drift and recede | ≈ 2 s of copy on load (header, eyebrow, headline lines, sentence, eligibility, buttons); the photograph's glow, rise and ring lock-on when it comes into view (0.25 s after the headline if it's already there); then the glow breathes. No drift |
 | **What to expect** | One group (`data-reveal-group="(min-width: 1280px)"`): heading + description together, cards 140/200/260/320 ms, note 420 ms | Each card reveals as it approaches |
 | **Vision & Mission** | Group: heading → portrait (frame fades, photo settles 1.025 → 1 inside it) → Vision column → Mission column, each column as one unit; rules extend after | Heading, blocks and portrait reveal as they arrive (portrait: in-frame depth) |
 | **Doctrine** | Group, calmer (12 px travel): photograph settles as a whole → heading → questions in reading order (60 ms) → CTA | Photo in-frame depth; header, questions (stagger if they arrive together), CTA |
@@ -226,6 +226,21 @@ Reveal opacity resolves in about two-thirds of the travel time, so content is le
 | **FAQ** | Height + opacity animation on the answer panel (open 260 ms, close 220 ms), starting from wherever it is, so rapid toggles reverse instead of snapping; the + turns to × immediately. Native `<details>` semantics, keyboard and find-in-page kept | Same |
 | **Closing invitation** | Group: the quotation as one unit → citation 220 ms → CTA 360 ms | Same |
 | **Footer** | A single quiet fade | Same |
+
+### Homepage hero (GSAP, 2026-09-29)
+
+The hero read as if nothing moved (≈ 1 s, 16–24 px moves, the photograph visible from the first frame), so it became a deliberate, cinematic opening drawn from the mark's meaning: the glow is the bullseye (fulfilment), the ring the target locking on, the leap the journey. One timeline per layout in [`src/lib/heroMotion.ts`](../src/lib/heroMotion.ts); every start time and duration is in its `HERO_DESKTOP`, `HERO_PHONE_COPY` and `HERO_PHONE_PHOTO` tables (tested in `heroMotion.test.ts`), with long soft landings (`expo.out`, `power4.out`, `power3.out`; the panel `power3.inOut`).
+
+| s | Desktop (≥ 1280 px) | Phones and tablets |
+|---|---|---|
+| 0 | Glow blooms from 60 %; participants fade in; white panel + split sweep start arriving from the right as one piece (1.1 s, so their seam never opens) | Header row settles down |
+| 0.15–0.3 | Participants rise ≈ 100 px from 1.06× and land (1.3 s); the ring locks on from 1.25× with −8° (1.4 s) | Eyebrow; headline line 1 rises out of its mask (0.2), line 2 at +0.12 |
+| 0.35–0.57 | Eyebrow; headline line 1 out of its mask, line 2 at +0.12 | Sentence (0.6), eligibility (0.72), tick draws (0.85), buttons (0.8, +0.1) |
+| 0.7–1.4 | Header row; sentence (0.9); eligibility + tick (1.0/1.15); buttons (1.1, +0.1); caption rule and caption (1.2/1.3); dots wipe in left to right (1.4) | Photograph, when in view: glow blooms, participants rise ≈ 70 px, ring locks on from 1.2×, caption (0.7) |
+| end | ≈ 2.3 s | ≈ 2 s (copy), ≈ 1.6 s (photograph) |
+
+- **After the entrance:** the glow breathes (CSS `hero-breathe`: 1 → 1.045 scale, 1 → 0.82 opacity, 4 s each way), paused off-screen or in a hidden tab. On desktop, once the page leaves the top, the participants' image drifts 90 px and recedes to 94 % (from its top) over the first 900 px of scroll: a CSS scroll-driven animation, so no JavaScript and nothing in browsers without it (Firefox today). Drift alone would cut their feet off at the hero's edge (they sit 63 px above it); with the recede the feet stay ≥ 23 px inside. The drift is attached only after the page has scrolled (`:has(header[data-scrolled])`), because any attached scroll animation keeps the image on its own compositor layer.
+- **Rules it keeps:** the photograph and artwork files are unchanged, only transform/opacity/clip-path move; inline styles are cleared as each move lands; buttons stay clickable; keyboard focus anywhere finishes the entrance; reduced motion shows the hero at once with no loop or drift; it never replays when the viewport crosses 1280 px. The photograph is decoded before it appears (a browser decodes a hidden image only on first paint, which froze the phone entrance for ≈ 360 ms), waiting at most 400 ms; on phones it starts 0.25 s after the copy because it's usually the largest element.
 
 ### Engine (`useScrollReveal`)
 
@@ -253,7 +268,17 @@ Reveal opacity resolves in about two-thirds of the travel time, so content is le
 - Interactions: FAQ open/close heights sampled (smooth, reversible, no leftover styles; Enter/Space; reduced motion native), menu (timings, interrupt reversal, focus, lock), direct `/#journey`, fast scroll (nothing left hidden), resize across 390 ↔ 1100 ↔ 1440, returning to the page (one fresh opening), reduced motion at load and switched live, keyboard (no focus on hidden content), layout shift 0, no console errors.
 - Frame pacing, production build, headless Chromium (120 Hz): phone 390 px with 4× CPU throttling: scroll through the whole page with reveals median 8.3 ms / p95 9.2 ms / worst 9 ms, 0 frames over 20 ms; FAQ and menu worst 9–16 ms. The opening has one 83 ms frame caused by the app's initial render (3 long tasks, 363 ms at 4× throttling), not by animation. Desktop 1440 px: scroll worst 17 ms.
 
-**Limits:** headless timing excludes a real phone's GPU raster costs, so it approximates rather than replaces a check on a mid-range Android device. Route lines fade/wipe rather than stroke-draw (they're `<img>` artwork). If keyboard focus leaves a hero entrance within its first ≈ 300 ms, that entrance resumes.
+### Verification: homepage hero (2026-09-29)
+
+Production build, headless Chrome (60 Hz), tools as for the baseline recorded that morning:
+- **Settled state:** with motion (the breathing stopped for the shot) the hero equals the reduced-motion page pixel for pixel at 390, 768, 1280, 1440 and 1920 px, and equals the previous build's resting design (peak difference 0). Against the previous build's *animated* hero it differs only by that build's own compositor-layer artefact (the same 7,516 edge pixels at 1280 px, 29 at 1440 and 1920). Every other page matched the previous build at all five widths, with and without motion.
+- **Entrance:** no dropped frames (155 of 155 on time) at 390 px with 4× CPU throttling and at 1440 px. Screen changing for ≈ 2.1 s (was 0.74 s on phones, 0.99 s on desktop).
+- **LCP:** 676 ms cold at 390 px, 4× CPU (before: 596–744 ms; budget 1 s); 64 ms at 1440 px (budget 0.6 s). CLS 0.
+- **Scrolling (warm):** homepage 0 dropped frames at 390 px 4× CPU and at 1440 px; other pages as before (desktop `/journey` 7 vs 6). Menu and FAQ interactions 16–32 ms at 4× CPU (before 16–48).
+- **Cost:** first-load JS 135.1 → 163.9 KB gzipped (+28.8 KB, GSAP core); the homepage's largest start-up task at 4× CPU ≈ 155 → 220 ms.
+- **Extras:** breathing starts after the entrance, pauses off-screen and resumes; drift keeps the feet ≥ 23 px inside the frame at every scroll position; neither runs with reduced motion; no inline styles left on any hero element.
+
+**Limits:** headless timing excludes a real phone's GPU raster costs, so it approximates rather than replaces a check on a mid-range Android device (the hero's entrance and breathing included). Route lines fade/wipe rather than stroke-draw (they're `<img>` artwork). If keyboard focus leaves a hero entrance within its first ≈ 300 ms, that entrance resumes.
 
 ## 7. Imagery
 
