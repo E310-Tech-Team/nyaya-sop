@@ -27,7 +27,7 @@ Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend
    ```bash
    sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw allow 443/udp && sudo ufw enable
    ```
-4. **An email provider** (optional at first, needed for applicant sign-in and emailed staff invitations): any SMTP service (Postmark, Mailgun, Amazon SES, Zoho, Brevo…), with SPF and DKIM set up for the sending domain. Without it, sign-in by email stays **off** and the site says so; nothing pretends an email was sent.
+4. **An email provider** (optional at first, needed for applicant sign-in and emailed staff invitations): any SMTP service (Resend, which production uses, Postmark, Mailgun, Amazon SES, Zoho, Brevo…), with SPF and DKIM set up for the sending domain. Without it, sign-in by email stays **off** and the site says so; nothing pretends an email was sent.
 5. **Who the staff are and their roles** ([05 §6](05-Backend-Schema.md#roles-and-permissions)). At least one owner, ideally two, so one can recover the other.
 
 ---
@@ -55,7 +55,7 @@ cd /opt/school-of-purpose && git config core.sshCommand "ssh -i ~/.ssh/sop_deplo
 - **Domain:** point the domain's A record at the VPS first. No domain yet? Leave out `--domain`: it uses the server's hostname (on Hostinger, `srvNNNNNN.hstgr.cloud`, which already points at the VPS) and you can switch later by running the script again with `--domain`.
 - **www:** when `www.DOMAIN` points at the VPS too, the script sets `WWW_REDIRECT=on` in `.env` and `https://www.DOMAIN` redirects to `https://DOMAIN`. Added the record later? Run the script again. `WWW_REDIRECT=off` keeps it off.
 - **Hostinger firewall:** if the VPS firewall in hPanel is on, allow TCP 22, 80 and 443 (and UDP 443).
-- **DigitalOcean:** an Ubuntu 24.04 Droplet created with your SSH key is enough (1 GB works: the script adds swap). Add a Cloud Firewall (Networking → Firewalls) allowing inbound TCP 22, 80 and 443 and UDP 443. DigitalOcean blocks outbound email ports 25, 465 and 587 on new accounts: use your email provider's port 2525 ([Email](#email)), or ask DigitalOcean support to lift the block.
+- **DigitalOcean:** an Ubuntu 24.04 Droplet created with your SSH key is enough (1 GB works: the script adds swap). Add a Cloud Firewall (Networking → Firewalls) allowing inbound TCP 22, 80 and 443 and UDP 443. DigitalOcean blocks outbound email ports 25, 465 and 587 on new accounts: use your email provider's alternative port (Resend: 2465; many others: 2525; see [Email](#email)), or ask DigitalOcean support to lift the block.
 - **Email** stays off until you add `SMTP_URL` and `EMAIL_FROM` to `.env` and run the script again ([Email](#email)).
 - **Updating:** `cd /opt/school-of-purpose && git pull && ./deploy/install.sh` (it backs up the database first and keeps `.env`).
 - **Back up `.env` privately** (password manager or sealed offline copy): see [A7](#a7-backups-do-this-on-day-one).
@@ -320,7 +320,11 @@ Everything the Programme team does is at **`https://DOMAIN/admin`**: applicants 
 
 ### Email
 
-Set `SMTP_URL` and `EMAIL_FROM`, restart (`docker compose up -d`). Check **Settings → Integrations and health** shows "SMTP configured", then request a sign-in link at `/account` with your own address. If emails land in spam, check SPF/DKIM/DMARC for the sending domain. Some hosts block the usual SMTP ports (DigitalOcean: 25, 465 and 587 on new accounts); most providers also accept port 2525 with STARTTLS (`smtp://USER:PASS@smtp.example.com:2525`). Applicant sign-in can also be switched off in **Settings** without removing the configuration.
+Set `SMTP_URL` and `EMAIL_FROM`, restart (`docker compose up -d`). Check **Settings → Integrations and health** shows "SMTP configured", then request a sign-in link at `/account` with your own address. If emails land in spam, check SPF/DKIM/DMARC for the sending domain. Some hosts block the usual SMTP ports (DigitalOcean: 25, 465 and 587 on new accounts): use the provider's alternative port, often 2525 with STARTTLS (`smtp://USER:PASS@smtp.example.com:2525`).
+
+Production uses **Resend**: `SMTP_URL=smtps://resend:API_KEY@smtp.resend.com:2465` (TLS on Resend's alternative port; 2587 is its STARTTLS one) and `EMAIL_FROM=School of Purpose <no-reply@nyayasop.org>`, with `nyayasop.org` verified in Resend (DKIM on `resend._domainkey`, MX and SPF on `send`, and a DMARC record). Give the key sending access only. It belongs only in the server's `.env`: paste it there over SSH (or send it through SSH's standard input), never into a chat, a ticket or a command line, and restart the app and worker. To replace the key, create a new one in Resend, put it in `.env`, restart, then delete the old one.
+
+Applicant sign-in can also be switched off in **Settings** without removing the configuration.
 
 ### Background worker
 
