@@ -24,6 +24,8 @@ backups/
 
 # Large design originals (a compressed copy is committed)
 design/*-figma.png
+# AI-generated image originals (the site builds from design/imagery/*/masters: docs/IMAGERY.md)
+design/imagery/*/originals/
 
 # Logs & OS files
 logs/

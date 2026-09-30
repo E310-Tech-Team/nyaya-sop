@@ -1,0 +1,93 @@
+[
+  {
+    "id": "vision",
+    "target": "src/assets/landing/vision-portrait.webp",
+    "master": "masters/vision.webp",
+    "source": "originals/exec-e2b18210-6f1e-4a39-9381-731863d8cec1.png",
+    "prompt": null,
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "doctrine",
+    "target": "src/assets/landing/doctrine-study-group.webp",
+    "master": "masters/doctrine.webp",
+    "source": "originals/exec-88aa37dc-06dd-44c0-b712-808f16480c7e.png",
+    "prompt": null,
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "apply",
+    "target": "src/assets/landing/journey-01-apply.webp",
+    "master": "masters/journey-01-apply.webp",
+    "source": "originals/exec-c4e50b18-c836-4a56-b0a1-d4c244f334a5.png",
+    "prompt": null,
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "virtual",
+    "target": "src/assets/landing/journey-02-virtual-training.webp",
+    "master": "masters/journey-02-virtual-training.webp",
+    "source": "originals/exec-26765e5e-13cf-4359-b007-c62c20fc509b.png",
+    "prompt": "undefined\nLandscape 3:2 photograph. A Nigerian man aged 26 with neatly groomed short curls, wearing a cream collared shirt and understated burgundy tie, participating in an online learning session at a simple tidy Lagos home-study desk. He wears discreet headphones and listens thoughtfully to a laptop angled away from camera, a notebook beside it. Mid-torso three-quarter portrait at eye level, the face, headset and laptop all contained in the central horizontal band with ample headroom for a wide card crop. Soft side window light, textured neutral wall and unfussy shelves, not a luxury office. No readable screen.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "merit",
+    "target": "src/assets/landing/journey-03-merit-selection.webp",
+    "master": "masters/journey-03-merit-selection.webp",
+    "source": "originals/exec-706f25c8-a568-4f8e-8300-ba5c0eee54d6.png",
+    "prompt": "undefined\nLandscape 3:2 photograph. Two young Nigerian professionals aged 24–28, a dark-skinned woman with neat braids in a tailored navy blazer and modest cream blouse and a brown-skinned man in a charcoal blazer and collared shirt, seated side by side at a learning-space table concentrating independently on an assessment exercise in open notebooks. Natural thoughtful faces, relaxed posture, no results and no suggestion of winning. Eye-level wide medium shot with faces and notebooks in central 70% height, ample breathing room for a 2:1 crop. Paper content indistinct, no certificates, no scorecards, no readable text.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "bootcamp",
+    "target": "src/assets/landing/journey-04-boot-camp.webp",
+    "master": "masters/journey-04-boot-camp.webp",
+    "source": "originals/exec-83de5a20-daee-4b7a-bfb4-c7d665f5860e.png",
+    "prompt": "undefined\nLandscape 3:2 photograph. Five Nigerian young adults, three women and two men aged 23–29, actively collaborating around a table during a structured leadership workshop in a contemporary Nigerian community learning centre. Varied brown and dark skin, distinct faces, natural twists and braids, neat short hair. Modest tailored corporate clothing: navy suit, burgundy blazer over high-neck blouse, cream long-sleeve midi dress, charcoal jacket, light blue collared shirt. One woman explains an idea while others listen with subtle warm expressions. Unmarked paper planning cards on table, soft daylight. Eye-level candid medium-wide composition, faces clustered centrally with generous safe margins, heads and hands retained in wide crop. No matching T-shirts, no cheering, no banners, no readable text.",
+    "revisionPrompt": "Use case: precise-object-edit. Edit this fictional photorealistic Nigerian leadership workshop image for a wide website card. Keep the same five people, their natural skin tones, modest corporate outfits and the collaborative planning scene. Reframe as a much wider, pulled-back 2:1 landscape photograph: all five must be seated at similar head height, with generous clear room above every head (at least 20% of image height), all faces and hands fitting in the middle 65% height. The existing upper heads are too close to the edge; fix this. Preserve believable anatomy, natural daylight, contemporary Nigerian learning centre context, varied expressions and paper cards. No readable text, logos or banners. The top-left corner must be quiet clear wall, suitable for an existing UI badge without covering faces. Output one finished photograph, not a collage.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "mentorship",
+    "target": "src/assets/landing/journey-05-mentorship.webp",
+    "master": "masters/journey-05-mentorship.webp",
+    "source": "originals/exec-6649ce75-3143-4eb7-b4f1-cb2146fc20af.png",
+    "prompt": "Use case: photorealistic-natural. Create one premium editorial photograph for a Nigerian youth leadership and Christian formation programme website. Fictional clearly adult Nigerian subjects aged 22–29 unless specified, distinct believable faces and varied natural brown/dark skin tones. Modest contemporary corporate clothing, opaque fabrics, covered chest and shoulders, refined Gen Z tailoring. Natural expressions and skin texture, realistic hands and anatomy. Soft believable daylight, true skin colour, warm neutral environment with restrained burgundy/cream/navy accents. Real photographic optics and candid energy, not illustration, cartoon, CGI, glamour or plastic skin. No readable text, signage, logos, watermarks, certificates, brand names or pretend real event documentation. No public figures. Respect the exact framing requested; one photograph only, not a collage.\nLandscape 3:2 photograph. A Nigerian female mentor aged around 45 in a modest muted burgundy blazer and cream blouse, with short natural hair, in a respectful conversation with two clearly adult Nigerian young professionals aged 25–28: a dark-skinned man in navy jacket and pale collared shirt and a brown-skinned woman with neat braids in a charcoal tailored jacket. Three seated close together around a small table, all faces clearly visible, mentor speaking gently while mentees listen and take notes. Warm contemporary Nigerian meeting room, daylight. Eye-level medium-wide view, all heads clustered across central half of frame, generous headroom; preserve faces when cropped to a wide website card. No readable paper, no logos.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "community",
+    "target": "src/assets/landing/journey-06-community.webp",
+    "master": "masters/journey-06-community.webp",
+    "source": "originals/exec-f53b2171-0340-4178-9b6b-eba59bba6f4a.png",
+    "prompt": "Use case: photorealistic-natural. Create one premium editorial photograph for a Nigerian youth leadership and Christian formation programme website. Fictional clearly adult Nigerian subjects aged 22–29 unless specified, distinct believable faces and varied natural brown/dark skin tones. Modest contemporary corporate clothing, opaque fabrics, covered chest and shoulders, refined Gen Z tailoring. Natural expressions and skin texture, realistic hands and anatomy. Soft believable daylight, true skin colour, warm neutral environment with restrained burgundy/cream/navy accents. Real photographic optics and candid energy, not illustration, cartoon, CGI, glamour or plastic skin. No readable text, signage, logos, watermarks, certificates, brand names or pretend real event documentation. No public figures. Respect the exact framing requested; one photograph only, not a collage.\nLandscape 3:2 photograph. Six distinct Nigerian young adult professionals aged 23–29 networking in two natural conversational clusters at a bright modest community learning centre courtyard. Three women and three men with varied brown and deep dark skin tones, natural hairstyles, neat braids and short hair. Tailored navy trousers and blazers, cream modest midi dress with sleeves, charcoal jacket, muted burgundy long-sleeve blouse, light blue collared shirt. Candid mid-conversation, one person holding a plain notebook, quiet confident smiles, no looking at camera. Eye-level wide environmental photograph framed from waist up, faces in central vertical band for a wide crop, soft greenery and cream building behind. No banners, crowd of clones, matching uniforms, signage or event branding.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  },
+  {
+    "id": "success",
+    "target": "src/assets/success/student-portrait.webp",
+    "master": "masters/success-portrait.webp",
+    "source": "originals/exec-d6325841-b95c-4dcf-8613-0517050dd821.png",
+    "prompt": "Use case: photorealistic-natural. Create one premium editorial photograph for a Nigerian youth leadership and Christian formation programme website. Fictional clearly adult Nigerian subjects aged 22–29 unless specified, distinct believable faces and varied natural brown/dark skin tones. Modest contemporary corporate clothing, opaque fabrics, covered chest and shoulders, refined Gen Z tailoring. Natural expressions and skin texture, realistic hands and anatomy. Soft believable daylight, true skin colour, warm neutral environment with restrained burgundy/cream/navy accents. Real photographic optics and candid energy, not illustration, cartoon, CGI, glamour or plastic skin. No readable text, signage, logos, watermarks, certificates, brand names or pretend real event documentation. No public figures. Respect the exact framing requested; one photograph only, not a collage.\nSquare photographic portrait with a precise large circular photo boundary and genuinely transparent corners outside the circle, designed to sit over an existing circular halo. Inside the circle: a Nigerian man aged 26 with deep brown skin, close-cropped natural hair, clean grooming, tailored navy blazer over a cream collared shirt, holding a closed unbranded laptop against his torso. Natural warm confident smile looking slightly off-camera, quiet satisfaction. Chest-up portrait, whole head and shoulders safely inside circle with generous headroom. Soft neutral cream studio/office background INSIDE the circle. Photorealistic skin and hands, eye-level premium editorial photography. No brand logo on laptop. No extra border, no checkmark, no decorative graphics. Outside the circular photo must be transparent alpha.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-29"
+  }
+]

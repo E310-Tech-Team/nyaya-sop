@@ -30,7 +30,7 @@ export function VisionMission({ id = 'vision' }: { id?: string }) {
       </div>
       <div data-reveal="fade" className="h-[430px] relative w-full overflow-hidden">
         <div className="absolute bg-[#841d26] inset-0" />
-        <img data-depth alt="A young woman arranging sticky notes on a planning wall" loading="lazy" decoding="async" className="absolute max-w-none object-cover size-full" src={imgUnityPortrait} />
+        <img data-depth alt="Three young professionals discussing plans around a laptop and notebook" loading="lazy" decoding="async" className="absolute max-w-none object-cover object-[50%_15%] size-full" src={imgUnityPortrait} />
       </div>
       <div data-reveal="up" className="flex flex-col gap-[14px] items-start w-full">
         <div className="flex flex-col gap-[7px] items-start">
@@ -72,7 +72,7 @@ export function VisionMission({ id = 'vision' }: { id?: string }) {
           <div data-reveal="fade" data-reveal-at="120" className="h-[600px] overflow-clip relative shrink-0 w-[500px]">
             <div className="absolute inset-0">
               <div className="absolute bg-[#841d26] inset-0" />
-              <img data-depth alt="A young woman arranging sticky notes on a planning wall" loading="lazy" decoding="async" className="absolute max-w-none object-cover size-full" src={imgUnityPortrait} />
+              <img data-depth alt="Three young professionals discussing plans around a laptop and notebook" loading="lazy" decoding="async" className="absolute max-w-none object-cover object-[50%_15%] size-full" src={imgUnityPortrait} />
             </div>
           </div>
           {/* Mission */}

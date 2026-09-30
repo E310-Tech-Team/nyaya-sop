@@ -1,0 +1,68 @@
+[
+  {
+    "id": "home-about",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Portrait 4:5. Two Nigerian young professionals, a woman with short natural afro wearing a burgundy trouser suit and a man in navy suit, walking side by side through a contemporary Nigerian campus courtyard discussing a closed portfolio. Waist up, candid, confident warm faces, lush restrained greenery and cream architecture. Both faces comfortably centred, generous headroom.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Homepage about preview",
+    "target": "src/assets/landing/home-about.webp",
+    "master": "masters/home-about.webp",
+    "source": "originals/exec-a011061a-ffb8-4860-882b-4cc05aab1665.png"
+  },
+  {
+    "id": "home-programme",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Portrait 4:5. A Nigerian young woman with neat shoulder-length locs in a cream high-neck blouse and navy blazer thoughtfully reading an open book at a quiet sunlit study desk, single subject, 3/4 angle. Book pages indistinct. Face in central upper third with generous headroom. Modern understated Nigerian library.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Homepage programme preview",
+    "target": "src/assets/landing/home-programme.webp",
+    "master": "masters/home-programme.webp",
+    "source": "originals/exec-d4fff712-37a7-425b-92e3-a1f28ca70422.png"
+  },
+  {
+    "id": "programme-virtual",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Wide landscape 2:1. A young Nigerian woman with short natural curls in a charcoal blazer and cream blouse participating in online learning from a tidy home desk, listening with small headphones, laptop screen turned away. Eye-level side three-quarter composition. Face located around 40 percent image height, ample clear space above head so a very wide 4:1 centre crop retains the whole face. No others.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Programme virtual card",
+    "target": "src/assets/landing/programme-virtual.webp",
+    "master": "masters/programme-virtual.webp",
+    "source": "originals/exec-f067d59b-d4c6-4a65-84fa-8b588e0793cc.png"
+  },
+  {
+    "id": "programme-merit",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Wide landscape 2:1. Nigerian young man with short twists and glasses in navy suit and pale blue collared shirt working independently on a written learning exercise at a quiet desk. A second closed notebook nearby. Face at 40 percent height, pulled back environmental framing with ample headroom for a very wide 4:1 crop. No marks, scores or readable writing.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Programme merit card",
+    "target": "src/assets/landing/programme-merit.webp",
+    "master": "masters/programme-merit.webp",
+    "source": "originals/exec-454e2a94-9617-4a31-aa63-69dd49e0babd.png"
+  },
+  {
+    "id": "programme-bootcamp",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Wide landscape 2:1. Three Nigerian young professionals in modest burgundy, navy and cream corporate outfits seated in a semicircle in a modern Nigerian training room, a young woman with natural afro leading a thoughtful discussion while two peers listen. All seated at same height, distinct faces. Pull back with ample blank cream wall above heads, all faces within middle 40 percent of image height for a 4:1 crop. Top left quiet clear wall for UI badge. No board writing or banners.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Programme bootcamp card",
+    "target": "src/assets/landing/programme-bootcamp.webp",
+    "master": "masters/programme-bootcamp.webp",
+    "source": "originals/exec-5c824d62-6679-4f41-a364-860b184498b4.png"
+  },
+  {
+    "id": "programme-community",
+    "prompt": "Photorealistic premium editorial photograph, fictional Nigerian adults age 23–29, varied natural brown and dark skin tones, modest formal corporate Gen Z tailoring, covered shoulders and chest, realistic anatomy and skin texture, soft daylight, restrained burgundy cream navy palette. No cartoons, CGI, logos, readable text, watermarks, certificates or event branding. One photograph only. Wide landscape 2:1. Nigerian male mentor age 45 in charcoal jacket and cream shirt having a warm conversation with two young Nigerian women, one with short curls and one with a low braided bun, in modest navy and burgundy suits, seated in a bright garden terrace meeting area. Equal seated head height, medium-wide pulled back view, faces contained within middle 40 percent of image height for very wide 4:1 crop. Natural gestures, no text.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Programme community card",
+    "target": "src/assets/landing/programme-community.webp",
+    "master": "masters/programme-community.webp",
+    "source": "originals/exec-87c27106-d2a6-4673-ab2e-3e7763d9e099.png"
+  }
+]

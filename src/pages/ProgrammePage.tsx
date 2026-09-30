@@ -1,9 +1,10 @@
 import { Doctrine } from '../components/landing/Doctrine';
-import { JOURNEY_ART, StageMeta } from '../components/landing/JourneySection';
+import { StageMeta } from '../components/landing/JourneySection';
+import { PHASE_ART } from '../components/landing/programmePhotos';
 import { Eyebrow, MoreLink } from '../components/marketing/Chrome';
 import { ApplyBand, PageIntro } from '../components/marketing/PageParts';
 import { usePageTitle } from '../components/RouteEffects';
-import { EDITION, HERO_COPY, PROGRAMME_PHASES, SELECTED_ONLY, type ProgrammePhase } from '../config/programme';
+import { EDITION, HERO_COPY, PROGRAMME_PHASES, SELECTED_ONLY } from '../config/programme';
 import { site } from '../config/site';
 
 /** /programme: Purpose Boot Camp, the Doctrine of Purpose, and how the programme runs. */
@@ -21,9 +22,6 @@ export default function ProgrammePage() {
     </>
   );
 }
-
-/** Which journey photograph illustrates each part of the programme. */
-const PHASE_ART: Record<ProgrammePhase['key'], number> = { training: 1, selection: 2, bootcamp: 3, community: 4 };
 
 /** Virtual training, merit selection, the boot camp (selected participants only), then mentorship and community. */
 function ProgrammeStructure() {
@@ -48,7 +46,7 @@ function ProgrammeStructure() {
 
           <ol className="grid w-full grid-cols-1 gap-[14px] md:grid-cols-2 xl:gap-[20px]">
             {PROGRAMME_PHASES.map((phase, index) => {
-              const art = JOURNEY_ART[PHASE_ART[phase.key]];
+              const art = PHASE_ART[phase.key];
               const dark = Boolean(phase.conditional);
               return (
                 <li
@@ -58,7 +56,7 @@ function ProgrammeStructure() {
                   className={`flex flex-col overflow-clip rounded-[20px] ${dark ? 'on-dark bg-[#5c1329]' : 'border border-line bg-cream'}`}
                 >
                   <div className="relative h-[168px] shrink-0 overflow-clip sm:h-[200px] xl:h-[240px]">
-                    <img data-depth alt={art.alt} loading="lazy" decoding="async" className="absolute inset-0 size-full object-cover" src={art.img} />
+                    <img data-depth alt={art.alt} loading="lazy" decoding="async" className="absolute inset-0 size-full object-cover" style={{ objectPosition: art.focus }} src={art.img} />
                     {dark && (
                       <p className="absolute left-[16px] top-[16px] rounded-full bg-gold-light px-[12px] py-[5px] font-sans text-[11px] font-extrabold uppercase tracking-[0.8px] text-[#3b081a]">
                         {SELECTED_ONLY}

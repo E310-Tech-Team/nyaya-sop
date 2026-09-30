@@ -1,7 +1,7 @@
 # 06 — Implementation Plan
 
 **Last updated:** 2026-09-29
-**Overall status:** Phases 0–6, 8, 9, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) and **15 (website on Vercel, API on the VPS)** are in progress; 10 (photography) waits for permission. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 289 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Overall status:** Phases 0–6, 8, 9, **10 (supporting imagery, AI-generated)**, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) and **15 (website on Vercel, API on the VPS)** are in progress. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 292 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
 
 Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
 
@@ -23,7 +23,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ✅ website on Vercel (`vercel.json` + `/api` middleware, Phase 15) · ⏳ the VPS isn't deployed yet, so the Vercel site's `/api` answers 503 |
 | Launch content | ⏳ Privacy notice, domain, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)) |
 | Brand | ✅ Official lockup in every header, menu, footer and the admin area; brand palette; favicons, app icons and social card from the brand mark ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
-| Photography | ⏳ Prototype stock/AI photos still in place; authentic NYAYA (RISE) photos shortlisted, **awaiting permission** ([IMAGERY.md](IMAGERY.md)); hero images fixed |
+| Photography | ✅ AI-generated supporting photographs: fifteen, one per placement, reviewed, recorded and disclosed ([IMAGERY.md](IMAGERY.md)); hero, brand artwork and Blueprint paintings unchanged |
 
 ## Phases
 
@@ -104,7 +104,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 7.3 | Reduced motion | Done |
 | 7.4 | Working nav / "See how it works" | Done |
 | 7.5 | Analytics | Done: proportionate, anonymous first-party events only ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)); UTM attribution captured with applications |
-| 7.6 | Tests | Done: 289 Vitest tests in 18 files (unit, API/DB, auth, admin, push, jobs, service-worker policy, time zones, platform detection) + scripted Chrome checks · *Planned:* committed Playwright E2E, Lighthouse CI |
+| 7.6 | Tests | Done: 292 Vitest tests in 19 files (unit, API/DB, auth, admin, push, jobs, service-worker policy, time zones, platform detection) + scripted Chrome checks · *Planned:* committed Playwright E2E, Lighthouse CI |
 | 7.7 | SEO | Done: indexable, OG image, favicons (set `SITE_URL`) |
 | 7.8 | Deployment artifacts | Done: Dockerfile, Compose + Caddy, backups, systemd/Nginx alternative, runbook |
 | 7.9 | Verify the Docker image and stack | Done (2026-09-26): built and run locally against real PostgreSQL 17 through Caddy HTTPS; submissions, CSV export, backup/restore and graceful shutdown verified; re-verified the same day with the worker service, migrations 0003–0005 over existing data, owner bootstrap in the container and staff sign-in with two-step verification |
@@ -141,15 +141,20 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 9.6 | Fix found while verifying: the homepage hero's photograph and ring covered the desktop nav, so mouse clicks on Home/About/Programme/Journey/FAQ did nothing (present since the Figma export; keyboard worked) | Done: `pointer-events: none` on both layers; every link, button and FAQ question is now hit-tested at every width |
 | 9.7 | Verification | Done: 5 pages × 7 widths automated (overflow, clipping, one `<h1>`, heading levels, active nav, links, images, duplicate ids, hit-testing); navigation incl. Back/Forward/refresh; menu; hash links; keyboard FAQ; skip link; reduced motion; axe 0 violations; all 49 application screen captures pixel-identical to before; contact links checked with and without `VITE_CONTACT_EMAIL` |
 
-### Phase 10: Authentic photography (**Blocked** on permission)
+### Phase 10: Supporting imagery (**Done**, 2026-09-29)
+
+First a search for authentic NYAYA photos (2026-09-26), which stalled on permission; then, on 2026-09-29, the owner authorised AI-generated supporting photographs instead (D-27).
 
 | # | Task | Status |
 |---|---|---|
-| 10.1 | Audit the supporting photographs (hero, Blueprint paintings and artwork out of scope) | Done (2026-09-26): all are prototype stock/AI images; `journey-04` (invented Redemption City banner) and `journey-06` (invented summit banner) are the priority ([IMAGERY §2](IMAGERY.md#2-current-supporting-photographs)) |
-| 10.2 | Find and verify official RCCG NYAYA photo sources | Done: websites, Instagram and Facebook checked; RISE (NYAYA's skills initiative) is the only source with suitable real photos ([IMAGERY §3](IMAGERY.md#3-sources-checked-2026-09-26)) |
-| 10.3 | Shortlist candidates per section | Done: 7 candidates, all watermarked "RISE 30", none with published reuse terms ([IMAGERY §4](IMAGERY.md#4-candidates-awaiting-permission)) |
-| 10.4 | Written permission and unwatermarked originals from NYAYA / RISE | **Blocked**: Programme team (C13) |
-| 10.5 | Replace, crop per breakpoint, alt text, source record, verify | Not started ([IMAGERY §6](IMAGERY.md#6-adopting-an-approved-photo)) |
+| 10.1 | Audit the supporting photographs (hero, Blueprint paintings and artwork out of scope) | Done (2026-09-26): all were prototype stock/AI images; `journey-04` (invented Redemption City banner) and `journey-06` (invented summit banner) the priority |
+| 10.2 | Find and verify official RCCG NYAYA photo sources | Done: RISE (NYAYA's skills initiative) was the only source with suitable real photos ([IMAGERY A1](IMAGERY.md#a1-sources-checked-2026-09-26)) |
+| 10.3 | Shortlist candidates per section | Done: 7 candidates, all watermarked "RISE 30", none with reuse terms ([IMAGERY A2](IMAGERY.md#a2-candidates-still-without-permission)) |
+| 10.4 | Written permission from NYAYA / RISE | Superseded by D-27; still an option (C13) |
+| 10.5 | AI-generated supporting photographs | Done (2026-09-29): nine photorealistic images generated by the owner with Codex's image tool (`design/imagery/2026-09-29/prompts.json`), each reviewed (all passed), masters committed, site files built by `scripts/imagery-assets.py` (WebP q80, at most 1200 px, same file names), a crop focus per slot, new alt text, and a disclosure in the footer and on the success page. Hero, brand artwork and Blueprint paintings unchanged ([IMAGERY.md](IMAGERY.md)) |
+| 10.6 | Verification | Done: every photo checked in its containers at 320, 390, 768, 1280, 1440 and 1920 px in headless Chrome, with normal and reduced motion: all load at full opacity, faces stay in every crop, no overflow, no layout shift on the marketing pages. The homepage hero is pixel-identical to `main` at 390/768/1440/1920 px. `pnpm check`. The success page's small shift (0.013 at 768 px) comes from its API-driven cards, not the images (0 with the API unavailable, as on the live site). **Not yet:** real devices |
+
+**2026-09-30 refinement:** Removed six cross-page photo reuses with six newly generated dedicated assets (two homepage previews and four Programme cards). Each supporting editorial placement now has a unique image. Generation records: `design/imagery/2026-09-30/prompts.json`; policy and placements: IMAGERY §6. Hero unchanged. Validation: `pnpm check`; all 15 supporting image files have distinct SHA-256 hashes, and `imagery.test.ts` checks that no placement shares a photo and that the card photos' alt text claims no real participants or events. Browser check (headless Chrome, local production build, 320–1920 px plus 600/639/700/767 px where the `/programme` cards are widest): each photo appears on exactly one page, loads fully, keeps every face in view, with no overflow or layout shift. The `/programme` focus values were raised to 22–30% for headroom in those crops and to keep the boot camp badge clear of heads. `PHASE_ART` moved to `src/components/landing/programmePhotos.ts` (a page module shouldn't export data), and `scripts/imagery-assets.py` builds both batches from one table (outputs byte-identical).
 
 ### Phase 11: Sticky navigation (**Done**, 2026-09-26)
 
@@ -239,7 +244,7 @@ The UX pass only uses facts already in the site copy. These need an owner's answ
 | C16 | **Staff list**: who gets which role (owner, programme admin, reviewer, communications, read-only) | Admin → Staff |
 | C17 | **Retention periods** for applications, notes, audit history and consent records, and who handles deletion requests | Retention job, privacy notice ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
 | C18 | Whether **Training reminders** will be used, and the wording of published statuses and messages | Notification topics, publication messages |
-| C13 | **Photography permission**: written approval from NYAYA (or RISE) to use its event photos, the credit line required, and the original unwatermarked files; ideally also photos from a Redemption City youth event for the boot-camp slot | About, Programme, Journey (see [IMAGERY.md](IMAGERY.md)) |
+| C13 | **Photography permission** (optional since 2026-09-29: the supporting photos are AI-generated, D-27): written approval from NYAYA (or RISE) to use its event photos, the credit line required, and the original unwatermarked files, only if real photos should replace the generated ones | About, Programme, Journey (see [IMAGERY.md](IMAGERY.md)) |
 
 ## Next steps (in order)
 
@@ -259,7 +264,7 @@ flowchart LR
     P3 --> P4[Phase 4 ✓<br/>privacy page blocked]
     P3 --> P8[Phase 8 ✓<br/>motion + UX pass]
     P8 --> P9[Phase 9 ✓<br/>dedicated pages]
-    P9 --> P10[Phase 10<br/>photography · blocked on permission]
+    P9 --> P10[Phase 10 ✓<br/>supporting imagery · AI-generated]
     P9 --> P11[Phase 11 ✓<br/>sticky navigation]
     P4 --> P7[Phase 7<br/>deploy]
     Q[Launch decisions<br/>Q9 Q11 Q12 Q13] --> P7
@@ -307,6 +312,7 @@ flowchart LR
 | D-24 | 2026-09-28 | Logos are the supplied raster artwork resized by `scripts/brand-assets.py` (Python + Pillow, outputs committed), never redrawn or traced; emails keep a text header, with no remote logo that would reveal when a sign-in email is opened | Decided |
 | D-25 | 2026-09-29 | The homepage hero's entrance is a GSAP (core) timeline, in the first-load bundle so nothing waits; every other screen keeps the CSS system. An element is animated by GSAP or CSS, never both. The glow's breathing and the desktop scroll drift are the only sanctioned loop and scroll-linked motion | Decided (user: "a real, visible animation"; extras approved) |
 | D-26 | 2026-09-29 | The website may be served by Vercel with the API, worker and database staying on the VPS (the owner's choice, "Site + VPS API"). `/api` goes through Vercel Routing Middleware rather than a `vercel.json` rewrite, so it can pass on the visitor's address with a shared secret that the VPS checks; one origin for the browser, the VPS stays the only place for data, jobs and secrets | Decided |
+| D-27 | 2026-09-29 | Supporting photographs may be AI-generated (photorealistic, fictional Nigerian young adults in modest professional clothing), replacing the rule that only permission-cleared RCCG NYAYA photos could be used. They are disclosed in the footer and on the success page, never captioned or described as real participants or events, and recorded with their prompts in IMAGERY.md. The homepage hero, the brand artwork and the Biblical Blueprint paintings are excluded | Decided (owner, 2026-09-29) |
 
 ## Doc maintenance
 

@@ -187,4 +187,4 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | Q18 | Which contact goes in `VAPID_SUBJECT` for push services? | Open |
 | Q19 | How long are notes, audit history and consent records kept? | Open: see Q11 and [05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion) |
 | Q15 | Content still needed for the UX pass: response time, whether virtual-training admission is selective, training schedule/platform, boot camp dates/location details, sponsorship exclusions | Open: see [06 "Content needed"](06-Implementation-Plan.md#content-needed-from-the-programme-team) |
-| Q16 | May the site use NYAYA's own event photography (e.g. from RISE), and with what credit? | Open: candidates are shortlisted in [IMAGERY.md](IMAGERY.md); until permission arrives the prototype photos stay |
+| Q16 | May the site use NYAYA's own event photography (e.g. from RISE), and with what credit? | No longer blocking (2026-09-29): the supporting photos are AI-generated and disclosed as such ([IMAGERY.md](IMAGERY.md)). NYAYA photos could still replace them, with written permission and the required credit |

@@ -213,7 +213,7 @@ export default function SuccessPage() {
               <img alt="" src={imgSideGlow} className="absolute right-[-60px] top-[-17px] size-[180px]" />
             </div>
             <img alt="" aria-hidden="true" src={imgPortraitHalo} className="enter-fade absolute left-1/2 top-1/2 size-[304px] -translate-x-1/2 -translate-y-1/2" style={enterAfter(T.portrait)} />
-            <img alt="A smiling young man holding a laptop" src={imgStudent} className="enter-photo relative size-[284px]" style={enterAfter(T.portrait)} />
+            <img alt="A smiling young man in a suit holding a laptop" src={imgStudent} className="enter-photo relative size-[284px]" style={enterAfter(T.portrait)} />
             <span
               aria-hidden="true"
               className="enter-check absolute bottom-[12px] left-1/2 ml-[84px] flex size-[58px] items-center justify-center rounded-full border-[5px] border-cream bg-brand font-sans text-[22px] font-extrabold text-white"
@@ -223,7 +223,7 @@ export default function SuccessPage() {
             </span>
           </div>
           <div className="hidden aspect-square w-[min(443px,38vw)] shrink-0 overflow-clip rounded-[32px] lg:block">
-            <img alt="A smiling young man holding a laptop" src={imgStudent} className="enter-depth size-full object-cover" style={enterAfter(T.portrait)} />
+            <img alt="A smiling young man in a suit holding a laptop" src={imgStudent} className="enter-depth size-full object-cover" style={enterAfter(T.portrait)} />
           </div>
 
           {/* The confirmation and reference appear promptly. */}
@@ -274,6 +274,9 @@ export default function SuccessPage() {
               </p>
             )}
           </div>
+          <p className="max-w-[560px] text-center font-sans text-[12px] text-muted">
+            The photograph on this page is AI-generated and doesn't show a real applicant.
+          </p>
         </div>
       </main>
     </div>
