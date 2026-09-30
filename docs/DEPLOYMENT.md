@@ -415,7 +415,7 @@ On restart the worker fetches the directory straight away. `api-status` then sho
 **Going live, the first time:**
 
 1. **Back up** (§A7).
-2. **Set the key and restart**, as above. The first sync downloads the provider's releases and builds the copy.
+2. **Set the key and restart**, as above. The first sync downloads the provider's releases and builds the copy. Release `2026.1` is about 50,000 entries in 254 pages and took under 8 minutes when checked; until it finishes, Settings says "None yet".
    - If the database holds a spreadsheet import, the old entries stop being offered. They are kept, with their history.
    - Applications keep their parish link and snapshot.
    - Each old parish that applications link to is compared with the API's parishes, by exact name and place only. Nothing is relinked. `node server-dist/directory.js legacy-report` lists the outcome as names, codes and counts, for staff to act on in Parish review.

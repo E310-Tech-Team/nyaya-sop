@@ -294,6 +294,12 @@ An unconfirmed parish is never stored. The snapshot keeps the provider's code (`
 
 **Tests** never reach the provider: [`test-api.ts`](../server/directory/test-api.ts) is an in-memory fake of the contract (releases, paging, search, lookup, and failures on demand).
 
+**The live directory** (production release `2026.1`, "17th August 2026 approved list", synced read-only into a scratch database on 2026-09-30): 50,649 changes in 254 pages (7.8 minutes, no rate limiting).
+- **What it holds:** 6 continents (1, 2, 3, 11, 12 and Special Continents), 73 regions, 489 provinces and 50,081 parishes. 49,900 parishes have a province, 154 sit directly under a region and 27 directly under a continent. There is no zone or area.
+- **Duplicate names:** 1,500 groups of parishes share a name within one unit (3,102 parishes). They're kept apart by code, and the form can't tell them apart ([06, open question](06-Implementation-Plan.md#next-steps-in-order)).
+- **Other data problems:** 29 provinces' names give no state, and one parish name contains a phone number.
+- **Sync result:** the sync found no data problems (no missing parents, codes or names).
+
 ### Enums
 
 | Enum | Values |
