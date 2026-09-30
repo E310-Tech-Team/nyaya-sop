@@ -316,9 +316,11 @@ Then A6's browser checks on the Vercel address: a test application, `/admin` sig
 
 Production is released by one workflow, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): every push to `main` (a merged pull request) is checked, released and then checked live ([06 D-51](06-Implementation-Plan.md#decisions-log)). It is the only way releases reach production: the Vercel project's Git integration stays disconnected (Phase 15 is on hold), and `deploy/install.sh` by hand is for emergencies ([below](#releasing-by-hand)).
 
-**Status (2026-09-30): built and tested locally; it runs once the owner has done the [one-time setup](#one-time-setup-the-owner) and switched it on.**
-- **The switch:** pushes to `main` are released only while the repository variable **`AUTO_DEPLOY`** is `on`. Otherwise their `deploy` job is skipped, but the checks still run.
-- **Manual runs** always release. Until the setup is done, a manual run fails at "Check the settings" and changes nothing.
+**Status: live since 2026-09-30.**
+- **The one-time setup ([below](#one-time-setup-the-owner)) is done.** The first release through it was a manual run on `main`: [run 36779200777](https://github.com/E310-Tech-Team/nyaya-sop/actions/runs/36779200777), which released `9770103`.
+- **Automatic releases are on:** `AUTO_DEPLOY=on`, so every merge to `main` is released after its checks pass. Set `AUTO_DEPLOY` to anything else to pause them; the checks still run and the `deploy` job is skipped.
+- **`main` is protected** ([Protecting main](#protecting-main)).
+- **Manual runs** always release, whatever `AUTO_DEPLOY` says: use them for recovery and rollback.
 
 ```mermaid
 flowchart LR
@@ -402,7 +404,7 @@ The same with the GitHub CLI (`0` instead of `1` keeps pull requests required wi
 gh api -X PUT repos/E310-Tech-Team/nyaya-sop/branches/main/protection --input - <<'EOF'
 { "required_status_checks": { "strict": true, "checks": [ { "context": "check" }, { "context": "docker" } ] },
   "enforce_admins": true,
-  "required_pull_request_reviews": { "required_approving_review_count": 1 },
+  "required_pull_request_reviews": { "required_approving_review_count": 1, "dismiss_stale_reviews": true },
   "restrictions": null, "allow_force_pushes": false, "allow_deletions": false }
 EOF
 ```
