@@ -58,11 +58,29 @@ export const MESSAGES = {
 
 const HAS_LETTER = /\p{L}/u;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Pragmatic check: something@domain.tld, no spaces. Deliverability is confirmed by the reply email.
-const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+// Pragmatic check: something@domain.tld. No spaces, invisible characters or the punctuation mail
+// software reads as address syntax (a comma makes a list). Deliverability is confirmed by the reply email.
+const EMAIL_RE = /^[^\s@,;:<>()\[\]"\\\p{C}]+@[^\s@.,;:<>()\[\]"\\\p{C}]+(\.[^\s@.,;:<>()\[\]"\\\p{C}]+)+$/u;
+// Control characters other than whitespace, and unpaired surrogates: Postgres can't store some (NUL),
+// JSON can't carry others, and none belong in a name, a place or a link tag.
+const UNSTORABLE = /(?![\t\n\v\f\r])[\p{Cc}\p{Cs}]/gu;
 
 export function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+/** A line of text as it's stored: unstorable characters removed, whitespace collapsed to single spaces. */
+export function cleanText(value: string): string {
+  return collapseWhitespace(value.replace(UNSTORABLE, ''));
+}
+
+/** Length in characters (code points), as Postgres's char_length counts it: "𝐀" is one, not two. */
+export const characters = (value: string): number => Array.from(value).length;
+
+/** At most `max` characters, never cutting an emoji (or any character outside the BMP) in half. */
+export function truncate(value: string, max: number): string {
+  const points = Array.from(value);
+  return points.length > max ? points.slice(0, max).join('').trimEnd() : value;
 }
 
 export function normalizeEmail(value: string): string {
@@ -102,10 +120,10 @@ const isOneOf = <V>(options: readonly { readonly value: V }[], value: unknown): 
 export function validatePersonal(answers: PersonalAnswers): FieldErrors {
   const errors: FieldErrors = {};
 
-  const name = collapseWhitespace(answers.fullName);
+  const name = cleanText(answers.fullName);
   if (!name) errors.fullName = MESSAGES.fullNameRequired;
-  else if (name.length < LIMITS.fullName.min) errors.fullName = MESSAGES.fullNameTooShort;
-  else if (name.length > LIMITS.fullName.max) errors.fullName = MESSAGES.fullNameTooLong;
+  else if (characters(name) < LIMITS.fullName.min) errors.fullName = MESSAGES.fullNameTooShort;
+  else if (characters(name) > LIMITS.fullName.max) errors.fullName = MESSAGES.fullNameTooLong;
   else if (!HAS_LETTER.test(name)) errors.fullName = MESSAGES.fullNameLetters;
 
   if (!answers.email.trim()) errors.email = MESSAGES.emailRequired;
@@ -118,13 +136,13 @@ export function validatePersonal(answers: PersonalAnswers): FieldErrors {
   if (!isOneOf(AGE_RANGES, answers.ageRange)) errors.ageRange = MESSAGES.ageRangeRequired;
   if (!STATE_OPTIONS.includes(answers.stateOfResidence)) errors.stateOfResidence = MESSAGES.stateRequired;
 
-  const city = collapseWhitespace(answers.city);
+  const city = cleanText(answers.city);
   if (!city) errors.city = MESSAGES.cityRequired;
-  else if (city.length < LIMITS.city.min || city.length > LIMITS.city.max || !HAS_LETTER.test(city)) {
+  else if (characters(city) < LIMITS.city.min || characters(city) > LIMITS.city.max || !HAS_LETTER.test(city)) {
     errors.city = MESSAGES.cityInvalid;
   }
 
-  if (collapseWhitespace(answers.parishName).length > LIMITS.parishName.max) {
+  if (characters(cleanText(answers.parishName)) > LIMITS.parishName.max) {
     errors.parishName = MESSAGES.parishTooLong;
   }
   return errors;
@@ -159,9 +177,9 @@ export function validateParish(answer: unknown, required: boolean): { ok: true; 
     return { ok: true, value: { kind: 'listed', parishId: value.id.toLowerCase(), detailsWrong: value.detailsWrong === true } };
   }
   if (value.kind === 'not_listed') {
-    const name = collapseWhitespace(typeof value.name === 'string' ? value.name : '');
+    const name = cleanText(typeof value.name === 'string' ? value.name : '');
     if (!name) return { ok: false, error: MESSAGES.parishNameRequired };
-    if (name.length < LIMITS.parishName.min || name.length > LIMITS.parishName.max || !HAS_LETTER.test(name)) {
+    if (characters(name) < LIMITS.parishName.min || characters(name) > LIMITS.parishName.max || !HAS_LETTER.test(name)) {
       return { ok: false, error: MESSAGES.parishNameInvalid };
     }
     return { ok: true, value: { kind: 'not_listed', name } };
@@ -173,12 +191,13 @@ export const hasErrors = (errors: FieldErrors): boolean => Object.keys(errors).l
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-function sanitizeMeta(meta: unknown): SubmissionMeta {
+/** How the visitor arrived, as stored: known keys only, clean text, each value capped. */
+export function sanitizeMeta(meta: unknown): SubmissionMeta {
   if (!meta || typeof meta !== 'object') return {};
   const source = meta as Record<string, unknown>;
   const clean: SubmissionMeta = {};
   for (const key of ['utmSource', 'utmMedium', 'utmCampaign', 'referrer'] as const) {
-    const value = collapseWhitespace(str(source[key])).slice(0, LIMITS.metaValue.max);
+    const value = truncate(cleanText(str(source[key])), LIMITS.metaValue.max);
     if (value) clean[key] = value;
   }
   return clean;
@@ -226,7 +245,7 @@ export function validateApplication(input: unknown, options: { parishRequired?: 
   if (!consentVersion || consentVersion.length > LIMITS.consentVersion.max) {
     fieldErrors.consentVersion = MESSAGES.consentRequired;
   }
-  let parish: ParishChoice = { kind: 'typed', name: collapseWhitespace(personal.parishName) || null };
+  let parish: ParishChoice = { kind: 'typed', name: cleanText(personal.parishName) || null };
   if ('parish' in body && (body.parish != null || options.parishRequired)) {
     const checked = validateParish(body.parish, options.parishRequired ?? false);
     if (checked.ok) parish = checked.value;
@@ -237,13 +256,13 @@ export function validateApplication(input: unknown, options: { parishRequired?: 
   return {
     ok: true,
     value: {
-      fullName: collapseWhitespace(personal.fullName),
+      fullName: cleanText(personal.fullName),
       email: normalizeEmail(personal.email),
       phoneE164: normalizePhone(personal.phone) as string,
       gender: personal.gender as Gender,
       ageRange: personal.ageRange as AgeRange,
       stateOfResidence: personal.stateOfResidence,
-      city: collapseWhitespace(personal.city),
+      city: cleanText(personal.city),
       parish,
       educationLevel: education.educationLevel as EducationLevel,
       currentStatus: education.currentStatus as CurrentStatus,

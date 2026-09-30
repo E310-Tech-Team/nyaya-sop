@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { basename, extname, sep } from 'node:path';
+import { parse as parseQuery } from 'node:querystring';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -35,6 +36,7 @@ import { PushService } from './push/service';
 import { HttpsPushTransport, type PushTransport } from './push/transport';
 import { getCurrentCohort, insertApplication } from './repository';
 import type { Services } from './services';
+import { backgroundIdle } from './background';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -65,6 +67,30 @@ export function cacheControlFor(filePath: string): string {
   return 'public, max-age=3600';
 }
 
+export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), browsing-topics=()';
+
+// One value per query field, the first, as URLSearchParams.get() reads it: a repeated key
+// (?q=a&q=b) would otherwise arrive as an array, which no route expects.
+export function firstValues(text: string): Record<string, string> {
+  const parsed = parseQuery(text);
+  const query: Record<string, string> = Object.create(null);
+  for (const [key, value] of Object.entries(parsed)) query[key] = Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+  return query;
+}
+
+// Database errors carry the values involved: a duplicate email, the failing row, the query's
+// parameters (PGlite). Logs keep what identifies the fault (code, constraint, message, stack).
+const ERROR_DATA_FIELDS = new Set(['detail', 'where', 'internalQuery', 'query', 'params', 'parameters', 'queryOptions']);
+
+type LoggedError = { type: string; message: string; stack: string; [key: string]: unknown };
+
+export function errorForLog(error: Error): LoggedError {
+  const fields: LoggedError = { type: error.constructor.name, message: error.message, stack: error.stack ?? '' };
+  for (const [key, value] of Object.entries(error)) if (!ERROR_DATA_FIELDS.has(key)) fields[key] = value;
+  if (error.cause !== undefined) fields.cause = error.cause instanceof Error ? errorForLog(error.cause) : error.cause;
+  return fields;
+}
+
 export async function buildApp({
   config,
   db,
@@ -93,10 +119,12 @@ export async function buildApp({
           remoteAddress: request.ip,
           remotePort: request.socket?.remotePort,
         }),
+        err: errorForLog,
       },
       ...(logStream ? { stream: logStream } : {}),
     },
     trustProxy: config.trustProxy,
+    routerOptions: { querystringParser: firstValues },
     // Runs before Fastify logs a request or works out its address (server/edge-proxy.ts).
     rewriteUrl(req) {
       checkEdgeProxy(req, this.log);
@@ -141,6 +169,11 @@ export async function buildApp({
     frameguard: { action: 'deny' }, // matches frame-ancestors 'none' for older browsers
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
+  // Browser features the site never uses, off for it and for anything it could embed (helmet doesn't
+  // set this header). The clipboard stays available: "copy reference" uses it.
+  app.addHook('onRequest', async (_request, reply) => {
+    reply.header('permissions-policy', PERMISSIONS_POLICY);
+  });
 
   // Only API routes are limited: a church hall full of people on one Wi-Fi network
   // shares a single IP address, so page loads must never be throttled.
@@ -166,6 +199,12 @@ export async function buildApp({
       return sendError(reply, 415, 'UNSUPPORTED_MEDIA_TYPE', 'Send the request as JSON.');
     }
     if (status >= 400 && status < 500) return sendError(reply, 400, 'BAD_REQUEST', 'The request could not be read.');
+    // A Postgres "data exception" (class 22: a value it can't store or convert) comes from what the
+    // request sent. Its message can quote that value, so only the code is logged.
+    if (typeof error.code === 'string' && /^22[0-9A-Z]{3}$/.test(error.code)) {
+      request.log.warn({ code: error.code }, 'The database refused a value from the request');
+      return sendError(reply, 400, 'BAD_REQUEST', 'Some of that information could not be saved. Check it and try again.');
+    }
     request.log.error({ err: error }, 'Unhandled error');
     return sendError(reply, 500, 'INTERNAL_ERROR', 'Something went wrong on our side. Please try again in a moment.');
   });
@@ -289,6 +328,8 @@ export async function buildApp({
     await app.register(fastifyStatic, {
       root: config.staticDir,
       cacheControl: false,
+      // Never a dotfile (a .DS_Store or .env that strayed into the build): the site has none to serve.
+      dotfiles: 'ignore',
       // @fastify/static ≥10 passes the Fastify reply here (not the raw Node response).
       setHeaders: (reply: FastifyReply, filePath: string) => {
         reply.header('cache-control', cacheControlFor(filePath));
@@ -313,6 +354,9 @@ export async function buildApp({
     }
     return sendError(reply, 404, 'NOT_FOUND', 'Not found.');
   });
+
+  // Work started by a request and not awaited (server/background.ts) finishes before the app closes.
+  app.addHook('onClose', async () => backgroundIdle());
 
   return app;
 }

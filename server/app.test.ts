@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { validPayload } from '../src/shared/test-fixtures';
-import { buildApp } from './app';
+import { MESSAGES } from '../src/shared/validation';
+import { buildApp, errorForLog } from './app';
 import { loadConfig } from './config';
 import { createPgliteDb, type Db } from './db';
 import { migrate } from './migrate';
@@ -97,6 +98,38 @@ describe('POST /api/applications', () => {
       consent_version: '2026-09-v1',
       submission_meta: { utmSource: 'whatsapp' },
     });
+  });
+
+  it('stores text a crafted link or paste would otherwise turn into a server error (security audit)', async () => {
+    const emoji = '\u{1F600}';
+    const res = await submit({
+      ...validPayload({ fullName: 'Adaeze\u0000 Okafor', city: 'Ikeja\u0007' }),
+      // A NUL, a value whose 120-character cut would split an emoji, and an unpaired surrogate.
+      meta: { utmSource: '\u0000', utmMedium: `${'m'.repeat(119)}${emoji}${emoji}`, utmCampaign: `\ud83d${'c'.repeat(5)}` },
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await db.query('select full_name, city, submission_meta from applications where id = $1', [res.json().id]);
+    expect(rows[0]).toEqual({ full_name: 'Adaeze Okafor', city: 'Ikeja', submission_meta: { utmMedium: `${'m'.repeat(119)}${emoji}`, utmCampaign: 'ccccc' } });
+  });
+
+  it('counts characters as the database does, so a one-character name is refused, not a server error (security audit)', async () => {
+    const res = await submit(validPayload({ fullName: '\u{1D400}' })); // "𝐀": two UTF-16 units, one character
+    expect(res.statusCode).toBe(400);
+    expect(res.json().fieldErrors.fullName).toBe(MESSAGES.fullNameTooShort);
+  });
+
+  it('logs database errors without the values they carry (security audit)', () => {
+    const error = Object.assign(new Error('duplicate key value violates unique constraint "applications_email_key"'), {
+      code: '23505',
+      constraint: 'applications_email_key',
+      detail: 'Key (email)=(ada@example.com) already exists.',
+      where: 'SQL statement "insert … ada@example.com"',
+      query: 'insert into applications …',
+      params: ['ada@example.com'],
+    });
+    const logged = errorForLog(Object.assign(new Error('Submission failed', { cause: error })));
+    expect(logged).toMatchObject({ type: 'Error', message: 'Submission failed', cause: { code: '23505', constraint: 'applications_email_key' } });
+    expect(JSON.stringify(logged)).not.toContain('ada@example.com');
   });
 
   it('rejects a second application from the same email (any casing)', async () => {
@@ -223,6 +256,12 @@ describe('website', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect((await app.inject('/assets/index-old999.js')).statusCode).toBe(404);
+  });
+
+  it('never serves a dotfile that strayed into the build (security audit)', async () => {
+    await writeFile(join(staticDir, '.env'), 'APP_SECRET=not-a-real-secret');
+    await writeFile(join(staticDir, 'assets', '.DS_Store'), 'Bud1 finder metadata');
+    for (const path of ['/.env', '/assets/.DS_Store']) expect((await app.inject(path)).body).not.toMatch(/not-a-real-secret|Bud1/);
   });
 
   it('sends security headers', async () => {

@@ -1,9 +1,10 @@
 /** Public, unauthenticated endpoints: feature flags, public announcements, analytics events. */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Announcement, PublicConfig } from '../src/shared/platform';
 import { accountsEnabled } from './account/routes';
 import { cleanProperties, isAnalyticsEvent, recordEvent } from './analytics';
 import { checkOrigin } from './auth/guards';
+import { isLoopbackAddress } from './config';
 import type { OutboxTransport } from './email';
 import { iso, sendError } from './http';
 import { parishDirectoryEnabled } from './parishes';
@@ -50,9 +51,11 @@ export async function publicRoutes(app: FastifyInstance, services: Services) {
     return reply.code(202).send({ ok: true });
   });
 
-  // Local test adapter only: read the in-memory outbox. Never registered in production.
+  // Local test adapter only: read the in-memory outbox. Never registered in production, and it
+  // answers only this computer, not requests passed on by a proxy (the links sign people in).
   if (config.env !== 'production' && services.email.kind === 'outbox') {
-    app.get('/dev/outbox', async (_request, reply) => {
+    app.get('/dev/outbox', async (request, reply) => {
+      if (!fromThisComputer(request)) return sendError(reply, 404, 'NOT_FOUND', 'Not found.');
       const outbox = services.email as OutboxTransport;
       const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
       const items = [...outbox.messages]
@@ -69,4 +72,11 @@ export async function publicRoutes(app: FastifyInstance, services: Services) {
         );
     });
   }
+}
+
+/** Headers a proxy adds when it passes a request on (Vite's development proxy adds none). */
+const FORWARDING_HEADERS = ['forwarded', 'x-forwarded-for', 'x-real-ip', 'x-edge-client-ip', 'via'];
+
+function fromThisComputer(request: FastifyRequest): boolean {
+  return isLoopbackAddress(request.socket.remoteAddress) && FORWARDING_HEADERS.every((name) => request.headers[name] === undefined);
 }

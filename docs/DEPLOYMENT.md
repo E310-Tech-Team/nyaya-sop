@@ -73,18 +73,20 @@ sudo usermod -aG docker $USER   # log out and back in afterwards
 
 ```bash
 sudo mkdir -p /opt/school-of-purpose && sudo chown $USER /opt/school-of-purpose
-git clone <your-repo-url> /opt/school-of-purpose   # or copy the project folder with rsync/scp
+git clone <your-repo-url> /opt/school-of-purpose
 cd /opt/school-of-purpose
 cp .env.example .env && chmod 600 .env
 nano .env
 ```
+
+Get the code with `git clone` (or `git archive` from a clean checkout), never by copying a working folder: a developer's folder can hold `.env`, local databases and dumps.
 
 | Variable | Value |
 |---|---|
 | `DOMAIN` | `apply.yourchurch.org` (the site will be `https://DOMAIN`; `SITE_URL` is derived from it) |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `APP_SECRET` | `openssl rand -base64 48`. **Required.** Keep it stable: changing it signs everyone out and breaks stored secrets ([rotation](#rotating-secrets)) |
-| `SMTP_URL`, `EMAIL_FROM` | when you have an email provider, e.g. `smtps://USER:PASS@smtp.example.com:465` and `School of Purpose <no-reply@apply.yourchurch.org>` |
+| `SMTP_URL`, `EMAIL_FROM` | when you have an email provider, e.g. `smtps://USER:PASS@smtp.example.com:465` and `School of Purpose <no-reply@apply.yourchurch.org>`. With `smtp://` (port 587) the server must offer STARTTLS, or nothing is sent: the links in these emails sign people in |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | for push notifications: see [A4](#a4-web-push-keys-once) |
 | `VITE_CONTACT_EMAIL` | optional public contact address |
 | `BUILD_ID` | optional release name (e.g. the git commit: `BUILD_ID=$(git rev-parse --short HEAD)`) |
@@ -136,7 +138,8 @@ crontab -e                  # add:
 # 30 2 * * * cd /opt/school-of-purpose && ./deploy/backup.sh >> backups/backup.log 2>&1
 ```
 
-- Backups contain personal data. Keep 14 days on the server (the default) **and** copy them off the server (e.g. `rclone` to encrypted object storage, or Linode Backups).
+- Backups contain personal data. Keep 14 days on the server (the default) **and** copy them off the server (e.g. `rclone` or `restic` to encrypted object storage, or Linode Backups). The dumps themselves aren't encrypted: encrypt them on the way off the server, and arrange an alert when the nightly backup fails (it only writes to `backups/backup.log`).
+- A failed dump leaves nothing behind (no half-written files with personal data), and `install.sh` stops an update when its backup fails (`--skip-backup` to go on anyway).
 - **Back up `.env` separately and securely** (a password manager or sealed offline copy): it holds `APP_SECRET` and the VAPID private key. A database restored without the matching `APP_SECRET` can't decrypt staff authenticator secrets or push subscriptions.
 - **Restore:** see the comment at the top of [`deploy/backup.sh`](../deploy/backup.sh). Test a restore on a spare machine once a term.
 
@@ -145,10 +148,14 @@ crontab -e                  # add:
 ```bash
 cd /opt/school-of-purpose
 git pull
-./deploy/backup.sh                                            # before any upgrade with migrations
-BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build   # app applies migrations, then the worker restarts
+./deploy/backup.sh                                            # before any upgrade with migrations: stop if it fails
+docker compose pull --ignore-buildable                        # fresh Postgres and Caddy images (security fixes)
+BUILD_ID=$(git rev-parse --short HEAD) docker compose build --pull   # fresh Node base image
+docker compose up -d --remove-orphans                         # app applies migrations, then the worker restarts
 docker image prune -f
 ```
+
+`sudo ./deploy/install.sh` does the same (and stops if the backup fails). Run it at least monthly even without code changes, so security fixes in the base images reach the server, and keep the host's own packages patched (`sudo apt-get install unattended-upgrades`).
 
 What people see: pages open in a browser tab pick up the new release when reloaded; the installed app and open tabs show **"An update is ready · Update now"** and never reload by themselves (so nobody loses a form or an admin edit). Old files stay available to tabs still on the previous version.
 
@@ -170,9 +177,9 @@ sudo apt-get install -y postgresql-17
 
 ```bash
 sudo adduser --system --group --home /opt/school-of-purpose sop
-PASSWORD=$(openssl rand -hex 24); echo "DB password: $PASSWORD"
-sudo -u postgres psql -c "create role sop login password '$PASSWORD';"
-sudo -u postgres psql -c "create database sop owner sop;"
+openssl rand -hex 24                                # a password to paste at the prompt below
+sudo -u postgres createuser --pwprompt sop          # asked twice, never echoed, logged or in the process list
+sudo -u postgres createdb --owner sop sop
 ```
 
 ### B3. Build
@@ -191,6 +198,8 @@ sudo -u sop pnpm install --frozen-lockfile
 sudo -u sop pnpm build
 ```
 
+The systemd unit sets `NODE_ENV=production`. Run the server any other way (pm2, a shell) only with `NODE_ENV=production`: outside production mode it refuses to start with a public `SITE_URL` or on a network interface, because its development settings (a published secret, a readable email outbox, optional two-step verification) are only safe on a developer's own computer.
+
 ### B4. Run with systemd, publish with Nginx + certbot
 
 ```bash
@@ -205,7 +214,19 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo apt-get install -y certbot python3-certbot-nginx && sudo certbot --nginx -d apply.yourchurch.org
 ```
 
-First admin: `sudo -u sop node server-dist/admin.js create-owner --email … --name …`. VAPID keys: `node server-dist/push-keys.js`. Backups: `sudo -u postgres pg_dump -Fc sop > /var/backups/sop-$(date +%F).dump` from cron. Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && sudo systemctl restart school-of-purpose`.
+The example site logs to `/var/log/nginx/school-of-purpose.access.log` without query strings or referrers: emailed sign-in, invitation and reset links carry single-use tokens there. Keep that format if you change the logging.
+
+First admin: `sudo -u sop node server-dist/admin.js create-owner --email … --name …`. VAPID keys: `node server-dist/push-keys.js`. Updating: `git pull && pnpm install --frozen-lockfile && pnpm build && sudo systemctl restart school-of-purpose`.
+
+**Backups:** the same script as Docker, reading the local Postgres (`--local`, as root). It writes private files (600, in a 700 folder), removes a failed dump, and keeps 14 days:
+
+```bash
+sudo BACKUP_DIR=/var/backups/sop ./deploy/backup.sh --local    # test it once
+sudo crontab -e                                                  # add:
+# 30 2 * * * cd /opt/school-of-purpose && BACKUP_DIR=/var/backups/sop ./deploy/backup.sh --local >> /var/log/sop-backup.log 2>&1
+```
+
+(A `pg_dump … $(date +%F)` line in a crontab never runs: cron cuts the command at the first unescaped `%`.)
 
 ---
 
@@ -325,7 +346,7 @@ A job whose worker crashed is picked up again automatically when its lease (2 mi
 | Lost phone, has recovery codes | Sign in with a recovery code ("Use a recovery code"), then **Your security → Create new recovery codes**; an owner can reset their two-step verification so they enrol the new phone |
 | Lost phone and codes | Another owner: **Staff → Reset two-step verification**. The only owner: on the server, `docker compose exec app node server-dist/admin.js reset-mfa --email …` |
 | Forgotten password | `/admin/forgot` (needs email). Without email: `docker compose exec app node server-dist/admin.js reset-password --email …` prints a single-use 30-minute link; the reset still asks for their authenticator code |
-| Locked out after wrong attempts | Wait (15 min, doubling up to 24 h), or an owner suspends and reactivates them (clears the lock) |
+| Locked out after wrong attempts | Wait (15 min, doubling up to 24 h), or an owner uses **Staff → Unlock sign-in**. Anyone who knows a staff email can cause a lock this way, so unlock only when you're sure it was a mistake or a nuisance, not someone who has the password |
 | Invitation expired | **Staff → New invitation link** |
 
 ### Migrations
@@ -358,6 +379,10 @@ docker compose exec app rm /tmp/parishes.xlsx /tmp/directory-issues.csv
 - **Switching it on:** once a list is imported, an owner switches the parish question on in Admin → Settings (“Ask applicants to choose their parish from the RCCG directory”), next to what's loaded and what's waiting in Parish review. It can't be switched on while the directory is empty. Then work through Admin → Parish review: the answers typed before the directory, with exact matches to confirm together. Parish search needs the `pg_trgm` extension: migration 0007 creates it, which works when the app's database user owns the database (as in Compose and the bare-metal steps); otherwise run `create extension pg_trgm;` as a superuser first.
 - Bare metal: the same commands in the app folder without `docker compose exec app`. In development: `pnpm directory …` (it uses `.data/pglite`, so stop `pnpm dev` first).
 
+### Database roles
+
+Compose's Postgres image makes `POSTGRES_USER` a superuser, and the app and worker connect as it. Bare metal is better (the `sop` role owns the database but isn't a superuser), but can still rewrite any table, including the audit history. Planned ([06, 7.13](06-Implementation-Plan.md#phase-7-hardening--launch-in-progress)), not yet in the scripts: an owner role (not a superuser) that runs the migrations, a separate app role with data access only (`select, insert, update, delete`) for the app and worker (`RUN_MIGRATIONS=false`), and `revoke update, delete, truncate on audit_events` from the app role. Plan it with a restore test, since it changes how updates run.
+
 ### Rotating secrets
 
 | Secret | How | Consequences |
@@ -365,6 +390,7 @@ docker compose exec app rm /tmp/parishes.xlsx /tmp/directory-issues.csv
 | `POSTGRES_PASSWORD` | `alter role sop password '…'` in psql, update `.env`, `docker compose up -d` | None for users |
 | SMTP credentials | Update `SMTP_URL`, restart | None |
 | VAPID keys | Only if the private key leaked: `push-keys.js`, update `.env`, restart | Devices must re-subscribe: the app does it automatically for people who open it again with permission granted; others stop receiving |
+| `EDGE_PROXY_SECRET` | New value in the Vercel project and in the VPS's `.env`, redeploy Vercel, restart the app | None. Rotate it if a Vercel build from before 2026-09-30 ever ran with `API_ORIGIN` and the secret set (its middleware could be made to send the secret to another host) |
 | `APP_SECRET` | Only if leaked (or the server was compromised): new value in `.env`, restart, then as below | Everyone is signed out (CSRF tokens change). Staff authenticator secrets and push subscriptions encrypted with the old key can't be read: reset two-step verification for every staff member (`admin.js reset-mfa --email …` or Staff page) and run `update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'rejected' where status = 'active';` so devices show "turn on again" |
 | A staff member's password | They change it under **Your security** (other sessions are signed out) |
 
@@ -409,7 +435,7 @@ Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrom
 
 - **Account:** **Admin → Accounts → the account → Delete account** (type the email). The person can also do it themselves under **Account → Settings**. Applications stay, unlinked.
 - **Application:** **Admin → Applicants → the application → Delete application** (type the reference). Notes and history go with it.
-- Remove the person from any exported spreadsheets; backups age out after 14 days (off-server copies per your retention policy).
+- Remove the person from any exported spreadsheets; backups age out after 14 days on the server, with Docker or bare metal (off-server copies per your retention policy).
 
 ### Monitoring
 
@@ -428,7 +454,9 @@ Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrom
 - [ ] Email configured and a sign-in link received (or accounts intentionally left off)
 - [ ] VAPID keys generated once, backed up, and a test notification received on a staff test device (or push intentionally left off)
 - [ ] A test application submitted, found in **Applicants**, and deleted
-- [ ] Nightly backup cron installed **and** off-server copies arranged
+- [ ] Nightly backup cron installed, a restore tested, **and** encrypted off-server copies arranged
+- [ ] The server runs with `NODE_ENV=production` (Compose, the Dockerfile and the systemd unit set it)
+- [ ] Base images and host packages updated regularly (§A8)
 - [ ] Firewall allows only 22/80/443
 - [ ] Privacy notice, consent wording and retention periods agreed by the Programme team ([01-PRD §8](01-PRD.md#8-open-questions))
 - [ ] Device checks done on staging (above)

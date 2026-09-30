@@ -129,11 +129,11 @@ export async function staffSignIn(ctx: TestContext, staff: { email: string; pass
   });
   if (login.statusCode !== 200) throw new Error(`login failed: ${login.statusCode} ${login.body}`);
   const session = { cookie: cookieFrom(login), csrf: login.json().csrfToken as string };
-  if (staff.totpSecret) {
-    const mfa = await asUser(ctx.app, session)({ method: 'POST', url: '/api/admin/mfa/verify', remoteAddress: nextVisitor(), payload: { code: totpCode(staff.totpSecret) } });
-    if (mfa.statusCode !== 200) throw new Error(`mfa failed: ${mfa.statusCode} ${mfa.body}`);
-  }
-  return session;
+  if (!staff.totpSecret) return session;
+  const mfa = await asUser(ctx.app, session)({ method: 'POST', url: '/api/admin/mfa/verify', remoteAddress: nextVisitor(), payload: { code: totpCode(staff.totpSecret) } });
+  if (mfa.statusCode !== 200) throw new Error(`mfa failed: ${mfa.statusCode} ${mfa.body}`);
+  // Passing the second factor starts a new session.
+  return { cookie: cookieFrom(mfa), csrf: mfa.json().csrfToken as string };
 }
 
 /** Applicant sign-in through the emailed link (read from the outbox). */

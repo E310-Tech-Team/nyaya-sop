@@ -17,6 +17,25 @@ import type { Services } from '../services';
 import { deviceCondition, hasFilters, parseAudience } from './audience';
 
 export const BATCH_SIZE = 100;
+/**
+ * A push service that keeps refusing a subscription (malformed, or made up by someone filling the
+ * list) won't start accepting it: after this many refusals in a row it's switched off, so it stops
+ * inflating audiences and using up sends. Refused credentials (401/403) are counted but never switch
+ * a device off: they follow from this server's own keys, which an operator can put right.
+ */
+export const REFUSALS_BEFORE_REMOVAL = 3;
+const SUBSCRIPTION_FAULTS = new Set(['rejected', 'invalid_subscription_keys']);
+
+async function countRefusal(db: Queryable, subscriptionId: string, error: string) {
+  const { rows } = await db.query<{ failure_count: number }>(
+    'update push_subscriptions set failure_count = failure_count + 1 where id = $1 returning failure_count',
+    [subscriptionId],
+  );
+  if (SUBSCRIPTION_FAULTS.has(error) && (rows[0]?.failure_count ?? 0) >= REFUSALS_BEFORE_REMOVAL) {
+    await deactivateSubscription(db, subscriptionId, 'rejected');
+  }
+}
+
 export const MAX_DELIVERY_ATTEMPTS = 5;
 const SEND_CONCURRENCY = 6;
 
@@ -285,9 +304,10 @@ export async function deliverBatch(services: Services, payload: { messageId: str
         [delivery.id, status, outcome.status || null, error],
       );
       if (outcome.kind === 'gone') await deactivateSubscription(db, delivery.subscription_id, 'expired');
-      else if (outcome.kind === 'failed' && outcome.error === 'rejected_credentials') {
-        await db.query('update push_subscriptions set failure_count = failure_count + 1 where id = $1', [delivery.subscription_id]);
-      } else if (outcome.kind === 'retry') {
+      else if (outcome.kind === 'accepted') {
+        await db.query('update push_subscriptions set failure_count = 0 where id = $1 and failure_count > 0', [delivery.subscription_id]);
+      } else if (outcome.kind === 'failed') await countRefusal(db, delivery.subscription_id, outcome.error);
+      else if (outcome.kind === 'retry') {
         retry.push(delivery.id);
         retryAfter = Math.max(retryAfter, outcome.retryAfterSeconds ?? 0);
       }

@@ -73,7 +73,7 @@ export async function searchParishes(db: Queryable, query: string, state: string
                in_state desc,
                p.name_key, p.display_name,
                regexp_replace(coalesce(u_province.name_key, ''), '\\d+$', ''),
-               coalesce(substring(u_province.name_key from '(\\d+)$')::int, 0)
+               coalesce(substring(u_province.name_key from '(\\d+)$')::numeric, 0)
       limit $3`,
     params,
   );
@@ -172,6 +172,9 @@ export async function parishRoutes(app: FastifyInstance, services: Services) {
   const { db } = services;
 
   app.get('/search', { config: { rateLimit: RATE_LIMIT } }, async (request, reply) => {
+    // Searchable only once the directory is switched on: an imported list may still be under review.
+    // (Looking a parish up by its ID stays open: IDs can't be guessed, and saved answers are re-checked.)
+    if (!(await parishDirectoryEnabled(db))) return sendError(reply, 404, 'NOT_FOUND', 'The parish list is not in use.');
     const query = request.query as Record<string, unknown>;
     const text = typeof query.q === 'string' ? query.q.trim() : '';
     if (text.length < PARISH_SEARCH.minLength || text.length > PARISH_SEARCH.maxLength) {

@@ -4,7 +4,7 @@
  * can run at once: jobs are claimed with FOR UPDATE SKIP LOCKED.
  * SIGTERM/SIGINT: stop claiming, let running jobs finish (up to 20 s), hand the rest back.
  */
-import { createServices } from './app';
+import { createServices, errorForLog } from './app';
 import { ConfigError, loadConfig, loadDotEnv } from './config';
 import { createDb } from './db';
 import { Worker } from './jobs/worker';
@@ -31,6 +31,6 @@ try {
   process.once('SIGTERM', () => void stop('SIGTERM'));
   process.once('SIGINT', () => void stop('SIGINT'));
 } catch (error) {
-  console.error(error instanceof ConfigError ? `Configuration error: ${error.message}` : error);
+  console.error(error instanceof ConfigError ? `Configuration error: ${error.message}` : error instanceof Error ? errorForLog(error) : error);
   process.exit(1);
 }

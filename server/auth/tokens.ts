@@ -54,3 +54,16 @@ export async function recentTokenCount(db: Queryable, purpose: TokenPurpose, ema
   );
   return rows[0]?.n ?? 0;
 }
+
+/**
+ * Makes a staff member's outstanding links unusable: earlier reset links when a new one is sent,
+ * after a reset or password change, and every link when the account is suspended.
+ */
+export async function voidStaffTokens(db: Queryable, staffId: string, purposes: readonly TokenPurpose[]): Promise<void> {
+  await db.query(`update auth_tokens set used_at = now() where staff_id = $1 and purpose::text = any($2::text[]) and used_at is null`, [staffId, purposes]);
+}
+
+/** Once one sign-in link has been used, the others sent to that address stop working too. */
+export async function voidSignInTokens(db: Queryable, email: string): Promise<void> {
+  await db.query(`update auth_tokens set used_at = now() where email = $1 and purpose = 'applicant_sign_in' and used_at is null`, [email]);
+}

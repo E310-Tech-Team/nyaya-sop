@@ -124,13 +124,15 @@ export async function pushRoutes(app: FastifyInstance, services: Services) {
     const body = request.body as { oldEndpoint?: unknown; oldAuth?: unknown; subscription?: unknown } | null;
     const old = await findOwned(db, body?.oldEndpoint, body?.oldAuth);
     const parsed = parseSubscription(body?.subscription, config.push.extraHosts);
-    if (!old || old.staff_id || !parsed.ok) return sendError(reply, 404, 'NOT_FOUND', 'Nothing to update.');
+    // Only a live subscription is replaced: a removed or switched-off one stays off.
+    if (!old || old.status !== 'active' || old.staff_id || !parsed.ok) return sendError(reply, 404, 'NOT_FOUND', 'Nothing to update.');
     const result = await registerSubscription(services, {
       sub: parsed.value,
       topics: old.topics,
       accountId: old.account_id,
       staffId: null,
       deviceLabel: old.device_label ?? deviceLabel(request.headers['user-agent']),
+      carriedConsent: { version: old.consent_version, at: old.consent_at },
     });
     if ('conflict' in result) return sendError(reply, 409, 'CONFLICT', 'Could not update this device.');
     if (result.row.id !== old.id) await deactivateSubscription(db, old.id, 'replaced');

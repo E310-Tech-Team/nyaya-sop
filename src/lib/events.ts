@@ -10,6 +10,7 @@ export function reportEvent(name: AnalyticsEventName, properties: AnalyticsPrope
     void fetch('/api/events', {
       method: 'POST',
       keepalive: true,
+      credentials: 'omit', // the server ignores cookies here: don't send them
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name, properties }),
     }).catch(() => undefined);

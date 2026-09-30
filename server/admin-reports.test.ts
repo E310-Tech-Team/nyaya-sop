@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ROLE_PERMISSIONS, type Permission } from '../src/shared/permissions';
+import { ROLE_PERMISSIONS, type Permission, type StaffRole } from '../src/shared/permissions';
 import { validPayload } from '../src/shared/test-fixtures';
 import { utcToZonedLocal } from '../src/shared/time';
 import { planImport } from './directory/plan';
 import type { SourceRow } from './directory/source';
 import { applyPlan, loadSnapshot } from './directory/store';
+import { parseCsv } from './csv';
 import { clearSettingsCache } from './settings';
 import { asUser, createStaff, createTestContext, nextVisitor, staffSignIn, type TestContext } from './test-helpers';
 
@@ -177,9 +178,15 @@ describe('applications by region, province and parish', () => {
       ['unit', 'Region 19', 1],
       ['unit', 'Region 21', 0],
       ['without', 'No region', 1],
+      ['unassigned', 'Unassigned', 3],
     ]);
-    expect(regions.totals.applications).toBe(7);
-    expect(regions.items[0]).toMatchObject({ parent: { name: 'Continent 3' }, parishesWithApplications: 3, activeParishes: 3, children: { level: 'province', count: 2 } });
+    expect(regions.totals.applications).toBe(10);
+    expect(regions.items[0]).toMatchObject({
+      parent: { name: 'Continent 3' },
+      parishesWithApplications: 3,
+      activeParishes: 3,
+      children: [{ level: 'province', count: 2, withApplications: 2 }],
+    });
     await reconcile(owner, regions);
 
     const provinces = await get(owner, 'units', { level: 'province' });
@@ -190,6 +197,7 @@ describe('applications by region, province and parish', () => {
       ['unit', 'Lagos Province 2', 0],
       ['unit', 'Oyo Province 6', 0],
       ['without', 'No province', 1],
+      ['unassigned', 'Unassigned', 3],
     ]);
     await reconcile(owner, provinces);
 
@@ -198,25 +206,29 @@ describe('applications by region, province and parish', () => {
       ['unit', 'Continent 1', 1],
       ['unit', 'Continent 3', 6],
       ['unit', 'Continent 12', 0],
+      ['unassigned', 'Unassigned', 3],
     ]);
     await reconcile(owner, continents);
 
     const parishes = await get(owner, 'units', { level: 'parish' });
-    expect(parishes.includeAll).toBe(false);
+    expect(parishes.includeAll).toBe(true);
     expect(cards(parishes)).toEqual([
       ['parish', 'Jesus House', 3],
       ['parish', 'Grace Chapel', 1],
       ['parish', 'House of Prayer', 1],
       ['parish', 'Rehoboth', 1],
       ['parish', 'Trinity Sanctuary', 1],
+      ['parish', 'Jesus House', 0],
+      ['parish', 'Rehoboth', 0],
+      ['unassigned', 'Unassigned', 3],
     ]);
     expect(parishes.items[0]).toMatchObject({ parent: { name: 'Lagos Province 3', level: 'province' }, chain: { province: 'Lagos Province 3', region: 'Region 54', continent: 'Continent 3' } });
     await reconcile(owner, parishes);
-    expect((await get(owner, 'units', { level: 'parish', include: 'all' })).total).toBe(7);
+    expect((await get(owner, 'units', { level: 'parish', include: 'applications' })).total).toBe(5);
 
-    // Every listing adds up to the applications with a parish, and the summary's gaps name the rest.
+    // Every listing at the top adds up to all the applications: the Unassigned group holds those with no directory parish.
     const summary = await get(owner, 'summary');
-    for (const listing of [regions, provinces, continents, parishes]) expect(listing.totals.applications).toBe(summary.withParish);
+    for (const listing of [regions, provinces, continents, parishes]) expect(listing.totals.applications).toBe(summary.applications);
     const without = await get(owner, 'units', { level: 'parish', without: 'province' });
     expect(cards(without)).toEqual([['parish', 'Trinity Sanctuary', 1]]);
   });
@@ -319,7 +331,7 @@ describe('applications by region, province and parish', () => {
     });
     // Unknown sorts fall back to the default.
     expect(await provinces({ sort: 'unknown', dir: 'sideways' })).toMatchObject({ sort: 'applications', dir: 'desc' });
-    const parishes = await get(owner, 'units', { level: 'parish', sort: 'shortlisted' });
+    const parishes = await get(owner, 'units', { level: 'parish', sort: 'shortlisted', include: 'applications' });
     expect(parishes.items.map((card: Card) => card.name)).toEqual(['Jesus House', 'Grace Chapel', 'House of Prayer', 'Rehoboth', 'Trinity Sanctuary']);
   });
 
@@ -327,14 +339,174 @@ describe('applications by region, province and parish', () => {
     const { owner } = await seed();
     const response = await owner({ url: '/api/admin/reports/units.csv?level=province&pageSize=2' });
     expect(response.headers['content-type']).toBe('text/csv; charset=utf-8');
-    const lines = response.body.replace(/^﻿/, '').trim().split('\r\n');
+    const lines = parseCsv(response.body).map((cells) => cells.join(','));
     expect(lines[0]).toMatch(/^Level,Name,In,Status,Changed in 2026,Applications,Review: /);
-    expect(lines).toHaveLength(1 + 5 + 1 + 1); // header, every province (not just the page), No province, total
+    expect(lines).toHaveLength(1 + 5 + 1 + 1 + 1); // header, every province (not just the page), No province, Unassigned, total
     expect(lines[1]).toContain('province,Lagos Province 3,Region 54,active,,4');
     expect(lines[1]).toContain('all time,report-test.xlsx (as at 2026-04-30)');
-    expect(lines.at(-1)).toMatch(/^total,All provinces,,,,7,/);
+    expect(lines.at(-2)).toMatch(/^unassigned,Unassigned,,,,3,/);
+    expect(lines.at(-1)).toMatch(/^total,All provinces,,,,10,/);
     const { rows } = await ctx.db.query(`select details from audit_events where action = 'reports.exported'`);
-    expect(rows).toEqual([{ details: { rows: 6, level: 'province', filters: ['level', 'pageSize'], masked: false } }]);
+    expect(rows).toEqual([{ details: { rows: 7, level: 'province', filters: ['level', 'pageSize'], masked: false } }]);
+
+    // The period names only dates that were applied, and the audit only filter names the route knows (security audit).
+    const odd = await owner({ url: '/api/admin/reports/units.csv?level=province&from=anything%3B%3D1%2B2&to=2026-09-30&probe-key=1' });
+    const cells = parseCsv(odd.body);
+    const period = cells[0]!.indexOf('Period (WAT)');
+    expect(cells[1]![period]).toBe('start to 2026-09-30');
+    expect(odd.body).not.toContain('anything');
+    const { rows: audited } = await ctx.db.query(`select details from audit_events where action = 'reports.exported' order by id desc limit 1`);
+    expect(audited[0]).toMatchObject({ details: { filters: ['from', 'to', 'level'] } }); // never probe-key
+  });
+});
+
+describe('the drill-down from continents to a parish', () => {
+  type Listed = Card & { id: string; children: { level: string; count: number; withApplications: number | null }[]; drill: Record<string, string> | null };
+  const named = (listing: { items: Listed[] }, name: string) => listing.items.find((card) => card.name === name)!;
+
+  it('opens on the continents, with the applications that have no directory parish as a group of their own', async () => {
+    const { owner } = await seed();
+    const top = await get(owner, 'units');
+    expect(top).toMatchObject({ mode: 'level', level: 'continent', within: null, includeAll: true });
+    expect(cards(top)).toEqual([
+      ['unit', 'Continent 3', 6],
+      ['unit', 'Continent 1', 1],
+      ['unit', 'Continent 12', 0],
+      ['unassigned', 'Unassigned', 3],
+    ]);
+    expect(top.totals.applications).toBe((await get(owner, 'summary')).applications);
+    await reconcile(owner, top);
+    // Each continent counts the units directly under it, and how many of them have applications.
+    expect(named(top, 'Continent 3').children).toEqual([{ level: 'region', count: 2, withApplications: 2 }]);
+    expect(named(top, 'Continent 1').children).toEqual([{ level: 'province', count: 1, withApplications: 1 }]); // a province straight under its continent
+    expect(named(top, 'Continent 12').children).toEqual([{ level: 'region', count: 1, withApplications: 0 }]);
+    expect(named(top, 'Continent 3')).toMatchObject({ activeParishes: 5, parishesWithApplications: 4, drill: { unit: named(top, 'Continent 3').id } });
+    expect(top.extras[0]).toMatchObject({ kind: 'unassigned', filter: { parish: 'none' }, drill: null, parishesWithApplications: null });
+  });
+
+  it('goes down one level at a time to a parish, and each level adds up to the card above it', async () => {
+    const { owner } = await seed();
+    const top = await get(owner, 'units');
+    const continent3 = await get(owner, 'units', { unit: await unitId('Continent 3') });
+    expect(continent3).toMatchObject({ mode: 'children', within: { name: 'Continent 3', level: 'continent', childLevel: 'region' }, ancestors: [] });
+    expect(cards(continent3)).toEqual([
+      ['unit', 'Region 54', 5],
+      ['unit', 'Region 19', 1],
+    ]);
+    expect(continent3.totals.applications).toBe(named(top, 'Continent 3').applications);
+    const region19 = await get(owner, 'units', { unit: await unitId('Region 19') });
+    expect(cards(region19)).toEqual([
+      ['unit', 'Lagos Province 2', 0],
+      ['direct', 'No province: directly under Region 19', 1],
+    ]);
+    expect(region19.items[0].children).toEqual([]); // provinces hold parishes, not units
+    expect(region19.totals.applications).toBe(named(continent3, 'Region 19').applications);
+    const province = await get(owner, 'units', { unit: await unitId('Lagos Province 3') });
+    expect(province).toMatchObject({ mode: 'parishes', ancestors: [{ name: 'Continent 3' }, { name: 'Region 54' }] });
+    const jesus = named(province, 'Jesus House');
+    expect(jesus).toMatchObject({ applications: 3, drill: { parish: jesus.id } });
+
+    // The parish's own view: where it is in today's directory, and its figures under the same filters.
+    const parish = await get(owner, 'summary', { unit: await unitId('Lagos Province 3'), parish: jesus.id });
+    expect(parish).toMatchObject({ applications: 3, uniqueApplicants: 2, parish: { name: 'Jesus House', status: 'active', mergedInto: null, unit: { name: 'Lagos Province 3', level: 'province' } } });
+    expect(parish.parish.chain.map((unit: { name: string }) => unit.name)).toEqual(['Continent 3', 'Region 54', 'Lagos Province 3']);
+    expect(await listTotal(owner, { parish: jesus.id })).toBe(3);
+
+    // A unit's CSV covers that unit, groups outside its units included.
+    const csv = parseCsv((await owner({ url: `/api/admin/reports/units.csv?unit=${await unitId('Region 19')}` })).body).map((cells) => cells.slice(0, 6).join(','));
+    expect(csv.slice(1)).toEqual(['province,Lagos Province 2,Region 19,active,,0', 'direct,No province: directly under Region 19,,,,1', 'total,Region 19,,,,1']);
+  });
+
+  it('keeps date and status filters at every level, and every level still adds up', async () => {
+    const { apps, owner } = await seed();
+    for (const id of [apps.jesusB, apps.trinity, apps.none, apps.rivers]) await owner({ method: 'POST', url: `/api/admin/applicants/${id}/status`, payload: { status: 'under_review' } });
+    await ctx.db.query(`update applications set created_at = created_at - interval '3 days' where id = $1`, [apps.rivers]);
+    const filters = { status: 'under_review', from: lagosDay(-1), to: lagosDay() };
+    const top = await get(owner, 'units', filters);
+    expect(cards(top)).toEqual([
+      ['unit', 'Continent 3', 2],
+      ['unit', 'Continent 1', 0],
+      ['unit', 'Continent 12', 0],
+      ['unassigned', 'Unassigned', 1],
+    ]);
+    expect(top.totals.applications).toBe((await get(owner, 'summary', filters)).applications);
+    await reconcile(owner, top, filters);
+    const continent3 = await get(owner, 'units', { ...filters, unit: await unitId('Continent 3') });
+    expect(cards(continent3)).toEqual([
+      ['unit', 'Region 19', 1], // a tie on applications goes in natural name order
+      ['unit', 'Region 54', 1],
+    ]);
+    expect(named(continent3, 'Region 54').children).toEqual([{ level: 'province', count: 2, withApplications: 1 }]);
+    await reconcile(owner, continent3, filters);
+    const lagos3 = await get(owner, 'units', { ...filters, unit: await unitId('Lagos Province 3') });
+    expect(cards(lagos3)).toEqual([
+      ['parish', 'Jesus House', 1],
+      ['parish', 'Grace Chapel', 0],
+    ]);
+    await reconcile(owner, lagos3, filters);
+    expect((await get(owner, 'summary', { ...filters, parish: named(lagos3, 'Jesus House').id })).applications).toBe(1);
+  });
+
+  it('lists units and parishes with no applications, unless asked for those with applications only', async () => {
+    const { owner } = await seed();
+    const continent12 = await get(owner, 'units', { unit: await unitId('Continent 12') });
+    expect(cards(continent12)).toEqual([['unit', 'Region 21', 0]]);
+    expect(continent12.items[0].children).toEqual([{ level: 'province', count: 1, withApplications: 0 }]);
+    expect(await get(owner, 'units', { unit: await unitId('Continent 12'), include: 'applications' })).toMatchObject({ total: 0, includeAll: false, items: [], extras: [] });
+    expect(cards(await get(owner, 'units', { unit: await unitId('Oyo Province 6') }))).toEqual([['parish', 'Rehoboth', 0]]);
+  });
+
+  it('refuses a unit, parish or level that don’t exist or don’t belong together', async () => {
+    const { owner } = await seed();
+    const status = async (path: string, query: Record<string, string>) => (await owner({ url: `/api/admin/reports/${path}?${new URLSearchParams(query)}` })).statusCode;
+    const region54 = await unitId('Region 54');
+    const elsewhere = await parishId('Rehoboth', 'Oyo Province 6');
+    const trinity = await parishId('Trinity Sanctuary', 'Region 19');
+    const missing = '00000000-0000-4000-8000-000000000000';
+    for (const path of ['summary', 'units', 'units.csv', 'trend', 'cohorts']) expect(await status(path, { unit: region54, parish: elsewhere }), path).toBe(400);
+    expect(await status('units', { unit: region54, level: 'continent' })).toBe(400);
+    expect(await status('units', { unit: region54, level: 'region' })).toBe(400);
+    expect(await status('units', { unit: region54, level: 'province' })).toBe(200);
+    expect(await status('units', { level: 'planet' })).toBe(400);
+    const unknown: Record<string, string>[] = [{ unit: missing }, { unit: 'not-an-id' }, { parish: missing }, { parish: 'not-an-id' }];
+    for (const query of unknown) {
+      expect(await status('summary', query), JSON.stringify(query)).toBe(404);
+      expect(await status('units', query), JSON.stringify(query)).toBe(404);
+    }
+    // "Directly under" means directly: Trinity Sanctuary sits straight under Region 19.
+    expect(await status('summary', { unit: await unitId('Region 19'), direct: '1', parish: trinity })).toBe(200);
+    expect(await status('summary', { unit: await unitId('Continent 3'), direct: '1', parish: trinity })).toBe(400);
+    // The Applicants list never widens a malformed place to every application.
+    expect(await listTotal(owner, { unit: 'not-an-id' })).toBe(0);
+    expect(await listTotal(owner, { parish: 'not-an-id' })).toBe(0);
+  });
+
+  it('keeps applicants and exports behind their own permissions: figures alone never open applicant records', async () => {
+    await seed();
+    const jesus = await parishId('Jesus House', 'Lagos Province 3');
+    const as = async (role: StaffRole) => asUser(ctx.app, await staffSignIn(ctx, await createStaff(ctx, { role })));
+    const comms = await as('communications');
+    for (const url of [`/api/admin/reports/summary?parish=${jesus}`, `/api/admin/reports/units?unit=${await unitId('Lagos Province 3')}`, `/api/admin/applicants?parish=${jesus}`, `/api/admin/applicants/export.csv?parish=${jesus}`]) {
+      expect((await comms({ url })).statusCode, url).toBe(403);
+    }
+    const admin = await as('programme_admin');
+    expect((await admin({ url: `/api/admin/applicants?parish=${jesus}` })).json().total).toBe(3);
+    const csv = await admin({ url: `/api/admin/applicants/export.csv?parish=${jesus}` });
+    expect(parseCsv(csv.body)).toHaveLength(1 + 3); // header and that parish's applications only
+
+    // A role given reports.view without applicant details sees small counts masked, and still no applicants.
+    const original = ROLE_PERMISSIONS.read_only;
+    (ROLE_PERMISSIONS as Record<string, readonly Permission[]>).read_only = [...original, 'reports.view'];
+    try {
+      const viewer = await as('read_only');
+      expect(await get(viewer, 'summary', { parish: jesus })).toMatchObject({ masked: true, applications: null, parish: { name: 'Jesus House' } });
+      const top = await get(viewer, 'units');
+      expect(named(top, 'Continent 1').applications).toBeNull();
+      expect(named(top, 'Continent 3').children).toEqual([{ level: 'region', count: 2, withApplications: null }]);
+      expect((await viewer({ url: `/api/admin/applicants?parish=${jesus}` })).statusCode).toBe(403);
+    } finally {
+      (ROLE_PERMISSIONS as Record<string, readonly Permission[]>).read_only = original;
+    }
   });
 });
 
@@ -399,6 +571,7 @@ describe('who sees what', () => {
         ['unit', 'Region 19', null],
         ['unit', 'Region 21', 0],
         ['without', 'No region', null],
+        ['unassigned', 'Unassigned', null],
       ]);
       expect(regions.items[0].byStatus.submitted).toBe(5);
       // Ordering by a status or by parishes would give small counts away: the listing keeps its default order.
@@ -406,7 +579,7 @@ describe('who sees what', () => {
       expect(await get(viewer, 'units', { level: 'region', sort: 'parishes', dir: 'asc' })).toMatchObject({ sort: 'applications', dir: 'asc' });
       expect(await get(viewer, 'units', { level: 'region', sort: 'name' })).toMatchObject({ sort: 'name', dir: 'asc' });
       expect((await get(viewer, 'cohorts')).items.map((cohort: { applications: number | null }) => cohort.applications)).toEqual([null, 9]);
-      const csv = (await viewer({ url: '/api/admin/reports/units.csv?level=region' })).body;
+      const csv = parseCsv((await viewer({ url: '/api/admin/reports/units.csv?level=region' })).body).map((cells) => cells.join(',')).join('\n');
       expect(csv).toContain('region,Region 19,Continent 3,active,,fewer than 5');
       // Read-only staff still can't open the applicants behind the counts.
       expect((await viewer({ url: '/api/admin/applicants' })).statusCode).toBe(403);

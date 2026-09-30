@@ -4,6 +4,7 @@ import { utcToZonedLocal } from '../src/shared/time';
 import { planImport } from './directory/plan';
 import type { SourceRow } from './directory/source';
 import { applyPlan, loadSnapshot, saveLineage } from './directory/store';
+import { parseCsv } from './csv';
 import { clearSettingsCache } from './settings';
 import { asUser, createStaff, createTestContext, nextVisitor, staffSignIn, type TestContext } from './test-helpers';
 
@@ -163,7 +164,7 @@ describe('applicants and their parish', () => {
   it('exports the parish with its province, region and continent', async () => {
     const { owner } = await seed();
     const csv = (await owner({ url: '/api/admin/applicants/export.csv' })).body;
-    const [header, ...lines] = csv.replace(/^﻿/, '').trim().split('\r\n');
+    const [header, ...lines] = parseCsv(csv).map((cells) => cells.join(','));
     expect(header).toContain('RCCG parish,Parish answer,Parish (directory),Province,Region,Continent,Highest education');
     expect(lines.some((text) => text.includes('Jesus House,Chosen from the directory,Jesus House,Lagos Province 3,Region 54,Continent 3'))).toBe(true);
     expect(lines.some((text) => text.includes('Trinity Sanctuary,Chosen from the directory,Trinity Sanctuary,,Region 19,Continent 3'))).toBe(true);
@@ -244,6 +245,12 @@ describe('Parish review', () => {
     const link = await owner({ method: 'POST', url: `/api/admin/parish-review/earlier/${apps.typedJesus}/link`, payload: { parishId: parishes.jesus2 } });
     expect(link.statusCode).toBe(200);
     expect((await owner({ url: '/api/admin/parish-review' })).json().counts.earlier_text).toBe(0);
+
+    // A full batch fits in one request: 500 pairs are more than the default 16 KB body (security audit).
+    const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const batch = Array.from({ length: 500 }, (_, n) => ({ applicationId: id(n), parishId: id(n + 1000) }));
+    expect(JSON.stringify({ items: batch }).length).toBeGreaterThan(16 * 1024);
+    expect((await owner({ method: 'POST', url: '/api/admin/parish-review/earlier/confirm', payload: { items: batch } })).json()).toEqual({ ok: true, linked: 0, skipped: 500 });
   });
 });
 

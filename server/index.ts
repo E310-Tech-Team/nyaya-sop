@@ -1,5 +1,5 @@
-import { buildApp, createServices } from './app';
-import { ConfigError, loadConfig, loadDotEnv } from './config';
+import { buildApp, createServices, errorForLog } from './app';
+import { assertSafeToListen, ConfigError, loadConfig, loadDotEnv } from './config';
 import { createDb } from './db';
 import { Worker } from './jobs/worker';
 import { migrate } from './migrate';
@@ -7,6 +7,7 @@ import { migrate } from './migrate';
 async function main() {
   loadDotEnv();
   const config = loadConfig();
+  assertSafeToListen(config);
   const db = await createDb(config);
   const services = createServices(config, db);
   const app = await buildApp({ config, db, services });
@@ -47,6 +48,6 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof ConfigError ? `Configuration error: ${error.message}` : error);
+  console.error(error instanceof ConfigError ? `Configuration error: ${error.message}` : error instanceof Error ? errorForLog(error) : error);
   process.exit(1);
 });

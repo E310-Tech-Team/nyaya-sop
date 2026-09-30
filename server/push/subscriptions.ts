@@ -26,6 +26,8 @@ export type SubscriptionRow = {
   topics: NotificationTopic[];
   status: 'active' | 'expired' | 'revoked';
   device_label: string | null;
+  consent_version: string | null;
+  consent_at: Date | null;
   created_at: Date;
   last_seen_at: Date;
 };
@@ -47,7 +49,8 @@ export function parseSubscription(input: unknown, extraHosts: readonly string[])
     return { ok: false, reason: 'invalid_p256dh' };
   }
   if (typeof auth !== 'string' || !B64URL.test(auth) || bytes(auth).length !== 16) return { ok: false, reason: 'invalid_auth' };
-  const expiration = typeof sub.expirationTime === 'number' && Number.isFinite(sub.expirationTime) ? new Date(sub.expirationTime) : null;
+  // Browsers send null or a time in milliseconds; anything a Date can't hold is ignored.
+  const expiration = typeof sub.expirationTime === 'number' && sub.expirationTime > 0 && sub.expirationTime <= 8.64e15 ? new Date(sub.expirationTime) : null;
   return { ok: true, value: { endpoint: sub.endpoint as string, expirationTime: expiration, keys: { p256dh, auth }, host: endpoint.host } };
 }
 
@@ -55,7 +58,7 @@ export const endpointHash = (endpoint: string) => sha256Hex(`push-endpoint:${end
 const authHash = (auth: string) => sha256Hex(`push-auth:${auth}`);
 
 const COLUMNS = `id, endpoint_enc, keys_enc, auth_hash, push_host, account_id, staff_id, topics, status::text as status,
-                 device_label, created_at, last_seen_at`;
+                 device_label, consent_version, consent_at, created_at, last_seen_at`;
 
 export async function findByEndpoint(db: Queryable, endpoint: string): Promise<SubscriptionRow | null> {
   const { rows } = await db.query<SubscriptionRow>(`select ${COLUMNS} from push_subscriptions where endpoint_hash = $1`, [endpointHash(endpoint)]);
@@ -108,34 +111,47 @@ export type RegisterResult = { row: SubscriptionRow; created: boolean; reactivat
  */
 export async function registerSubscription(
   services: Services,
-  input: { sub: ParsedSubscription; topics: NotificationTopic[]; accountId: string | null; staffId: string | null; deviceLabel: string },
+  input: {
+    sub: ParsedSubscription;
+    topics: NotificationTopic[];
+    accountId: string | null;
+    staffId: string | null;
+    deviceLabel: string;
+    /** When the browser replaced a subscription on its own: the consent the person gave then, kept as it was. */
+    carriedConsent?: { version: string | null; at: Date | null };
+  },
 ): Promise<RegisterResult> {
   const { db, secrets } = services;
   const existing = await findByEndpoint(db, input.sub.endpoint);
   const keysEnc = secrets.encrypt(JSON.stringify(input.sub.keys));
+  const consentVersion = input.carriedConsent ? input.carriedConsent.version : NOTIFICATION_CONSENT_VERSION;
+  const consentAt = input.carriedConsent ? input.carriedConsent.at : new Date();
   if (existing) {
     if (!safeEqual(existing.auth_hash, authHash(input.sub.keys.auth))) return { conflict: true };
-    const accountId = input.staffId ? null : (input.accountId ?? existing.account_id);
-    const staffId = input.staffId ?? (input.accountId ? null : existing.staff_id);
+    // A switched-off device keeps no link: only a signed-in caller links it again (a removed
+    // device must not come back to the account that removed it).
+    const live = existing.status === 'active';
+    const accountId = input.staffId ? null : (input.accountId ?? (live ? existing.account_id : null));
+    const staffId = input.staffId ?? (input.accountId || !live ? null : existing.staff_id);
     const topics = staffId ? [] : input.topics.filter((topic) => topic === 'general' || accountId);
     const { rows } = await db.query<SubscriptionRow>(
       `update push_subscriptions
           set keys_enc = $2, account_id = $3, staff_id = $4, topics = $5, status = 'active', deactivated_at = null,
-              deactivated_reason = null, expiration_time = $6, device_label = $7, consent_version = $8, consent_at = now(),
+              deactivated_reason = null, expiration_time = $6, device_label = $7, consent_version = $8, consent_at = $9,
               updated_at = now(), last_seen_at = now(), failure_count = 0
         where id = $1 returning ${COLUMNS}`,
-      [existing.id, keysEnc, accountId, staffId, topics, input.sub.expirationTime, input.deviceLabel, NOTIFICATION_CONSENT_VERSION],
+      [existing.id, keysEnc, accountId, staffId, topics, input.sub.expirationTime, input.deviceLabel, consentVersion, consentAt],
     );
     const row = rows[0]!;
-    await recordConsent(db, row.id, row.account_id, existing.status === 'active' ? 'update' : 'opt_in', row.topics);
+    await recordConsent(db, row.id, row.account_id, live || input.carriedConsent ? 'update' : 'opt_in', row.topics);
     if (row.account_id && row.account_id !== existing.account_id) await recordConsent(db, row.id, row.account_id, 'linked', row.topics);
     return { row, created: false, reactivated: existing.status !== 'active' };
   }
   const topics = input.staffId ? [] : input.topics;
   const { rows } = await db.query<SubscriptionRow>(
     `insert into push_subscriptions
-       (endpoint_hash, endpoint_enc, keys_enc, auth_hash, push_host, account_id, staff_id, topics, device_label, expiration_time, consent_version)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (endpoint_hash, endpoint_enc, keys_enc, auth_hash, push_host, account_id, staff_id, topics, device_label, expiration_time, consent_version, consent_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      on conflict (endpoint_hash) do nothing
      returning ${COLUMNS}`,
     [
@@ -149,12 +165,29 @@ export async function registerSubscription(
       topics,
       input.deviceLabel,
       input.sub.expirationTime,
-      NOTIFICATION_CONSENT_VERSION,
+      consentVersion,
+      consentAt,
     ],
   );
   if (!rows[0]) return registerSubscription(services, input); // raced with another request for the same endpoint
-  await recordConsent(db, rows[0].id, rows[0].account_id, 'opt_in', rows[0].topics);
+  await recordConsent(db, rows[0].id, rows[0].account_id, input.carriedConsent ? 'update' : 'opt_in', rows[0].topics);
   return { row: rows[0], created: true, reactivated: false };
+}
+
+/**
+ * A device removed from an account (by its owner, or with a suspension) forgets the account and
+ * its account-only topics, so nothing can link it back without that account's sign-in.
+ */
+export async function unlinkSubscription(db: Queryable, id: string): Promise<void> {
+  const { rows } = await db.query<{ account_id: string; topics: string[] }>(
+    `with before as (select account_id from push_subscriptions where id = $1 and account_id is not null)
+     update push_subscriptions p
+        set account_id = null, topics = array(select t from unnest(p.topics) as t where t not in ('application', 'training')), updated_at = now()
+       from before where p.id = $1
+     returning before.account_id, p.topics`,
+    [id],
+  );
+  if (rows[0]) await recordConsent(db, id, rows[0].account_id, 'unlinked', rows[0].topics);
 }
 
 export async function deactivateSubscription(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig } from './config';
+import { assertSafeToListen, ConfigError, isLoopbackAddress, loadConfig } from './config';
 import { csvCell } from './csv';
+import { smtpConnection } from './email';
 
 describe('loadConfig', () => {
   it('uses the embedded database in development', () => {
@@ -75,6 +76,39 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...PRODUCTION, EDGE_PROXY_SECRET: secret }).warnings[0]).toMatch(/TRUST_PROXY/);
   });
 
+  it('keeps development and test servers on this computer (security audit)', () => {
+    const listen = (env: NodeJS.ProcessEnv) => () => assertSafeToListen(loadConfig(env));
+    expect(listen({})).not.toThrow();
+    expect(listen({ HOST: 'localhost', SITE_URL: 'http://localhost:5173' })).not.toThrow();
+    expect(listen({ HOST: '::1' })).not.toThrow();
+    for (const HOST of ['0.0.0.0', '::', '192.168.1.20', 'apply.example.org']) expect(listen({ HOST })).toThrow(/NODE_ENV=production/);
+    expect(listen({ NODE_ENV: 'test', HOST: '0.0.0.0' })).toThrow(/test server/);
+    // Behind a proxy on the same computer the host is loopback, but the public address gives it away.
+    expect(listen({ SITE_URL: 'https://apply.example.org' })).toThrow(/NODE_ENV must be production/);
+    // Production listens wherever it's told; the command-line tools don't check at all.
+    expect(listen({ ...PRODUCTION, HOST: '0.0.0.0' })).not.toThrow();
+    expect(() => loadConfig({ SITE_URL: 'https://apply.example.org' })).not.toThrow();
+    expect(['127.0.0.1', '::1', '::ffff:127.0.0.1'].map(isLoopbackAddress)).toEqual([true, true, true]);
+    expect(['203.0.113.7', '::ffff:10.0.0.1', '', undefined].map(isLoopbackAddress)).toEqual([false, false, false, false]);
+  });
+
+  it('warns about production settings that weaken the defaults (security audit)', () => {
+    expect(loadConfig(PRODUCTION).warnings).toEqual([]);
+    expect(loadConfig({ ...PRODUCTION, TRUST_PROXY: 'true', COOKIE_SECURE: 'false', STAFF_MFA_REQUIRED: 'false' }).warnings).toEqual([
+      expect.stringMatching(/TRUST_PROXY=true/),
+      expect.stringMatching(/COOKIE_SECURE=false/),
+      expect.stringMatching(/STAFF_MFA_REQUIRED=false/),
+    ]);
+    expect(loadConfig({ TRUST_PROXY: 'true', COOKIE_SECURE: 'false' }).warnings).toEqual([]);
+  });
+
+  it('insists on TLS for an SMTP relay on another computer (security audit)', () => {
+    expect(smtpConnection('smtp://u:p@smtp.example.org:587')).toEqual({ url: 'smtp://u:p@smtp.example.org:587', requireTLS: true });
+    expect(smtpConnection('smtps://u:p@smtp.example.org:465')).toEqual({ url: 'smtps://u:p@smtp.example.org:465', requireTLS: true });
+    expect(smtpConnection('smtp://127.0.0.1:25')).toBe('smtp://127.0.0.1:25');
+    expect(smtpConnection('smtp://localhost:1025')).toBe('smtp://localhost:1025');
+  });
+
   it('rejects unsafe or malformed values', () => {
     expect(() => loadConfig({ PORT: 'eighty' })).toThrow(/PORT/);
     expect(() => loadConfig({ DATABASE_URL: 'mysql://x' })).toThrow(/postgres/);
@@ -83,16 +117,18 @@ describe('loadConfig', () => {
 
 describe('csvCell', () => {
   it.each([
-    ['plain', 'plain'],
+    ['plain', '"plain"'],
     ['has,comma', '"has,comma"'],
     ['has "quotes"', '"has ""quotes"""'],
     ['line\nbreak', '"line\nbreak"'],
-    ['=SUM(A1)', "'=SUM(A1)"],
-    ['@cmd', "'@cmd"],
-    ['-2+3+cmd', "'-2+3+cmd"],
-    ['+447700900123', '+447700900123'],
-    [null, ''],
-    [5, '5'],
+    ['=SUM(A1)', `"'=SUM(A1)"`],
+    ['@cmd', `"'@cmd"`],
+    ['-2+3+cmd', `"'-2+3+cmd"`],
+    ['+447700900123', '"+447700900123"'],
+    // A semicolon never starts a new cell in a spreadsheet set to semicolons (security audit).
+    ['Ade;=1+2', '"Ade;=1+2"'],
+    [null, '""'],
+    [5, '"5"'],
   ])('%j → %s', (input, expected) => {
     expect(csvCell(input)).toBe(expected);
   });

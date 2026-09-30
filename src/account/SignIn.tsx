@@ -1,9 +1,10 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Button, Input, Loading, Notice, errorMessage } from '../components/ui';
 import { loadAccount, markSignedIn } from '../lib/account';
 import { ApiError } from '../lib/api';
 import { usePublicConfig } from '../lib/config';
+import { useLinkToken } from '../lib/linkToken';
 import { isValidEmail } from '../shared/validation';
 import { AccountFrame } from './AccountApp';
 import { accountApi } from './api';
@@ -130,8 +131,7 @@ export function SignInPage() {
  * that open links don't use up the single-use link.
  */
 export function VerifyPage() {
-  const [params] = useSearchParams();
-  const token = params.get('token') ?? '';
+  const token = useLinkToken();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);

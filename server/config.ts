@@ -80,6 +80,39 @@ function trustProxy(raw: string | undefined): AppConfig['trustProxy'] {
   return raw.trim(); // e.g. "loopback", "loopback,uniquelocal" or "10.0.0.0/8,127.0.0.1"
 }
 
+const isLocalHostname = (hostname: string) => ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+
+/** An interface only this computer can reach (a proxy on it may still pass traffic on). */
+export function isLoopbackHost(host: string): boolean {
+  const value = host.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  return value === 'localhost' || value === '::1' || /^127(?:\.\d{1,3}){3}$/.test(value);
+}
+
+/** A socket peer on this computer (IPv4, IPv6 or IPv4-mapped IPv6). */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  return Boolean(address) && isLoopbackHost(address!.replace(/^::ffff:/i, ''));
+}
+
+/**
+ * Development and test settings (the published development secret, the readable email outbox,
+ * optional staff MFA) are only safe on this computer, so the server refuses to listen with them
+ * anywhere else can reach: on a network interface, or as the site at a public address. Checked
+ * by the server only: the command-line tools and the worker don't listen.
+ */
+export function assertSafeToListen(config: AppConfig): void {
+  if (config.env === 'production') return;
+  if (!isLoopbackHost(config.host)) {
+    throw new ConfigError(
+      `HOST=${config.host} would put a ${config.env} server on the network. Set NODE_ENV=production for a real deployment, or leave HOST unset (127.0.0.1) to develop locally`,
+    );
+  }
+  if (config.siteOrigin && !isLocalHostname(new URL(config.siteOrigin).hostname)) {
+    throw new ConfigError(
+      `SITE_URL=${config.siteOrigin} is a public address, so NODE_ENV must be production: development settings (a published secret, a readable email outbox) are only safe on this computer`,
+    );
+  }
+}
+
 function siteOrigin(raw: string | undefined, env: AppConfig['env']): string | null {
   const value = raw?.trim().replace(/\/+$/, '');
   if (!value) {
@@ -92,8 +125,7 @@ function siteOrigin(raw: string | undefined, env: AppConfig['env']): string | nu
   } catch {
     throw new ConfigError(`SITE_URL must be an origin like https://apply.example.org (got "${raw}")`);
   }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.origin !== value || !(url.protocol === 'https:' || (url.protocol === 'http:' && local))) {
+  if (url.origin !== value || !(url.protocol === 'https:' || (url.protocol === 'http:' && isLocalHostname(url.hostname)))) {
     throw new ConfigError(`SITE_URL must be an https:// origin with no path (http:// only for localhost); got "${raw}"`);
   }
   return url.origin;
@@ -197,6 +229,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const origin = siteOrigin(env.SITE_URL, nodeEnv);
   const staticDir = resolve(env.STATIC_DIR?.trim() || DEFAULT_STATIC_DIR);
+  const cookieSecure = bool('COOKIE_SECURE', env.COOKIE_SECURE, origin ? origin.startsWith('https:') : nodeEnv === 'production');
+  const staffMfaRequired = bool('STAFF_MFA_REQUIRED', env.STAFF_MFA_REQUIRED, nodeEnv === 'production');
+  if (nodeEnv === 'production') {
+    // Explicit choices that weaken production defaults: allowed, but said out loud at every start.
+    if (proxies === true) {
+      warnings.push('TRUST_PROXY=true believes X-Forwarded-For from anyone who reaches this port directly, so addresses and rate limits can be spoofed: list the proxies instead (e.g. loopback,uniquelocal)');
+    }
+    if (!cookieSecure && origin?.startsWith('https:')) {
+      warnings.push('COOKIE_SECURE=false with an https SITE_URL: sign-in cookies lose the Secure flag and can travel over plain HTTP');
+    }
+    if (!staffMfaRequired) warnings.push('STAFF_MFA_REQUIRED=false: staff can sign in with a password alone');
+  }
 
   return {
     env: nodeEnv,
@@ -221,7 +265,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: env.LOG_LEVEL?.trim() || (nodeEnv === 'test' ? 'silent' : 'info'),
     siteOrigin: origin,
     appSecret,
-    cookieSecure: bool('COOKIE_SECURE', env.COOKIE_SECURE, origin ? origin.startsWith('https:') : nodeEnv === 'production'),
+    cookieSecure,
     email: email(env, nodeEnv),
     push: push(env),
     worker: {
@@ -229,7 +273,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       pollMs: int('WORKER_POLL_MS', env.WORKER_POLL_MS, 2_000, 200, 60_000),
     },
     auth: {
-      staffMfaRequired: bool('STAFF_MFA_REQUIRED', env.STAFF_MFA_REQUIRED, nodeEnv === 'production'),
+      staffMfaRequired,
       staffSessionHours: int('STAFF_SESSION_HOURS', env.STAFF_SESSION_HOURS, 12, 1, 72),
       staffIdleMinutes: int('STAFF_IDLE_MINUTES', env.STAFF_IDLE_MINUTES, 120, 5, 1440),
       applicantSessionDays: int('APPLICANT_SESSION_DAYS', env.APPLICANT_SESSION_DAYS, 30, 1, 180),

@@ -381,7 +381,7 @@ function Results({ stats }: { stats: CampaignStats }) {
         <Stat label="Expired before delivery" value={stats.expired} />
         <Stat label="Skipped" value={stats.skipped} hint="Turned off, no longer eligible, or cancelled before sending." />
         <Stat label="Inbox copies" value={stats.inboxEntries} />
-        <Stat label="Recorded clicks" value={stats.recordedClicks} hint="A lower bound: not every click can be recorded." />
+        <Stat label="Reported clicks" value={stats.recordedClicks} hint="As devices reported them: not every click gets through, and reports aren't verified." />
       </dl>
     </Panel>
   );

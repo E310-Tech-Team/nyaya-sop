@@ -29,11 +29,11 @@ import {
   revokeApplicantSessions,
   setSessionCookie,
 } from '../auth/sessions';
-import { consumeAuthToken, createAuthToken, recentTokenCount } from '../auth/tokens';
+import { consumeAuthToken, createAuthToken, recentTokenCount, voidSignInTokens } from '../auth/tokens';
 import { signInEmail } from '../email';
 import { deleteApplicantAccount } from './delete';
 import { deviceLabel, iso, isUuid, sendError, str } from '../http';
-import { deactivateSubscription, findOwned, recordConsent } from '../push/subscriptions';
+import { deactivateSubscription, findOwned, recordConsent, unlinkSubscription } from '../push/subscriptions';
 import type { Services } from '../services';
 import { getSettings } from '../settings';
 
@@ -66,7 +66,9 @@ export async function accountRoutes(app: FastifyInstance, services: Services) {
       try {
         await services.email.send(signInEmail(email, `${origin}/account/verify?token=${token}`, LINK_MINUTES));
       } catch (error) {
-        request.log.error({ err: (error as Error).message }, 'Sign-in email could not be sent');
+        // The provider's message can repeat the address: log only its codes.
+        const { code, responseCode } = error as { code?: unknown; responseCode?: unknown };
+        request.log.error({ code, responseCode }, 'Sign-in email could not be sent');
         return sendError(reply, 503, 'SERVICE_UNAVAILABLE', 'We couldn’t send the email just now. Please try again in a few minutes.');
       }
     }
@@ -76,8 +78,12 @@ export async function accountRoutes(app: FastifyInstance, services: Services) {
   /** The link lands on a page with a button that POSTs here (so email scanners that open links don't use it up). */
   app.post('/verify', { config: { rateLimit: { max: 10, timeWindow: 10 * 60_000 } } }, async (request, reply) => {
     if (!checkOrigin(services, request, reply)) return reply;
+    if (!(await getSettings(db)).applicant_accounts_enabled) {
+      return sendError(reply, 503, 'ACCOUNTS_UNAVAILABLE', 'Account sign-in isn’t available at the moment. Your application is safe.');
+    }
     const token = await consumeAuthToken(db, 'applicant_sign_in', str(request.body, 'token', 80) ?? '');
     if (!token) return sendError(reply, 400, 'INVALID_TOKEN', 'This sign-in link has expired or has already been used. Ask for a new one.');
+    await voidSignInTokens(db, token.email); // any other link sent to this address stops working
     const { rows } = await db.query<{ id: string; status: string; created: boolean }>(
       `insert into applicant_accounts (email, email_verified_at, last_login_at) values ($1, now(), now())
        on conflict (email) do update set last_login_at = now()
@@ -245,6 +251,7 @@ export async function accountRoutes(app: FastifyInstance, services: Services) {
     );
     if (!rows[0]) return sendError(reply, 404, 'NOT_FOUND', 'Device not found.');
     await deactivateSubscription(db, rows[0].id, 'unsubscribed');
+    await unlinkSubscription(db, rows[0].id);
     await audit(db, actor(request.account!.id), 'device.removed', { type: 'push_subscription', id: rows[0].id });
     return { ok: true };
   });

@@ -7,7 +7,7 @@
  *   rather than pretending a message went out.
  */
 import nodemailer, { type Transporter } from 'nodemailer';
-import type { AppConfig, EmailTransportKind } from './config';
+import { isLoopbackHost, type AppConfig, type EmailTransportKind } from './config';
 
 export type EmailPurpose = 'applicant_sign_in' | 'staff_invite' | 'staff_password_reset';
 export type EmailMessage = { to: string; subject: string; text: string; html: string; purpose: EmailPurpose };
@@ -34,6 +34,15 @@ export class OutboxTransport implements EmailTransport {
   }
 }
 
+/**
+ * smtp:// upgrades to TLS only when the server offers it, and anyone on the path can remove the
+ * offer and read the password and the sign-in links: TLS is required, except for a relay on this
+ * computer. (SMTP_URL can still say ?requireTLS=false for a relay without TLS on a private network.)
+ */
+export function smtpConnection(url: string): string | { url: string; requireTLS: true } {
+  return isLoopbackHost(new URL(url).hostname) ? url : { url, requireTLS: true };
+}
+
 class SmtpTransport implements EmailTransport {
   readonly kind = 'smtp' as const;
   readonly canSend = true;
@@ -41,12 +50,14 @@ class SmtpTransport implements EmailTransport {
   readonly #from: string;
 
   constructor(url: string, from: string) {
-    this.#transporter = nodemailer.createTransport(url);
+    this.#transporter = nodemailer.createTransport(smtpConnection(url));
     this.#from = from;
   }
 
   async send(message: EmailMessage): Promise<void> {
-    await this.#transporter.sendMail({ from: this.#from, to: message.to, subject: message.subject, text: message.text, html: message.html });
+    // An address object is used as given: a string would be parsed, and could become a list.
+    const to = { name: '', address: message.to };
+    await this.#transporter.sendMail({ from: this.#from, to, subject: message.subject, text: message.text, html: message.html });
   }
 }
 

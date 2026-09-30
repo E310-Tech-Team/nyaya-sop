@@ -8,7 +8,7 @@ import { revokeApplicantSessions } from '../auth/sessions';
 import { staffActor } from '../auth/staff-routes';
 import { iso, isUuid, paging, sendError, str } from '../http';
 import { deleteApplicantAccount } from '../account/delete';
-import { deactivateSubscription } from '../push/subscriptions';
+import { deactivateSubscription, unlinkSubscription } from '../push/subscriptions';
 import type { Services } from '../services';
 
 export async function accountAdminRoutes(app: FastifyInstance, services: Services) {
@@ -100,7 +100,10 @@ export async function accountAdminRoutes(app: FastifyInstance, services: Service
     if (!rows[0]) return sendError(reply, 409, 'CONFLICT', 'That account is already suspended or doesn’t exist.');
     await revokeApplicantSessions(db, rows[0].id);
     const devices = await db.query<{ id: string }>(`select id from push_subscriptions where account_id = $1 and status = 'active'`, [rows[0].id]);
-    for (const device of devices.rows) await deactivateSubscription(db, device.id, 'account_suspended');
+    for (const device of devices.rows) {
+      await deactivateSubscription(db, device.id, 'account_suspended');
+      await unlinkSubscription(db, device.id); // reactivating the account doesn't bring its devices back
+    }
     await audit(db, staffActor(request.staff!), 'account.suspended', { type: 'account', id: rows[0].id }, { devices: devices.rows.length });
     return { ok: true };
   });

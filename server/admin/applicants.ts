@@ -22,7 +22,7 @@ import {
   isApplicationStatus,
   type ApplicationStatus,
 } from '../../src/shared/platform';
-import { collapseWhitespace, normalizeEmail, normalizePhone, validatePersonal } from '../../src/shared/validation';
+import { cleanText, normalizeEmail, normalizePhone, validatePersonal } from '../../src/shared/validation';
 import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
 import { staffActor } from '../auth/staff-routes';
@@ -33,7 +33,7 @@ import { notifyApplicationUpdate } from '../notifications/dispatch';
 import { parishDetails } from '../parishes';
 import type { ApplicationExportRow } from '../repository';
 import type { Services } from '../services';
-import { applicationConditions, type ApplicationFilters } from './application-filters';
+import { applicationConditions, FILTER_KEYS, filterNames, type ApplicationFilters } from './application-filters';
 import { linkApplicationParish, ParishLinkError } from './parish-links';
 
 type Filters = ApplicationFilters & { q?: string; reviewer?: string; claimed?: string; sort?: string };
@@ -104,7 +104,8 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
   app.get<{ Querystring: Filters & { page?: string; pageSize?: string } }>('/', { preHandler: canView }, async (request) => {
     const { page, pageSize, offset } = paging(request.query);
     const { where, params } = whereFor(request, request.query);
-    const order = SORTS[request.query.sort ?? 'newest'] ?? SORTS.newest!;
+    const sort = request.query.sort ?? 'newest';
+    const order = Object.hasOwn(SORTS, sort) ? SORTS[sort]! : SORTS.newest!; // not "constructor" and the like
     const { rows } = await db.query<{
       id: string;
       full_name: string;
@@ -187,7 +188,7 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     );
     await audit(db, staffActor(request.staff!), 'applications.exported', null, {
       rows: rows.length,
-      filters: Object.keys(request.query).filter((key) => (request.query as Record<string, unknown>)[key]),
+      filters: filterNames(request.query as Record<string, unknown>, [...FILTER_KEYS, 'q', 'reviewer', 'claimed', 'sort']),
     });
     return reply
       .header('content-type', 'text/csv; charset=utf-8')
@@ -422,12 +423,12 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     const errors = validatePersonal(merged);
     if (Object.keys(errors).length) return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', { fieldErrors: errors });
     const next = {
-      full_name: collapseWhitespace(merged.fullName),
+      full_name: cleanText(merged.fullName),
       email: normalizeEmail(merged.email),
       phone_e164: normalizePhone(merged.phone)!,
       state_of_residence: merged.stateOfResidence,
-      city: collapseWhitespace(merged.city),
-      parish_name: collapseWhitespace(merged.parishName) || null,
+      city: cleanText(merged.city),
+      parish_name: cleanText(merged.parishName) || null,
     };
     const changed = (Object.keys(next) as (keyof typeof next)[]).filter((key) => next[key] !== current[key]);
     if (!changed.length) return { ok: true, changed };

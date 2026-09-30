@@ -340,7 +340,7 @@ export async function communicationRoutes(app: FastifyInstance, services: Servic
     };
   });
 
-  const parseAnnouncement = (input: Record<string, unknown>) => {
+  const parseAnnouncement = async (input: Record<string, unknown>) => {
     const errors: Record<string, string> = {};
     const title = typeof input.title === 'string' ? input.title.trim() : '';
     const body = typeof input.body === 'string' ? input.body.trim() : '';
@@ -349,11 +349,12 @@ export async function communicationRoutes(app: FastifyInstance, services: Servic
     if (!body || body.length > 5000) errors.body = 'Write the announcement (up to 5,000 characters).';
     if (!audience) errors.audience = 'Choose who sees it.';
     const cohortId = audience === 'applicants' && isUuid(input.cohortId) ? input.cohortId : null;
+    if (cohortId && !(await db.query('select 1 from cohorts where id = $1', [cohortId])).rows.length) errors.cohortId = 'Choose a cohort from the list.';
     return { errors, values: { title, body, audience, cohortId } };
   };
 
   app.post('/announcements', { preHandler: announcements }, async (request, reply) => {
-    const { errors, values } = parseAnnouncement((request.body ?? {}) as Record<string, unknown>);
+    const { errors, values } = await parseAnnouncement((request.body ?? {}) as Record<string, unknown>);
     if (Object.keys(errors).length) return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', { fieldErrors: errors as never });
     const { rows } = await db.query<{ id: string }>(
       `insert into announcements (audience, cohort_id, title, body, created_by) values ($1, $2, $3, $4, $5) returning id`,
@@ -365,7 +366,7 @@ export async function communicationRoutes(app: FastifyInstance, services: Servic
 
   app.patch<{ Params: { id: string } }>('/announcements/:id', { preHandler: announcements }, async (request, reply) => {
     if (!isUuid(request.params.id)) return sendError(reply, 404, 'NOT_FOUND', 'Announcement not found.');
-    const { errors, values } = parseAnnouncement((request.body ?? {}) as Record<string, unknown>);
+    const { errors, values } = await parseAnnouncement((request.body ?? {}) as Record<string, unknown>);
     if (Object.keys(errors).length) return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', { fieldErrors: errors as never });
     const { rows } = await db.query(
       `update announcements set audience = $2, cohort_id = $3, title = $4, body = $5, updated_at = now()

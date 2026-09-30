@@ -29,7 +29,7 @@ Open http://localhost:5173. `pnpm dev` starts Vite (web, with hot reload) and th
 |---|---|
 | `pnpm dev` | Web (Vite, :5173) + API (tsx watch, :3000) with the embedded dev database |
 | `pnpm build` | Production build: website → `dist/`, server → `server-dist/` |
-| `pnpm start` | Run the production server (serves `dist/` + API). Needs `DATABASE_URL` when `NODE_ENV=production` |
+| `pnpm start` | Run the built server (serves `dist/` + API). For a real deployment set `NODE_ENV=production` (it then needs `DATABASE_URL`, `SITE_URL` and `APP_SECRET`); without it the server only starts on loopback with a local or no `SITE_URL` |
 | `pnpm test` | Unit + API tests (Vitest; API tests run against an in-memory Postgres) |
 | `pnpm typecheck` | TypeScript: the app and server, then the service worker (its own `tsconfig.sw.json`) |
 | `pnpm check` | typecheck + test + build (what CI runs) |

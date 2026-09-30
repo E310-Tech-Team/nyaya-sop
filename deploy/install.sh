@@ -8,9 +8,11 @@
 #             server's hostname (a Hostinger VPS hostname such as srv123456.hstgr.cloud works).
 #   --email   Your email: becomes the first owner of the admin area and the Web Push contact.
 #   --name    Your name for the admin area (default "Site owner").
+#   --skip-backup  Update even if the backup taken first fails (not recommended).
 #
 # Safe to run again (e.g. after `git pull`): it keeps .env and its secrets, backs up the database,
-# rebuilds, restarts, and applies database migrations automatically. It never prints secrets.
+# pulls fresh base images, rebuilds, restarts, and applies database migrations automatically.
+# It never prints secrets, or puts them on a command line.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,13 +20,14 @@ log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWarning:\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
-DOMAIN="" EMAIL="" NAME="Site owner"
+DOMAIN="" EMAIL="" NAME="Site owner" SKIP_BACKUP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --email) EMAIL="${2:-}"; shift 2 ;;
     --name) NAME="${2:-}"; shift 2 ;;
-    -h | --help) sed -n '2,14p' "$0"; exit 0 ;;
+    --skip-backup) SKIP_BACKUP="yes"; shift ;;
+    -h | --help) sed -n '2,16p' "$0"; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
 done
@@ -32,14 +35,17 @@ done
 [ -f docker-compose.yml ] && [ -f .env.example ] || die "Run this from inside the project folder."
 if [ -n "$EMAIL" ] && ! printf '%s' "$EMAIL" | grep -Eq '^[^@ ]+@[^@ ]+\.[^@ ]+$'; then die "--email doesn't look like an email address."; fi
 
-# Replaces KEY=… (or a commented "# KEY=…") in .env, or appends it. Values are never printed.
+# Replaces KEY=… (or a commented "# KEY=…") in .env, or appends it. Values are never printed, and
+# reach awk through its environment: a command-line argument would show in `ps` to every user,
+# and awk -v would rewrite backslashes.
 set_env() {
   local key="$1" value="$2" tmp
+  case "$value" in *$'\n'* | *$'\r'*) die "The value for $key can't contain a line break." ;; esac
   tmp="$(umask 077 && mktemp ./.env.tmp.XXXXXX)" # beside .env: private, and git-ignored
-  awk -v k="$key" -v v="$value" '
-    !done && ($0 ~ "^" k "=" || $0 ~ "^# ?" k "=") { print k "=" v; done = 1; next }
+  SET_ENV_VALUE="$value" awk -v k="$key" '
+    !done && ($0 ~ "^" k "=" || $0 ~ "^# ?" k "=") { print k "=" ENVIRON["SET_ENV_VALUE"]; done = 1; next }
     { print }
-    END { if (!done) print k "=" v }' .env > "$tmp"
+    END { if (!done) print k "=" ENVIRON["SET_ENV_VALUE"] }' .env > "$tmp"
   cat "$tmp" > .env # keeps the file's permissions (600)
   rm -f "$tmp"
 }
@@ -85,6 +91,8 @@ if [ ! -f .env ]; then
 elif [ -n "$DOMAIN" ]; then
   set_env DOMAIN "$DOMAIN"
 fi
+chmod go-rwx .env # a hand-made copy of .env.example may be readable by every user
+[ "$(get_env POSTGRES_PASSWORD)" != change-me ] || warn "POSTGRES_PASSWORD is still the example value: change it (docs/DEPLOYMENT.md)."
 DOMAIN="$(get_env DOMAIN)"
 case "$DOMAIN" in "" | apply.example.org | *" "*) die "Set the site's address with --domain." ;; esac
 
@@ -98,11 +106,18 @@ for ip in $resolved; do case "$local_ips" in *" $ip "*) matched="yes" ;; esac; d
 # ── Build and start ───────────────────────────────────────────────────────────
 if [ -n "$(docker compose ps -q db 2> /dev/null)" ]; then
   log "Backing up the database before updating"
-  ./deploy/backup.sh || warn "Backup failed; continuing."
+  # An update can migrate the database: without a backup there's no way back.
+  if ! ./deploy/backup.sh; then
+    [ -n "$SKIP_BACKUP" ] || die "The backup failed, so nothing was changed. Fix the problem above, or run again with --skip-backup to update without a backup."
+    warn "Backup failed; continuing because of --skip-backup."
+  fi
 fi
 export BUILD_ID="$(git rev-parse --short HEAD 2> /dev/null || date -u +%Y%m%d%H%M)"
 log "Building and starting (the first build takes a few minutes)"
-docker compose up -d --build --remove-orphans
+# Fresh base images every time, so security fixes to Node, Postgres and Caddy reach this server.
+docker compose pull --quiet --ignore-buildable
+docker compose build --pull
+docker compose up -d --remove-orphans
 
 wait_healthy() {
   local status="starting" id

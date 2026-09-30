@@ -239,7 +239,8 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
   });
 
   /** Links the confirmed matches, checking each is still waiting and still the only exact match. */
-  app.post('/earlier/confirm', { preHandler: guard }, async (request, reply) => {
+  // Up to BATCH_LIMIT pairs of IDs (about 110 bytes each): more than the default 16 KB body.
+  app.post('/earlier/confirm', { preHandler: guard, bodyLimit: 64 * 1024 }, async (request, reply) => {
     const items = (request.body as { items?: unknown } | null)?.items;
     if (!Array.isArray(items) || !items.length || items.length > BATCH_LIMIT) return sendError(reply, 400, 'VALIDATION_FAILED', `Confirm between 1 and ${BATCH_LIMIT} matches at a time.`);
     const pairs = items.filter((item): item is { applicationId: string; parishId: string } => isUuid(item?.applicationId) && isUuid(item?.parishId));

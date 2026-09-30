@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, useLocation, useSearchParams } from 'react-router';
+import { Link, Navigate, useLocation } from 'react-router';
 import { BrandLockup } from '../components/BrandLockup';
 import { Button, Input, Loading, Notice, errorMessage } from '../components/ui';
 import { usePageTitle } from '../components/RouteEffects';
 import { ApiError, setCsrfToken } from '../lib/api';
 import { copyText } from '../lib/clipboard';
+import { useLinkToken } from '../lib/linkToken';
 import { adminApi } from './api';
 import { loadStaffSession, useStaff } from './session';
 
@@ -54,7 +55,9 @@ export function MfaEnrolment({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setProblem(null);
     try {
-      setCodes((await adminApi.confirmEnrolment(code.replace(/\s/g, ''))).recoveryCodes);
+      const result = await adminApi.confirmEnrolment(code.replace(/\s/g, ''));
+      setCsrfToken('staff', result.csrfToken); // enrolling starts a new session
+      setCodes(result.recoveryCodes);
     } catch (caught) {
       setProblem(errorMessage(caught));
     } finally {
@@ -150,7 +153,8 @@ function MfaStep() {
     setBusy(true);
     setProblem(null);
     try {
-      await adminApi.verifyMfa(useRecovery ? { recoveryCode: value.trim() } : { code: value.replace(/\s/g, '') });
+      // Passing the second factor starts a new session (new cookie and CSRF token).
+      setCsrfToken('staff', (await adminApi.verifyMfa(useRecovery ? { recoveryCode: value.trim() } : { code: value.replace(/\s/g, '') })).csrfToken);
       await loadStaffSession();
     } catch (caught) {
       setProblem(errorMessage(caught));
@@ -277,8 +281,7 @@ function PasswordPair({ password, setPassword, confirm, setConfirm }: { password
 
 /** /admin/setup?token=…: accept an invitation (choose a password, then two-step verification). */
 export function InviteSetupPage() {
-  const [params] = useSearchParams();
-  const token = params.get('token') ?? '';
+  const token = useLinkToken();
   const [invite, setInvite] = useState<{ email: string; displayName: string } | null>(null);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -378,8 +381,7 @@ export function ForgotPasswordPage() {
 
 /** /admin/reset?token=…: a new password, confirmed with a current second-factor code. */
 export function ResetPasswordPage() {
-  const [params] = useSearchParams();
-  const token = params.get('token') ?? '';
+  const token = useLinkToken();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [code, setCode] = useState('');

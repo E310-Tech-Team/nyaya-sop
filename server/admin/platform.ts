@@ -6,7 +6,7 @@ import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
 import { revokeStaffSessions } from '../auth/sessions';
 import { createStaffInvite, inviteLink, staffActor } from '../auth/staff-routes';
-import type { Queryable } from '../db';
+import { voidStaffTokens } from '../auth/tokens';
 import { staffInviteEmail } from '../email';
 import { iso, isUuid, paging, sendError, str } from '../http';
 import { queueStats } from '../jobs/queue';
@@ -14,13 +14,12 @@ import type { Services } from '../services';
 import { getSettings, putSetting, SETTING_DEFAULTS } from '../settings';
 import { directoryReadiness } from './directory';
 
-async function activeOwners(db: Queryable, excluding?: string): Promise<number> {
-  const { rows } = await db.query<{ n: number }>(
-    `select count(*)::int as n from staff_users where role = 'owner' and status = 'active' and ($1::uuid is null or id <> $1::uuid)`,
-    [excluding ?? null],
-  );
-  return rows[0]!.n;
-}
+/**
+ * "Another active owner remains", checked in the same statement as the change: the CTE locks the
+ * active owners' rows, so two owners demoting or suspending each other at once can't both succeed.
+ */
+const OTHER_OWNERS_LOCKED = `with owners as (select id from staff_users where role = 'owner' and status = 'active' order by id for update)`;
+const anotherOwner = (param: string) => `(select count(*) from owners where id <> ${param}) > 0`;
 
 /** Integration status without secret values: configured or not, and non-secret facts. */
 export async function integrationHealth(services: Services) {
@@ -132,10 +131,12 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     if (staff.id === request.staff!.id) return sendError(reply, 403, 'FORBIDDEN', 'You can’t change your own role. Ask another owner.');
     const role = (request.body as { role?: unknown } | null)?.role;
     if (!isStaffRole(role)) return sendError(reply, 400, 'VALIDATION_FAILED', 'Choose a role.');
-    if (staff.role === 'owner' && role !== 'owner' && (await activeOwners(db, staff.id)) === 0) {
-      return sendError(reply, 409, 'CONFLICT', 'There must always be at least one active owner.');
-    }
-    await db.query('update staff_users set role = $2 where id = $1', [staff.id, role]);
+    const { rows: changed } = await db.query(
+      `${OTHER_OWNERS_LOCKED}
+       update staff_users set role = $2::staff_role where id = $1::uuid and ($2::staff_role = 'owner' or role <> 'owner' or ${anotherOwner('$1::uuid')}) returning id`,
+      [staff.id, role],
+    );
+    if (!changed.length) return sendError(reply, 409, 'CONFLICT', 'There must always be at least one active owner.');
     await revokeStaffSessions(db, staff.id); // new permissions take effect on their next sign-in
     await audit(db, staffActor(request.staff!), 'staff.role_changed', { type: 'staff', id: staff.id }, { from: staff.role, to: role });
     return { ok: true };
@@ -145,14 +146,17 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     const staff = await target(request.params.id);
     if (!staff) return sendError(reply, 404, 'NOT_FOUND', 'Staff member not found.');
     if (staff.id === request.staff!.id) return sendError(reply, 403, 'FORBIDDEN', 'You can’t suspend yourself.');
-    if (staff.role === 'owner' && (await activeOwners(db, staff.id)) === 0) {
-      return sendError(reply, 409, 'CONFLICT', 'There must always be at least one active owner.');
-    }
-    const { rows } = await db.query(`update staff_users set status = 'suspended', suspended_at = now() where id = $1 and status <> 'suspended' returning id`, [
-      staff.id,
-    ]);
-    if (!rows.length) return sendError(reply, 409, 'CONFLICT', 'Already suspended.');
+    if (staff.status === 'suspended') return sendError(reply, 409, 'CONFLICT', 'Already suspended.');
+    const { rows } = await db.query(
+      `${OTHER_OWNERS_LOCKED}
+       update staff_users set status = 'suspended', suspended_at = now()
+        where id = $1::uuid and status <> 'suspended' and (role <> 'owner' or ${anotherOwner('$1::uuid')}) returning id`,
+      [staff.id],
+    );
+    if (!rows.length) return sendError(reply, 409, 'CONFLICT', 'There must always be at least one active owner.');
     await revokeStaffSessions(db, staff.id);
+    // Links already sent (invitation, password reset) stop working too; reactivating doesn't revive them.
+    await voidStaffTokens(db, staff.id, ['staff_invite', 'staff_password_reset']);
     await audit(db, staffActor(request.staff!), 'staff.suspended', { type: 'staff', id: staff.id });
     return { ok: true };
   });
@@ -182,7 +186,18 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     );
     await db.query('delete from staff_recovery_codes where staff_id = $1', [staff.id]);
     await revokeStaffSessions(db, staff.id);
+    await voidStaffTokens(db, staff.id, ['staff_password_reset']);
     await audit(db, staffActor(request.staff!), 'staff.mfa_reset', { type: 'staff', id: staff.id });
+    return { ok: true };
+  });
+
+  /** Lifts a sign-in lock (someone else's failed attempts can lock an account on purpose). */
+  app.post<{ Params: { id: string } }>('/staff/:id/unlock', { preHandler: manageStaff }, async (request, reply) => {
+    const staff = await target(request.params.id);
+    if (!staff) return sendError(reply, 404, 'NOT_FOUND', 'Staff member not found.');
+    const { rows } = await db.query(`update staff_users set failed_login_count = 0, locked_until = null where id = $1 and locked_until > now() returning id`, [staff.id]);
+    if (!rows.length) return sendError(reply, 409, 'CONFLICT', 'That account isn’t locked.');
+    await audit(db, staffActor(request.staff!), 'staff.unlocked', { type: 'staff', id: staff.id });
     return { ok: true };
   });
 
@@ -320,6 +335,7 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     const failedJobs = await db.query<{ kind: string; last_error: string | null; updated_at: Date }>(
       `select kind, last_error, updated_at from jobs where status = 'failed' and updated_at > now() - interval '7 days' order by updated_at desc limit 5`,
     );
+    const errorDetail = can(request.staff!.role, 'settings.manage') || can(request.staff!.role, 'audit.view');
     const recent = can(request.staff!.role, 'audit.view')
       ? await db.query<{ created_at: Date; action: string; actor_name: string | null; actor_type: string }>(
           `select e.created_at, e.action, e.actor_type, s.display_name as actor_name from audit_events e
@@ -349,7 +365,11 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
         recordedNotificationClicks: count(events.rows, 'notification_click'),
         applicationsSubmitted: count(events.rows, 'application_submitted'),
       },
-      queue: { ...(await queueStats(db)), recentFailures: failedJobs.rows.map((row) => ({ ...row, updated_at: iso(row.updated_at) })) },
+      queue: {
+        ...(await queueStats(db)),
+        // The raw error text is for staff who look after the platform; others see that a job failed.
+        recentFailures: failedJobs.rows.map((row) => ({ kind: row.kind, last_error: errorDetail ? row.last_error : null, updated_at: iso(row.updated_at) })),
+      },
       recentActions: recent.rows.map((row) => ({ at: iso(row.created_at), action: row.action, actor: row.actor_name ?? 'Former staff member' })),
       health: await integrationHealth(services),
     };
