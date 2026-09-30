@@ -130,6 +130,8 @@ services:
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN}
+      # "on" redirects www.DOMAIN to https://DOMAIN (deploy/Caddyfile); install.sh sets it when www points here.
+      WWW_REDIRECT: ${WWW_REDIRECT:-off}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

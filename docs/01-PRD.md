@@ -3,7 +3,7 @@
 **Product:** School of Purpose (SOP): Purpose Boot Camp, Expression of Interest site
 **Owner organisation:** RCCG National Young Adults & Youth
 **Programme edition:** First Edition, "The Called Generation"
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-30
 **Current stage:** **Built and deployment-ready.** Applications are validated and stored in PostgreSQL. The site is an installable web app with optional notifications and applicant accounts, and the Programme team has an admin platform. Not yet deployed to a live domain; email and push keys are configured at deployment.
 
 > **Status labels used across these docs**
@@ -184,10 +184,10 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | Q10 | Should search engines index the site? | ✅ Yes (`robots.txt` allows everything except `/api/`, `/admin` and `/account`; those pages also send `X-Robots-Tag: noindex`) |
 | Q11 | How long are applications kept? | Open: needed for the privacy notice and backup policy |
 | Q12 | Public contact email for the Programme team? | Open: set `VITE_CONTACT_EMAIL` when known ("Contact" links appear automatically) |
-| Q13 | Domain name for the site? | Open: needed for DNS + HTTPS ([DEPLOYMENT](DEPLOYMENT.md)) |
+| Q13 | Domain name for the site? | ✅ **Decided:** https://nyayasop.org, live since 2026-09-30; `www.nyayasop.org` redirects to it |
 | Q14 | Who are the owners and staff, and in which roles? | Open: needed before launch (the shared CSV password is gone; every person has their own account) |
-| Q17 | Which email provider and sender address? | Open: needed to switch on applicant sign-in and emailed invitations |
-| Q18 | Which contact goes in `VAPID_SUBJECT` for push services? | Open |
+| Q17 | Which email provider and sender address? | Open: needed to switch on applicant sign-in and emailed invitations (the server is on DigitalOcean, so through port 2525: [DEPLOYMENT](DEPLOYMENT.md#email)) |
+| Q18 | Which contact goes in `VAPID_SUBJECT` for push services? | Open: the installer used the first owner's address; switch to a team mailbox when there is one |
 | Q19 | How long are notes, audit history and consent records kept? | Open: see Q11 and [05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion) |
 | Q15 | Content still needed for the UX pass: response time, whether virtual-training admission is selective, training schedule/platform, boot camp dates/location details, sponsorship exclusions | Open: see [06 "Content needed"](06-Implementation-Plan.md#content-needed-from-the-programme-team) |
 | Q16 | May the site use NYAYA's own event photography (e.g. from RISE), and with what credit? | No longer blocking (2026-09-29): the supporting photos are AI-generated and disclosed as such ([IMAGERY.md](IMAGERY.md)). NYAYA photos could still replace them, with written permission and the required credit |

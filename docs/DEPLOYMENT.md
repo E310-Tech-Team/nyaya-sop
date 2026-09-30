@@ -1,6 +1,6 @@
-# Deployment and operations runbook: VPS (Linode or similar)
+# Deployment and operations runbook: VPS (DigitalOcean, Linode or similar)
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-09-30 · Production: https://nyayasop.org, the whole site on one DigitalOcean Droplet installed with the [quick install](#quick-install-one-command) ([06 D-49](06-Implementation-Plan.md#decisions-log))
 
 This deploys the whole site (website + installable app + API + background worker + PostgreSQL) to **one Linux VPS**. There are two options:
 
@@ -22,7 +22,7 @@ Related: [02-TRD](02-TRD.md) (stack, security) · [05-Backend-Schema](05-Backend
 ## 0. Before you start
 
 1. **A VPS** running Ubuntu 24.04 LTS (or Debian 12). 1 vCPU / 1 GB RAM is enough (Linode "Nanode"); 2 GB is more comfortable with the worker. London is a good default region for Nigeria.
-2. **A domain or subdomain** (e.g. `apply.yourchurch.org`) with an **A record** (and AAAA for IPv6) pointing at the VPS. **HTTPS is required**, not optional: installing the app, the service worker, push notifications and the secure sign-in cookies only work on a valid `https://` origin. Set up DNS first: certificates are issued only once it resolves.
+2. **A domain or subdomain** (e.g. `apply.yourchurch.org`) with an **A record** (and AAAA for IPv6) pointing at the VPS. **HTTPS is required**, not optional: installing the app, the service worker, push notifications and the secure sign-in cookies only work on a valid `https://` origin. Set up DNS first: certificates are issued only once it resolves. If people may type `www.`, point `www.DOMAIN` at the VPS too (an A record, or a CNAME to `DOMAIN`): it then redirects to `https://DOMAIN` (`WWW_REDIRECT`, [A2](#a2-get-the-code-and-configure)).
 3. **Firewall:** allow only SSH (22), HTTP (80) and HTTPS (443). Postgres is never exposed.
    ```bash
    sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw allow 443/udp && sudo ufw enable
@@ -53,7 +53,9 @@ cd /opt/school-of-purpose && git config core.sshCommand "ssh -i ~/.ssh/sop_deplo
 [`deploy/install.sh`](../deploy/install.sh) installs Docker if needed (and swap on servers under 2 GB), refuses to start if something else holds ports 80/443, creates `.env` with **new secrets generated on the server** (`POSTGRES_PASSWORD`, `APP_SECRET`), checks that the domain points at the server, builds and starts the four containers, generates the Web Push keys, creates the first owner (it prints the single-use setup link: open it straight away), schedules nightly backups, and prints the site's health. It never prints secrets.
 
 - **Domain:** point the domain's A record at the VPS first. No domain yet? Leave out `--domain`: it uses the server's hostname (on Hostinger, `srvNNNNNN.hstgr.cloud`, which already points at the VPS) and you can switch later by running the script again with `--domain`.
+- **www:** when `www.DOMAIN` points at the VPS too, the script sets `WWW_REDIRECT=on` in `.env` and `https://www.DOMAIN` redirects to `https://DOMAIN`. Added the record later? Run the script again. `WWW_REDIRECT=off` keeps it off.
 - **Hostinger firewall:** if the VPS firewall in hPanel is on, allow TCP 22, 80 and 443 (and UDP 443).
+- **DigitalOcean:** an Ubuntu 24.04 Droplet created with your SSH key is enough (1 GB works: the script adds swap). Add a Cloud Firewall (Networking → Firewalls) allowing inbound TCP 22, 80 and 443 and UDP 443. DigitalOcean blocks outbound email ports 25, 465 and 587 on new accounts: use your email provider's port 2525 ([Email](#email)), or ask DigitalOcean support to lift the block.
 - **Email** stays off until you add `SMTP_URL` and `EMAIL_FROM` to `.env` and run the script again ([Email](#email)).
 - **Updating:** `cd /opt/school-of-purpose && git pull && ./deploy/install.sh` (it backs up the database first and keeps `.env`).
 - **Back up `.env` privately** (password manager or sealed offline copy): see [A7](#a7-backups-do-this-on-day-one).
@@ -84,6 +86,7 @@ Get the code with `git clone` (or `git archive` from a clean checkout), never by
 | Variable | Value |
 |---|---|
 | `DOMAIN` | `apply.yourchurch.org` (the site will be `https://DOMAIN`; `SITE_URL` is derived from it) |
+| `WWW_REDIRECT` | `on` to redirect `www.DOMAIN` to `https://DOMAIN` (its DNS must point at the VPS too, or Caddy can't get its certificate); `off` or unset: no `www` site. `install.sh` sets it when it finds that record |
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `APP_SECRET` | `openssl rand -base64 48`. **Required.** Keep it stable: changing it signs everyone out and breaks stored secrets ([rotation](#rotating-secrets)) |
 | `SMTP_URL`, `EMAIL_FROM` | when you have an email provider, e.g. `smtps://USER:PASS@smtp.example.com:465` and `School of Purpose <no-reply@apply.yourchurch.org>`. With `smtp://` (port 587) the server must offer STARTTLS, or nothing is sent: the links in these emails sign people in |
@@ -155,7 +158,7 @@ docker compose up -d --remove-orphans                         # app applies migr
 docker image prune -f
 ```
 
-`sudo ./deploy/install.sh` does the same (and stops if the backup fails). Run it at least monthly even without code changes, so security fixes in the base images reach the server, and keep the host's own packages patched (`sudo apt-get install unattended-upgrades`).
+`sudo ./deploy/install.sh` does the same (and stops if the backup fails). A change to `deploy/Caddyfile` alone also needs `docker compose restart caddy`: Compose mounts that one file, and a running container keeps the copy it started with. Run it at least monthly even without code changes, so security fixes in the base images reach the server, and keep the host's own packages patched (`sudo apt-get install unattended-upgrades`).
 
 What people see: pages open in a browser tab pick up the new release when reloaded; the installed app and open tabs show **"An update is ready · Update now"** and never reload by themselves (so nobody loses a form or an admin edit). Old files stay available to tabs still on the previous version.
 
@@ -317,7 +320,7 @@ Everything the Programme team does is at **`https://DOMAIN/admin`**: applicants 
 
 ### Email
 
-Set `SMTP_URL` and `EMAIL_FROM`, restart (`docker compose up -d`). Check **Settings → Integrations and health** shows "SMTP configured", then request a sign-in link at `/account` with your own address. If emails land in spam, check SPF/DKIM/DMARC for the sending domain. Applicant sign-in can also be switched off in **Settings** without removing the configuration.
+Set `SMTP_URL` and `EMAIL_FROM`, restart (`docker compose up -d`). Check **Settings → Integrations and health** shows "SMTP configured", then request a sign-in link at `/account` with your own address. If emails land in spam, check SPF/DKIM/DMARC for the sending domain. Some hosts block the usual SMTP ports (DigitalOcean: 25, 465 and 587 on new accounts); most providers also accept port 2525 with STARTTLS (`smtp://USER:PASS@smtp.example.com:2525`). Applicant sign-in can also be switched off in **Settings** without removing the configuration.
 
 ### Background worker
 
@@ -447,7 +450,7 @@ Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrom
 
 ## Production checklist
 
-- [ ] DNS points at the VPS; `https://DOMAIN` loads with a valid certificate
+- [ ] DNS points at the VPS; `https://DOMAIN` loads with a valid certificate (and `https://www.DOMAIN` redirects to it, if `www` has a DNS record)
 - [ ] `.env` has strong `POSTGRES_PASSWORD` and `APP_SECRET`, is `chmod 600`, and is backed up securely off the server
 - [ ] `/api/health` returns `ok`; `docker compose ps` shows the worker running
 - [ ] First owner created, two-step verification set up, recovery codes stored safely; a second owner invited

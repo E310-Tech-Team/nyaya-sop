@@ -10,7 +10,7 @@ The expression-of-interest website for the **RCCG Young Adults & Youth School of
 - **Website:** React 19 + React Router, Tailwind CSS v4, built with Vite
 - **API:** Fastify 5 (Node 22) serving the built website and `/api/*`
 - **Database:** PostgreSQL 17 (embedded PGlite for local development and tests)
-- **Hosting:** one VPS: Docker Compose with Caddy for automatic HTTPS; or the website on Vercel with `/api` forwarded to the VPS (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
+- **Hosting:** one VPS: Docker Compose with Caddy for automatic HTTPS; or the website on Vercel with `/api` forwarded to the VPS (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)). Production: https://nyayasop.org, the whole site on one DigitalOcean Droplet
 
 ## Quick start (local development)
 

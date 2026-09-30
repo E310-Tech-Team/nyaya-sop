@@ -5,3 +5,15 @@
 	encode zstd gzip
 	reverse_proxy app:3000
 }
+
+# www.DOMAIN → https://DOMAIN, only with WWW_REDIRECT=on in .env (deploy/install.sh sets it when
+# www's DNS points at this server too). It stays off otherwise: Caddy would keep requesting a
+# certificate for a name that doesn't point here.
+(www-on) {
+	www.{$DOMAIN} {
+		redir https://{$DOMAIN}{uri} permanent
+	}
+}
+(www-off) {
+}
+import www-{$WWW_REDIRECT:off}
