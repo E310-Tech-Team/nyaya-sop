@@ -58,7 +58,8 @@ server/              Fastify API: app.ts, config.ts, db.ts, migrate.ts
   push/ jobs/        Web Push (SSRF-safe transport, VAPID, subscriptions); Postgres job queue and worker
   notifications/     Campaign audience, dispatch and delivery
   migrations/        SQL migrations (schema + first cohort)
-deploy/              One-command VPS installer, Caddyfile, backup script, systemd unit, Nginx example
+deploy/              One-command VPS installer, release script for GitHub Actions (ci-deploy.sh), Caddyfile, backup script, systemd unit, Nginx example
+.github/workflows/   CI: checks on pull requests; checks, then a release to production, on main
 docs/                Product & technical docs (PRD, TRD, flows, design, schema, plan, deployment)
 design/              brand/: logo masters, palette and usage rules; the Figma prototype's reference render
 Dockerfile, docker-compose.yml, .env.example
@@ -75,6 +76,8 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. In short, on an Ubuntu VPS (as
 
 It installs Docker, generates the secrets on the server, builds and starts Caddy (HTTPS), the app, the worker and Postgres, creates the first owner and schedules backups. Run it again after `git pull` to update.
 
+Production is released by GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): pull requests get `pnpm check` and a Docker image build; every push to `main` gets the same checks, then (while the repository variable `AUTO_DEPLOY` is `on`) `deploy/ci-deploy.sh` releases it on the server over SSH and the live site is checked. It needs a one-time setup on the server and in GitHub first ([DEPLOYMENT, Automatic deployment](docs/DEPLOYMENT.md#automatic-deployment-github-actions)).
+
 To serve the website from Vercel instead (the VPS keeps the API, worker and database), see [DEPLOYMENT §C](docs/DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps).
 
 ## Documentation
@@ -87,4 +90,4 @@ To serve the website from Vercel instead (the VPS keeps the API, worker and data
 | [04-UI-UX-Design-Brief](docs/04-UI-UX-Design-Brief.md) | Design tokens, typography, components, accessibility |
 | [05-Backend-Schema](docs/05-Backend-Schema.md) | Database schema and API reference |
 | [06-Implementation-Plan](docs/06-Implementation-Plan.md) | What's built, what's next, decisions log |
-| [DEPLOYMENT](docs/DEPLOYMENT.md) | VPS runbook, website on Vercel, backups, operating the site |
+| [DEPLOYMENT](docs/DEPLOYMENT.md) | VPS runbook, automatic deployment and rollback, website on Vercel, backups, operating the site |
