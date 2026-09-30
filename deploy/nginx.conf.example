@@ -1,10 +1,18 @@
 # Nginx site for the bare-metal option. Copy to /etc/nginx/sites-available/school-of-purpose,
 # replace apply.example.org, enable it, then run:  sudo certbot --nginx -d apply.example.org
 # (certbot adds the HTTPS server block and the http→https redirect).
+
+# Access log without query strings or referrers: emailed sign-in, invitation and reset links carry a
+# single-use token in the query string, and admin searches carry names. (This file is included in
+# nginx's http block, where log_format belongs.)
+log_format sop_private '$remote_addr [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent $request_time';
+
 server {
     listen 80;
     listen [::]:80;
     server_name apply.example.org;
+
+    access_log /var/log/nginx/school-of-purpose.access.log sop_private;
 
     client_max_body_size 64k;
 

@@ -31,6 +31,26 @@ describe('Vercel middleware: /api → the VPS', () => {
     expect(response.headers.get('x-middleware-rewrite')).toBe('https://api.example.org/api/account/notifications?page=2');
   });
 
+  it('never sends a request (or the secret) to another host, whatever the path normalises to', () => {
+    // Paths that the URL parser turns into "//evil.example/…" (backslashes, encoded dots) or that
+    // start with "//" would otherwise resolve as protocol-relative URLs.
+    for (const url of [
+      'https://school-of-purpose.vercel.app/api/x/..\\..\\\\evil.example/probe',
+      'https://school-of-purpose.vercel.app/api/%2e%2e/%2e%2e/\\evil.example/probe',
+      'https://school-of-purpose.vercel.app//evil.example/api/x',
+      'https://school-of-purpose.vercel.app/apix/health',
+    ]) {
+      const response = forwardToApi(new Request(url, { headers: { 'x-real-ip': '203.0.113.9' } }), ENV);
+      expect({ url, status: response.status, rewrite: response.headers.get('x-middleware-rewrite') }).toEqual({ url, status: 404, rewrite: null });
+      expect(upstreamHeaders(response)).not.toHaveProperty('x-edge-proxy-secret');
+    }
+    // Ordinary API paths, including encoded characters, still go to the API origin.
+    expect(forwardToApi(visit('/api/parishes/search?q=jesus%20house'), ENV).headers.get('x-middleware-rewrite')).toBe(
+      'https://api.example.org/api/parishes/search?q=jesus%20house',
+    );
+    expect(forwardToApi(visit('/api'), ENV).headers.get('x-middleware-rewrite')).toBe('https://api.example.org/api');
+  });
+
   it("sends the visitor's address with the shared secret, replacing anything the visitor sent", () => {
     const response = forwardToApi(visit('/api/applications', { 'x-edge-client-ip': '10.0.0.1', 'x-edge-proxy-secret': 'guess' }), ENV);
     const upstream = upstreamHeaders(response);

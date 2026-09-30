@@ -22,10 +22,19 @@ export function useLandingZoom() {
   }, []);
 }
 
+/** The section a deep link names (/#journey), or null. A malformed fragment such as "#%" names none. */
+export function sectionFromHash(hash: string): string | null {
+  try {
+    return decodeURIComponent(hash.replace(/^#/, '')) || null;
+  } catch {
+    return null; // decoding would throw, and take the page down with it
+  }
+}
+
 /** Deep links such as /#journey: jump to the section once the page has rendered. */
 export function useInitialHashScroll() {
   useLayoutEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    const id = sectionFromHash(window.location.hash);
     if (id) document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }, []);
 }

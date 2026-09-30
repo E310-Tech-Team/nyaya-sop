@@ -7,6 +7,7 @@ import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'f
 import { can, isStaffRole, type Permission, type StaffRole } from '../../src/shared/permissions';
 import { isAllowedOrigin, isUnsafeMethod, sendError } from '../http';
 import type { Services } from '../services';
+import { getSettings } from '../settings';
 import {
   clearSessionCookie,
   hasValidCsrf,
@@ -116,6 +117,10 @@ export function accountGuard(services: Services): preHandlerAsyncHookHandler {
       await revokeApplicantSessions(db, session.account_id);
       clearSessionCookie(reply, 'applicant', config);
       return sendError(reply, 403, 'ACCOUNT_SUSPENDED', 'This account is suspended. Contact the Programme team if you think this is a mistake.');
+    }
+    // Switching applicant accounts off in Settings closes open sessions too, not only new sign-ins.
+    if (!(await getSettings(db)).applicant_accounts_enabled) {
+      return sendError(reply, 503, 'ACCOUNTS_UNAVAILABLE', 'Accounts aren’t available at the moment. Your application is safe.');
     }
     if (isUnsafeMethod(request.method)) {
       if (!checkOrigin(services, request, reply)) return reply;

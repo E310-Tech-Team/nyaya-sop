@@ -189,9 +189,20 @@ export type Count = number | null;
 export type StatusCounts = Record<ApplicationStatus, Count>;
 type Split = { linked: Count; unlinked: Count };
 
+/** A parish as it stands in today's directory, with its units from the continent down (the drill-down's parish view). */
+export type ReportParish = {
+  id: string;
+  name: string;
+  status: string;
+  mergedInto: { id: string; name: string } | null;
+  unit: UnitBrief;
+  chain: UnitBrief[];
+};
+
 export type ReportSummary = {
   period: { from: string | null; to: string | null };
   unit: UnitBrief | null;
+  parish: ReportParish | null;
   masked: boolean;
   applications: Count;
   uniqueApplicants: Count;
@@ -210,9 +221,13 @@ export type ReportSummary = {
   directory: { importId: string; label: string; structureAsAt: string | null } | null;
 };
 
+/** Active units directly under a unit at one level, and how many of them have any of these applications. */
+export type ReportChildCount = { level: ChurchLevel; count: number; withApplications: Count };
+
 export type ReportCard = {
   key: string;
-  kind: 'unit' | 'parish' | 'direct' | 'without';
+  /** A unit, a parish, the parishes directly under the unit, those missing a level, or the applications with no directory parish. */
+  kind: 'unit' | 'parish' | 'direct' | 'without' | 'unassigned';
   id: string | null;
   name: string;
   level: ChurchLevel | null;
@@ -225,7 +240,7 @@ export type ReportCard = {
   byPublished: StatusCounts;
   parishesWithApplications: Count;
   activeParishes: number | null;
-  children: { level: ChurchLevel; count: number } | null;
+  children: ReportChildCount[];
   filter: Record<string, string>;
   drill: Record<string, string> | null;
 };
@@ -416,9 +431,9 @@ export const adminApi = {
   // Signing in (server/auth/staff-routes.ts)
   session: () => call<StaffSession>('/session'),
   login: (email: string, password: string) => post<{ next: LoginNext; csrfToken: string }>('/login', { email, password }),
-  verifyMfa: (input: { code?: string; recoveryCode?: string }) => post<{ ok: true; recoveryCodesRemaining?: number }>('/mfa/verify', input),
+  verifyMfa: (input: { code?: string; recoveryCode?: string }) => post<{ ok: true; recoveryCodesRemaining?: number; csrfToken?: string }>('/mfa/verify', input),
   startEnrolment: () => post<{ otpauthUri: string; secret: string; qrDataUrl: string }>('/mfa/enrol/start'),
-  confirmEnrolment: (code: string) => post<{ recoveryCodes: string[] }>('/mfa/enrol/confirm', { code }),
+  confirmEnrolment: (code: string) => post<{ recoveryCodes: string[]; csrfToken?: string }>('/mfa/enrol/confirm', { code }),
   newRecoveryCodes: (code: string) => post<{ recoveryCodes: string[] }>('/mfa/recovery-codes', { code }),
   logout: () => post<{ ok: true }>('/logout'),
   changePassword: (currentPassword: string, newPassword: string) => post<{ ok: true }>('/me/password', { currentPassword, newPassword }),
@@ -492,6 +507,7 @@ export const adminApi = {
   suspendStaff: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/suspend`),
   reactivateStaff: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/reactivate`),
   resetStaffMfa: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/reset-mfa`),
+  unlockStaff: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/unlock`),
   resendInvite: (staffId: string) => post<{ emailed: boolean; inviteUrl: string | null }>(`/staff/${id(staffId)}/resend-invite`),
   revokeStaffSessions: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/revoke-sessions`),
 

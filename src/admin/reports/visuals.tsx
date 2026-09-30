@@ -26,8 +26,11 @@ export const STATUS_COLOURS: Record<ApplicationStatus, string> = {
 
 export type Segment = { key: string; label: ReactNode; value: Count; colour: string; href?: string | null; name?: string };
 
-/** One bar in parts, and a legend naming each part with its count (a link when it opens the applications). */
-export function CategoryBar({ segments, label, hideEmpty = false }: { segments: Segment[]; label: string; hideEmpty?: boolean }) {
+/**
+ * One bar in parts, and a legend naming each part with its count (a link when it opens the applications).
+ * Without the legend, the bar alone: only where the same counts are listed beside it.
+ */
+export function CategoryBar({ segments, label, hideEmpty = false, legend = true }: { segments: Segment[]; label: string; hideEmpty?: boolean; legend?: boolean }) {
   const known = segments.reduce((sum, segment) => sum + (segment.value ?? 0), 0);
   const shown = hideEmpty ? segments.filter((segment) => segment.value !== 0) : segments;
   return (
@@ -38,33 +41,36 @@ export function CategoryBar({ segments, label, hideEmpty = false }: { segments: 
             segment.value ? <span key={segment.key} className="h-full first:rounded-l-full last:rounded-r-full" style={{ width: `${(segment.value / known) * 100}%`, backgroundColor: segment.colour }} /> : null,
           )}
       </div>
-      <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1.5 font-sans text-[13px] text-ink">
-        {shown.map((segment) => (
-          <li key={segment.key} className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: segment.colour }} />
-            <span className="text-muted">{segment.label}</span>
-            {segment.href && segment.value ? (
-              <Link to={segment.href} className="font-bold tabular-nums text-brand underline-offset-4 hover:underline">
-                {formatCount(segment.value)}
-                <span className="sr-only"> applications: {segment.name ?? segment.label}</span>
-              </Link>
-            ) : (
-              <span className="font-bold tabular-nums">{formatCount(segment.value)}</span>
-            )}
-          </li>
-        ))}
-      </ul>
+      {legend && (
+        <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1.5 font-sans text-[13px] text-ink">
+          {shown.map((segment) => (
+            <li key={segment.key} className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="size-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: segment.colour }} />
+              <span className="text-muted">{segment.label}</span>
+              {segment.href && segment.value ? (
+                <Link to={segment.href} className="font-bold tabular-nums text-brand underline-offset-4 hover:underline">
+                  {formatCount(segment.value)}
+                  <span className="sr-only"> applications: {segment.name ?? segment.label}</span>
+                </Link>
+              ) : (
+                <span className="font-bold tabular-nums">{formatCount(segment.value)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
 /** A card's review (or published) status breakdown, showing only the statuses it has. */
-export function StatusMeter({ counts, kind = 'review', label }: { counts: StatusCounts; kind?: 'review' | 'published'; label: string }) {
+export function StatusMeter({ counts, kind = 'review', label, legend = true }: { counts: StatusCounts; kind?: 'review' | 'published'; label: string; legend?: boolean }) {
   if (APPLICATION_STATUSES.every((status) => counts[status] === 0)) return <p className="font-sans text-[13px] text-muted">No applications yet.</p>;
   return (
     <CategoryBar
       label={label}
       hideEmpty
+      legend={legend}
       segments={APPLICATION_STATUSES.map((status) => ({ key: status, label: statusLabel(kind, status), value: counts[status], colour: STATUS_COLOURS[status] }))}
     />
   );

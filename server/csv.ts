@@ -20,11 +20,13 @@ const PLAIN_NUMBER = /^[+-]?\d[\d ]*$/;
  * RFC 4180 quoting, plus a leading apostrophe on values that spreadsheet apps would
  * otherwise run as formulas (CSV injection: =, +, -, @, tab, carriage return).
  * Plain signed numbers such as "+447700900123" are harmless and left alone.
+ * Every field is quoted: spreadsheets set to a semicolon separator (much of Europe) would
+ * otherwise split "Ade;=1+2" into a new cell that starts with "=".
  */
 export function csvCell(value: Cell): string {
   let text = value === null || value === undefined ? '' : String(value);
   if (FORMULA_START.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
-  return /[",\r\n]/.test(text) || text !== text.trim() ? `"${text.replace(/"/g, '""')}"` : text;
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 export function toCsv(header: string[], rows: Cell[][]): string {

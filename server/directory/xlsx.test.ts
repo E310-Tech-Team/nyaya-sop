@@ -49,6 +49,22 @@ describe('readXlsx', () => {
     expect(rowsOf(file)).toEqual([{ line: 3, cells: ['', "GOD'S GIFT", 'LINE\nBREAK', 'TRUE', ''] }]);
   });
 
+  it('refuses references beyond Excel’s limits, and damaged XML, without running out of memory or time (security audit)', () => {
+    const sheet = (xml: string) =>
+      buildZip({
+        'xl/workbook.xml': '<workbook xmlns:r="r"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="rId1" Target="/xl/worksheets/s.xml"/></Relationships>',
+        'xl/worksheets/s.xml': `<worksheet><sheetData>${xml}</sheetData></worksheet>`,
+      });
+    expect(rowsOf(sheet('<row r="1"><c r="XFD1"><v>1</v></c></row>'))[0]!.cells).toHaveLength(16_384);
+    expect(() => rowsOf(sheet('<row r="1"><c r="ZZZZZZ1"><v>1</v></c></row>'))).toThrow(/beyond XFD/);
+    for (const r of ['-5', '2000000', '2.5']) expect(() => rowsOf(sheet(`<row r="${r}"><c><v>1</v></c></row>`))).toThrow(/outside 1 to/);
+    const started = performance.now();
+    expect(() => rowsOf(sheet('<row r="1">'.repeat(20_000)))).toThrow(/damaged/);
+    expect(() => rowsOf(sheet(`<row r="1">${'<c r="A1"><v>1'.repeat(20_000)}</row>`))).toThrow(/damaged/);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('refuses files that are not workbooks', () => {
     expect(() => readXlsx(Buffer.from('CONTINENT,REGION\n'))).toThrow(XlsxError);
     expect(() => readXlsx(buildZip({ 'word/document.xml': '<w/>' }))).toThrow(/not an Excel workbook/);

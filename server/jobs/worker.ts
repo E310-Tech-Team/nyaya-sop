@@ -4,6 +4,7 @@
  * docker-compose "worker" service with WORKER_MODE=off on the web container).
  */
 import { randomUUID } from 'node:crypto';
+import { NOTIFICATION_CONSENT_VERSION } from '../../src/shared/platform';
 import type { Queryable } from '../db';
 import { deliverBatch, dispatchCampaign } from '../notifications/dispatch';
 import type { Services } from '../services';
@@ -16,6 +17,18 @@ const LEASE_MS = 120_000;
 
 /** Retention (docs/05-Backend-Schema.md). */
 export async function cleanup(db: Queryable): Promise<void> {
+  // A subscription past the expiry its browser gave can't be delivered to: switch it off, as a
+  // push service's "gone" would (with the same consent record).
+  await db.query(
+    `with expired as (
+       update push_subscriptions set status = 'expired', deactivated_at = now(), deactivated_reason = 'expired', updated_at = now()
+        where status = 'active' and expiration_time < now()
+       returning id, account_id, topics
+     )
+     insert into notification_consent_events (subscription_id, account_id, action, topics, consent_version)
+     select id, account_id, 'expired', topics, $1 from expired`,
+    [NOTIFICATION_CONSENT_VERSION],
+  );
   await db.exec(`
     delete from auth_tokens where expires_at < now() - interval '7 days';
     delete from staff_sessions where (revoked_at is not null or expires_at < now()) and created_at < now() - interval '30 days';

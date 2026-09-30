@@ -36,7 +36,9 @@ export const isWithoutLevel = (value: unknown): value is WithoutLevel => WITHOUT
 export const FILTER_KEYS = ['cohort', 'status', 'published', 'from', 'to', 'unit', 'direct', 'parish', 'parishStatus', 'without'] as const;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-export const isDay = (value: unknown): value is string => typeof value === 'string' && DAY.test(value) && !Number.isNaN(Date.parse(value));
+// A real calendar day Postgres can read: JavaScript rolls "2026-02-30" over to March, and allows year 0.
+export const isDay = (value: unknown): value is string =>
+  typeof value === 'string' && DAY.test(value) && value >= '0001-01-01' && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
 
 type Conditions = { clauses: string[]; params: unknown[] };
 
@@ -53,11 +55,16 @@ function builder(offset: number) {
 /** The part of the filters about the directory (a unit, a parish, a missing level), as conditions on the parish `p` alone. */
 export function parishScope(filters: ApplicationFilters, offset = 0): Conditions {
   const { clauses, params, add } = builder(offset);
-  if (isUuid(filters.unit)) {
-    if (filters.direct === '1') add((p) => `p.unit_id = ${p}`, filters.unit);
+  // A malformed unit or parish matches nothing: an edited link must never widen to every application.
+  if (filters.unit) {
+    if (!isUuid(filters.unit)) clauses.push('false');
+    else if (filters.direct === '1') add((p) => `p.unit_id = ${p}`, filters.unit);
     else add((p) => `${p}::uuid in (p.continent_id, p.region_id, p.province_id, p.zone_id, p.area_id)`, filters.unit);
   }
-  if (isUuid(filters.parish)) add((p) => `p.id = ${p}`, filters.parish);
+  if (filters.parish && filters.parish !== 'any' && filters.parish !== 'none') {
+    if (isUuid(filters.parish)) add((p) => `p.id = ${p}`, filters.parish);
+    else clauses.push('false');
+  }
   if (isWithoutLevel(filters.without)) clauses.push(`p.${filters.without}_id is null`);
   return { clauses, params };
 }
@@ -79,5 +86,5 @@ export function applicationConditions(filters: ApplicationFilters, offset = 0): 
   return { clauses: [...clauses, ...scope.clauses], params: [...params, ...scope.params] };
 }
 
-/** The filters that were set, by name only (for the audit trail). */
-export const filterNames = (filters: Record<string, unknown>) => Object.keys(filters).filter((key) => filters[key]);
+/** The filters that were set, by name only (for the audit trail): names the route knows, never any key a URL carries. */
+export const filterNames = (filters: Record<string, unknown>, known: readonly string[] = FILTER_KEYS) => known.filter((key) => filters[key]);

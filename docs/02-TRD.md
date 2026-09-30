@@ -126,7 +126,7 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 
 | Area | Implementation |
 |---|---|
-| Staff sign-in | Individual accounts; scrypt passwords (12–128 characters); TOTP second factor required in production (`STAFF_MFA_REQUIRED`), with 10 single-use recovery codes stored as SHA-256 hashes; TOTP replay protection (last used time step); lockout after 5 failures (15 min, doubling, max 24 h), wrong codes count too; generic error messages; per-IP rate limits |
+| Staff sign-in | Individual accounts; scrypt passwords (12–128 characters); TOTP second factor required in production (`STAFF_MFA_REQUIRED`), with 10 single-use recovery codes stored as keyed HMACs (from `APP_SECRET`); TOTP replay protection (last used time step); lockout after 5 failures (15 min, doubling, max 24 h), wrong codes (sign-in and reset) count too, every attempt counted atomically before it's checked; a new session once the second factor is passed; owners can unlock; generic error messages, and "forgot password" answers before looking the address up; per-IP rate limits |
 | Staff roles | Owner, Programme admin, Reviewer, Communications, Read-only ([05 §6](05-Backend-Schema.md#roles-and-permissions)). Checked on **every** admin route; nobody can change their own role; the last owner can't be demoted or suspended; role changes sign the person out |
 | Applicant sign-in | Passwordless: single-use links valid 15 minutes, stored hashed, generic responses, per-IP and per-email throttles, and a button press on the landing page so email scanners can't use the link. Linking an application needs the verified email to match and an explicit confirmation |
 | Sessions | 256-bit random tokens in `HttpOnly`, `SameSite=Strict` cookies (`__Host-` prefix and `Secure` on HTTPS); only a SHA-256 hash is stored; absolute expiry and idle timeout; revocable per session and "everywhere" |
@@ -134,7 +134,8 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 | Secrets | `APP_SECRET` (HKDF → separate HMAC and AES-256-GCM keys) encrypts TOTP secrets and push subscription endpoints/keys at rest. The VAPID private key stays in the server environment |
 | Push SSRF | Endpoints must be `https` on port 443, no credentials, no IP literals, on the allowlisted push services; at connection time every resolved address must be public (private, loopback, link-local, CGNAT, NAT64/6to4/IPv4-mapped embeddings rejected); the socket connects to the checked address; no redirects; timeouts |
 | Audit | Exports, decisions, publications, corrections, deletions, account changes, sends, staff and settings changes, and record views are logged with the actor (identifiers and field names only) |
-| Logging | Request bodies are never logged; cookies, CSRF and authorisation headers are redacted; subscriptions and notification content are never logged (asserted in tests) |
+| Logging | Request bodies and query strings are never logged; cookies, CSRF and authorisation headers are redacted; subscriptions and notification content are never logged; database errors are logged without the values they carry (asserted in tests) |
+| Production mode | Outside `NODE_ENV=production` the server refuses to listen on a network interface or with a public `SITE_URL`; the development outbox answers only its own computer. In production, `TRUST_PROXY=true`, `COOKIE_SECURE=false` (with https) and `STAFF_MFA_REQUIRED=false` are logged as warnings at every start |
 
 ## 6. Scripts
 
@@ -142,7 +143,7 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 |---|---|
 | `pnpm dev` | Vite (:5173, HMR) + API via `tsx watch server/dev.ts` (:3000, `API_PORT`). Vite proxies `/api`. Uses PGlite unless `DATABASE_URL` is set. No service worker in development |
 | `pnpm build` | `vite build` → `dist/` (+ `sw.js`, `build-id.txt`); esbuild → `server-dist/` (+ migrations copied) |
-| `pnpm start` | `node server-dist/index.js`: production server |
+| `pnpm start` | `node server-dist/index.js`: the built server. Set `NODE_ENV=production` for a real deployment: without it, the server only starts on loopback with a local (or no) `SITE_URL` |
 | `pnpm worker` | `node server-dist/worker.js`: background jobs as a separate process |
 | `pnpm admin …` | Staff bootstrap: `create-owner --email … --name …`, `reset-mfa --email …`, `list` (production: `node server-dist/admin.js …`) |
 | `pnpm directory …` | The RCCG parish directory: `import <file.xlsx>` (dry run; `--apply`, `--as-at`, `--report`), `revert <import-id>`, `lineage <file.csv>`, `status` (production: `node server-dist/directory.js …`; [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) |
@@ -156,7 +157,7 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NODE_ENV` | development | `production` requires a real database, `SITE_URL` and `APP_SECRET`, and forbids the test email outbox |
+| `NODE_ENV` | development | `production` requires a real database, `SITE_URL` and `APP_SECRET`, and forbids the test email outbox. Anything else only listens on loopback, with a local or no `SITE_URL` |
 | `SITE_URL` | — (required in production) | The public origin (`https://…`; `http://localhost` allowed in development). Used for email links, Origin checks and secure cookies; at build time also for absolute social-card URLs |
 | `APP_SECRET` | dev placeholder (required in production, ≥ 32 characters) | CSRF signing and encryption at rest |
 | `COOKIE_SECURE` | on for an https `SITE_URL` | Adds `Secure` and the `__Host-` cookie prefix |
@@ -207,6 +208,7 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 | Jobs & campaigns | Idempotent enqueue, atomic claims, lease recovery and stale workers, retries with backoff and Retry-After, permanent failures, clean-up, shutdown hand-back, audience counts, idempotent creation, frozen content, audience-changed refusal, exactly-one delivery per device across repeated dispatch, consent and account re-checks before sending, 410 deactivation, rate-limit retry, retry exhaustion, expiry, cancellation (before and during sending, and a batch claimed before a cancel), time-zone scheduling, test sends only to staff devices, neutral urgent application updates | `server/jobs.test.ts` |
 | Browser (automated) | Service worker registration and control, precache contents, Chrome's installability report, offline public pages from the cached shell, offline page for `/admin` and `/account`, API never answered from cache, no private data in caches, update prompt without forced reload, stale chunks served to an old tab after a deploy, cache clean-up after update, **a real push through Firebase Cloud Messaging** received, decrypted and shown by the service worker | Headless Google Chrome over the DevTools protocol against the built server (2026-09-26; scripts kept out of the repo). This is **desktop Chromium only**: not a phone |
 | Browser (manual) | Install page, admin onboarding (invitation, password, TOTP enrolment, recovery codes), applicant sign-in by link, claiming, publication round trip, inbox, campaign editor, time-zone display, test-send guard | In-app browser against the built server (2026-09-26) |
+| Security audit (2026-09-30) | Concurrency limits on passwords, two-step and reset codes, the last-owner race, publication race, token voiding, session rotation, removed devices not re-linked, the applicant-accounts switch, middleware target pinning, development-mode refusal, text/meta cleaning, query shapes, CSV quoting, XLSX bounds, dotfiles, headers parity, push refusals and expiry, device erasure on deletion, logs without database values | Regression tests marked "(security audit)" across the suites; the originals were reproduced against the committed code first |
 | Deployment | Docker image + full Compose stack with the worker service | **Verified 2026-09-26** on real PostgreSQL 17 through Caddy HTTPS: migrations 0003–0005 applied over existing data, owner bootstrap from inside the container, invitation → password → TOTP → sign-in, `__Host-` secure cookies, MFA gate, existing applications listed, worker heartbeat from the separate container, CSV export, old CSV address closed |
 
 **Not verified yet (needs real devices and a public HTTPS staging origin, see [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing)):** installing and push on a physical iPhone/iPad (iOS 16.4+), Android phone (Chrome, Samsung Internet), Safari on macOS, Firefox, and Edge on Windows. The in-app browser used for manual checks blocks service workers and notifications, and desktop emulation says nothing about iOS.

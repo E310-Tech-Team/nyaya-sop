@@ -75,7 +75,8 @@ async function activeUnit(db: Queryable, id: string, what: string): Promise<Unit
 
 /** A name staff typed, cleaned like the list's names. */
 function nameFrom(input: string, what: string): string {
-  const name = cleanName(input);
+  // Too long is refused before cleaning, which is slow on a long run of spaces.
+  const name = input.length <= 1_000 ? cleanName(input) : '';
   if (name.length < 2 || name.length > 200 || !/[A-Za-z0-9]/.test(name)) throw new DirectoryError(`Enter the ${what}'s name (2 to 200 characters).`);
   return name;
 }

@@ -5,7 +5,7 @@ import { validPayload } from '../src/shared/test-fixtures';
 import type { Queryable } from './db';
 import { backoffMs, claimJobs, completeJob, enqueue, failJob } from './jobs/queue';
 import { cleanup, scheduleMaintenance, Worker } from './jobs/worker';
-import { deliverBatch, dispatchCampaign, MAX_DELIVERY_ATTEMPTS, notifyApplicationUpdate } from './notifications/dispatch';
+import { deliverBatch, dispatchCampaign, MAX_DELIVERY_ATTEMPTS, notifyApplicationUpdate, REFUSALS_BEFORE_REMOVAL } from './notifications/dispatch';
 import { applicantSignIn, asUser, createStaff, createTestContext, fakeSubscription, staffSignIn, type TestContext } from './test-helpers';
 
 const contexts: TestContext[] = [];
@@ -315,6 +315,44 @@ describe('campaigns', () => {
     const done = await stats(s, id);
     expect(done.campaign.status).toBe('sent');
     expect(done.stats).toMatchObject({ acceptedByPushService: 1, failed: 1, attempted: 2 });
+  });
+
+  it('switches off a device its push service keeps refusing, but never over this server’s own keys (security audit)', async () => {
+    const s = await scenario();
+    // The public device is refused as malformed; the applicant's as if this server's keys were wrong.
+    s.ctx.push.respond = (request) => ({ status: request.endpoint === s.publicDevice.endpoint ? 400 : 403, retryAfterSeconds: null });
+    const devices = () =>
+      s.ctx.db.query<{ status: string; reason: string | null; failures: number }>(
+        `select status::text as status, deactivated_reason as reason, failure_count as failures from push_subscriptions
+          where push_host in ('updates.push.services.mozilla.com', 'fcm.googleapis.com') order by push_host`,
+      );
+    for (let round = 1; round <= REFUSALS_BEFORE_REMOVAL; round++) {
+      await sendNow(s.staff, await createCampaign(s.staff));
+      await drain(s.worker);
+      if (round < REFUSALS_BEFORE_REMOVAL) expect((await devices()).rows.map((row) => row.status)).toEqual(['active', 'active']);
+    }
+    expect((await devices()).rows).toEqual([
+      { status: 'active', reason: null, failures: REFUSALS_BEFORE_REMOVAL },
+      { status: 'revoked', reason: 'rejected', failures: REFUSALS_BEFORE_REMOVAL },
+    ]);
+    // One accepted send starts the count again.
+    s.ctx.push.respond = () => ({ status: 201, retryAfterSeconds: null });
+    await sendNow(s.staff, await createCampaign(s.staff));
+    await drain(s.worker);
+    expect((await devices()).rows[0]).toMatchObject({ status: 'active', failures: 0 });
+  });
+
+  it('switches off subscriptions past the expiry their browser gave, with a consent record', async () => {
+    const s = await scenario();
+    await s.ctx.db.query(`update push_subscriptions set expiration_time = now() - interval '1 minute' where push_host = 'updates.push.services.mozilla.com'`);
+    await cleanup(s.ctx.db);
+    const { rows } = await s.ctx.db.query(
+      `select s.status::text as status, s.deactivated_reason as reason, e.action from push_subscriptions s
+         join notification_consent_events e on e.subscription_id = s.id and e.action = 'expired'
+        where s.push_host = 'updates.push.services.mozilla.com'`,
+    );
+    expect(rows).toEqual([{ status: 'expired', reason: 'expired', action: 'expired' }]);
+    expect((await s.ctx.db.query(`select count(*)::int as n from push_subscriptions where status = 'active'`)).rows[0]).toEqual({ n: 2 });
   });
 
   it('gives up after the last attempt and says so', async () => {

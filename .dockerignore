@@ -15,3 +15,20 @@
 # Tests are not needed in the image.
 **/*.test.ts
 src/shared/test-fixtures.ts
+
+# Never these, even inside the folders above (public/ is copied into the site as it is).
+**/.DS_Store
+**/.env
+**/.env.*
+**/*.xlsx
+**/*.xls
+**/*.csv
+**/*.tsv
+**/*.ods
+**/*.dump
+**/*.gz
+**/*.zip
+**/*.bak
+**/*.log
+**/*.pem
+**/*.key

@@ -118,6 +118,11 @@ function StaffActions({ row, isSelf, onChanged }: { row: StaffRow; isSelf: boole
             New invitation link
           </Button>
         )}
+        {row.lockedUntil && (
+          <Button tone="secondary" busy={busy === 'unlock'} onClick={() => act('unlock', () => adminApi.unlockStaff(row.id), 'Unlocked. They can sign in again.')}>
+            Unlock sign-in
+          </Button>
+        )}
         {row.mfaEnabled && (
           <Button tone="secondary" busy={busy === 'mfa'} onClick={() => act('mfa', () => adminApi.resetStaffMfa(row.id), 'Two-step verification reset. They’ll set it up again at their next sign-in.')}>
             Reset two-step verification

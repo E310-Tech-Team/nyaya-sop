@@ -32,6 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet';
 import { Skeleton } from '../../components/ui/skeleton';
 import { tabsTriggerClass } from '../../components/ui/tabs';
+import { ApiError } from '../../lib/api';
 import { useAsync } from '../../lib/useAsync';
 import { cn } from '../../lib/utils';
 import { APPLICATION_STATUSES, PUBLISHED_STATUS_LABELS, REVIEW_STATUS_LABELS } from '../../shared/platform';
@@ -44,8 +45,13 @@ import type { DayRange } from './PeriodCalendar';
 
 // ── Filters in the URL ─────────────────────────────────────────────────────────
 
-/** The filters every report takes (the Applicants list takes the same ones). */
-export const REPORT_FILTERS = ['cohort', 'from', 'to', 'status', 'published', 'unit', 'direct', 'without'] as const;
+/**
+ * The filters every report takes (the Applicants list takes the same ones). `unit` and `parish` are
+ * also where the drill-down is: the unit open, and a parish chosen in it.
+ */
+export const REPORT_FILTERS = ['cohort', 'from', 'to', 'status', 'published', 'unit', 'direct', 'without', 'parish'] as const;
+/** Where the drill-down is: changing the place clears everything below it. */
+export const PLACE_PARAMS = { unit: null, direct: null, without: null, parish: null, level: null, q: null, include: null } as const;
 export type ReportFilterKey = (typeof REPORT_FILTERS)[number];
 export type ReportFilters = Record<ReportFilterKey, string>;
 
@@ -80,7 +86,7 @@ export const applicantsHref = (query: Record<string, string>, extra: Record<stri
 
 export const REPORTS = [
   { path: '/admin/reports', label: 'Overview' },
-  { path: '/admin/reports/organisation', label: 'Regions and parishes' },
+  { path: '/admin/reports/organisation', label: 'Continents to parishes' },
   { path: '/admin/reports/over-time', label: 'Over time' },
   { path: '/admin/reports/decisions', label: 'Review and decisions' },
   { path: '/admin/reports/parish-answers', label: 'Parish answers' },
@@ -265,21 +271,25 @@ function PeriodFilter() {
 
 const placeName = (unit: ReportSummary['unit']) => (unit ? `${unit.name} (${LEVEL_LABELS[unit.level].toLowerCase()})` : 'the chosen place');
 
-/** Limiting the reports to a continent, region or province: the existing unit finder. */
-function PlaceChooser({ unit, onChosen }: { unit: ReportSummary['unit']; onChosen?: () => void }) {
+/** What a parish filter means: one parish, or the applications with or without a directory parish. */
+export const parishFilterLabel = (value: string, parish: ReportSummary['parish']) =>
+  value === 'none' ? 'No directory parish' : value === 'any' ? 'With a directory parish' : `Parish: ${parish?.name ?? 'the chosen parish'}`;
+
+/** Limiting the reports to a continent, region or province: the existing unit finder. A new place clears the parish chosen in the old one. */
+function PlaceChooser({ unit, parish, onChosen }: { unit: ReportSummary['unit']; parish: ReportSummary['parish']; onChosen?: () => void }) {
   const { filters, set } = useReportFilters();
   return (
     <div className="flex flex-col gap-3">
-      {(filters.unit || filters.without) && (
+      {(filters.unit || filters.without || filters.parish) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-cream px-3 py-2 font-sans text-[14px]">
           <span>
-            Now: <strong>{filters.without ? `Parishes with no ${filters.without}` : placeName(unit)}</strong>
+            Now: <strong>{filters.parish ? parishFilterLabel(filters.parish, parish) : filters.without ? `Parishes with no ${filters.without}` : placeName(unit)}</strong>
           </span>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => {
-              set({ unit: null, direct: null, without: null });
+              set(PLACE_PARAMS);
               onChosen?.();
             }}
           >
@@ -291,7 +301,7 @@ function PlaceChooser({ unit, onChosen }: { unit: ReportSummary['unit']; onChose
         label="Continent, region or province"
         action="Choose"
         onChoose={(chosen) => {
-          set({ unit: chosen.id, direct: null, without: null });
+          set({ ...PLACE_PARAMS, unit: chosen.id });
           onChosen?.();
         }}
       />
@@ -299,7 +309,7 @@ function PlaceChooser({ unit, onChosen }: { unit: ReportSummary['unit']; onChose
   );
 }
 
-function PlaceFilter({ unit }: { unit: ReportSummary['unit'] }) {
+function PlaceFilter({ unit, parish }: { unit: ReportSummary['unit']; parish: ReportSummary['parish'] }) {
   const { filters } = useReportFilters();
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -311,11 +321,19 @@ function PlaceFilter({ unit }: { unit: ReportSummary['unit'] }) {
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <FieldButton id={id} labelId={`${id}-label`} icon={MapPinIcon}>
-            {filters.without ? `No ${filters.without}` : filters.unit ? (unit ? placeName(unit) : 'The chosen place') : 'All places'}
+            {filters.parish && filters.parish !== 'any' && filters.parish !== 'none'
+              ? (parish?.name ?? 'The chosen parish')
+              : filters.without
+                ? `No ${filters.without}`
+                : filters.unit
+                  ? unit
+                    ? placeName(unit)
+                    : 'The chosen place'
+                  : 'All places'}
           </FieldButton>
         </PopoverTrigger>
         <PopoverContent className="w-96" align="end" aria-label="Choose a place">
-          <PlaceChooser unit={unit} onChosen={() => setOpen(false)} />
+          <PlaceChooser unit={unit} parish={parish} onChosen={() => setOpen(false)} />
         </PopoverContent>
       </Popover>
     </div>
@@ -323,7 +341,17 @@ function PlaceFilter({ unit }: { unit: ReportSummary['unit'] }) {
 }
 
 /** The shared filters: inline from tablets up, in a sheet on phones. They live in the URL, so every report and the Applicants list see the same ones. */
-export function ReportFilterBar({ cohorts, unit, hide = [] }: { cohorts: ReportCohort[]; unit: ReportSummary['unit']; hide?: ReportFilterKey[] }) {
+export function ReportFilterBar({
+  cohorts,
+  unit,
+  parish,
+  hide = [],
+}: {
+  cohorts: ReportCohort[];
+  unit: ReportSummary['unit'];
+  parish: ReportSummary['parish'];
+  hide?: ReportFilterKey[];
+}) {
   const { filters, set, clearAll, active } = useReportFilters();
   const canDirectory = useCan('directory.view');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -381,7 +409,7 @@ export function ReportFilterBar({ cohorts, unit, hide = [] }: { cohorts: ReportC
                   <p id={`${sheetId}-place`} className={labelClass}>
                     Place
                   </p>
-                  <PlaceChooser unit={unit} />
+                  <PlaceChooser unit={unit} parish={parish} />
                 </div>
               )}
             </SheetBody>
@@ -398,7 +426,7 @@ export function ReportFilterBar({ cohorts, unit, hide = [] }: { cohorts: ReportC
         <div className={cn('grid gap-3 px-4 md:grid-cols-3', withPlace && !hide.includes('cohort') ? 'xl:grid-cols-5' : 'xl:grid-cols-4')}>
           <PeriodFilter />
           {choices}
-          {withPlace && <PlaceFilter unit={unit} />}
+          {withPlace && <PlaceFilter unit={unit} parish={parish} />}
         </div>
       </Card>
     </section>
@@ -406,7 +434,17 @@ export function ReportFilterBar({ cohorts, unit, hide = [] }: { cohorts: ReportC
 }
 
 /** What the report covers: the period and every active filter, each removable. */
-export function ReportingOn({ cohorts, unit, hide = [] }: { cohorts: ReportCohort[]; unit: ReportSummary['unit']; hide?: ReportFilterKey[] }) {
+export function ReportingOn({
+  cohorts,
+  unit,
+  parish,
+  hide = [],
+}: {
+  cohorts: ReportCohort[];
+  unit: ReportSummary['unit'];
+  parish: ReportSummary['parish'];
+  hide?: ReportFilterKey[];
+}) {
   const { filters, set, clearAll, active } = useReportFilters();
   const chips: { key: string; label: string; clear: Record<string, null> }[] = [];
   if (filters.cohort && !hide.includes('cohort')) chips.push({ key: 'cohort', label: cohorts.find((cohort) => cohort.id === filters.cohort)?.name ?? 'One cohort', clear: { cohort: null } });
@@ -414,8 +452,10 @@ export function ReportingOn({ cohorts, unit, hide = [] }: { cohorts: ReportCohor
   if (filters.published) {
     chips.push({ key: 'published', label: `Published: ${PUBLISHED_STATUS_LABELS[filters.published as keyof typeof PUBLISHED_STATUS_LABELS]?.label ?? filters.published}`, clear: { published: null } });
   }
-  if (filters.unit) chips.push({ key: 'unit', label: filters.direct === '1' ? `Directly under ${placeName(unit)}` : `Within ${placeName(unit)}`, clear: { unit: null, direct: null } });
+  // Removing a place also removes the parish chosen in it.
+  if (filters.unit) chips.push({ key: 'unit', label: filters.direct === '1' ? `Directly under ${placeName(unit)}` : `Within ${placeName(unit)}`, clear: { unit: null, direct: null, parish: null } });
   if (filters.without) chips.push({ key: 'without', label: `Parishes with no ${filters.without}`, clear: { without: null } });
+  if (filters.parish) chips.push({ key: 'parish', label: parishFilterLabel(filters.parish, parish), clear: { parish: null } });
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-sans text-[14px] text-ink">
       <p>
@@ -673,24 +713,53 @@ export function ReportPage({
   hide,
   children,
 }: {
-  title: string;
-  description: ReactNode;
+  /** The heading, or a function of the summary (undefined while it loads): the drill-down names the place open. */
+  title: string | ((summary: ReportSummary | undefined) => string);
+  description: ReactNode | ((summary: ReportSummary | undefined) => ReactNode);
   hide?: ReportFilterKey[];
   children: (context: ReportContext) => ReactNode;
 }) {
-  const { query } = useReportFilters();
+  const { query, set } = useReportFilters();
   const summary = useAsync((signal) => adminApi.reportSummary(query, signal), [JSON.stringify(query)]);
   // The cohorts' names, for the filter (every cohort, whatever the filters).
   const cohorts = useAsync((signal) => adminApi.reportCohorts({}, signal), []);
   const cohortList = cohorts.data?.items ?? [];
   const unit = summary.data?.unit ?? null;
+  const parish = summary.data?.parish ?? null;
+  // A link to a place that doesn't exist, or a parish outside the place it names: offer the way back to every place.
+  const badPlace = summary.error instanceof ApiError && (summary.error.status === 400 || summary.error.status === 404);
+  const heading = badPlace ? 'Place not found' : typeof title === 'function' ? title(summary.data) : title;
   return (
     <>
-      <PageHeader eyebrow="Reports and analytics" title={title} documentTitle={`${title} · Admin`} description={description} />
+      <PageHeader
+        eyebrow="Reports and analytics"
+        title={heading}
+        documentTitle={`${heading} · Admin`}
+        description={typeof description === 'function' ? description(summary.data) : description}
+      />
       <ReportNav />
-      <ReportFilterBar cohorts={cohortList} unit={unit} hide={hide} />
-      <ReportingOn cohorts={cohortList} unit={unit} hide={hide} />
-      {summary.error ? <ReportError error={summary.error} onRetry={summary.reload} /> : !summary.data ? <ReportSkeleton /> : children({ summary: summary.data, cohorts: cohortList })}
+      <ReportFilterBar cohorts={cohortList} unit={unit} parish={parish} hide={hide} />
+      <ReportingOn cohorts={cohortList} unit={unit} parish={parish} hide={hide} />
+      {badPlace ? (
+        <Alert variant="error">
+          <AlertCircleIcon aria-hidden="true" />
+          <AlertTitle>This place can’t be shown.</AlertTitle>
+          <AlertDescription>
+            <p>{errorMessage(summary.error)} The link may be out of date, or the directory may have changed.</p>
+            <div>
+              <Button variant="outline" size="sm" onClick={() => set(PLACE_PARAMS)}>
+                Show every place
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : summary.error ? (
+        <ReportError error={summary.error} onRetry={summary.reload} />
+      ) : !summary.data ? (
+        <ReportSkeleton />
+      ) : (
+        children({ summary: summary.data, cohorts: cohortList })
+      )}
     </>
   );
 }

@@ -179,9 +179,11 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     (async () => {
       if (typeof data.id === 'string') {
-        // Counted only when this request gets through: clicks are a lower bound, never exact.
+        // Counted only when this request gets through, and anyone holding the id could report one:
+        // the figure is what devices reported, never exact.
         void fetch('/api/events', {
           method: 'POST',
+          credentials: 'omit',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ name: 'notification_click', properties: { messageId: data.id } }),
         }).catch(() => undefined);

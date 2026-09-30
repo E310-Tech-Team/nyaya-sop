@@ -79,6 +79,12 @@ const stored = async (id: string) =>
 describe('GET /api/parishes/search', () => {
   beforeEach(async () => {
     await importList(LIST);
+    await switchDirectory(true);
+  });
+
+  it('answers nothing while the directory is switched off (security audit)', async () => {
+    await switchDirectory(false);
+    expect((await search('q=jesus%20house')).status).toBe(404);
   });
 
   it('puts parishes in the applicant’s state first, then in province order', async () => {
@@ -96,6 +102,19 @@ describe('GET /api/parishes/search', () => {
       inState: true,
       chain: { province: { name: 'Rivers Province 4' }, region: { name: 'Region 5' }, continent: { name: 'Continent 1' }, zone: null, area: null },
     });
+  });
+
+  it('keeps searching and listing when a unit’s number is too long for an integer (security audit)', async () => {
+    await importList([...LIST, row('CONTINENT 3', 'REGION 54', 'LAGOS PROVINCE 123456789012', 'JESUS HOUSE')]);
+    const { status, body } = await search('q=jesus%20house&state=Lagos');
+    expect(status).toBe(200);
+    expect(places(body)).toContain('Jesus House · Lagos Province 123456789012');
+    const owner = asUser(ctx.app, await staffSignIn(ctx, await createStaff(ctx, { role: 'owner' })));
+    const units = await owner({ url: '/api/admin/reports/units?level=province' });
+    expect(units.statusCode).toBe(200);
+    const region = (await ctx.db.query<{ id: string }>(`select id from church_units where name_key = 'REGION 54'`)).rows[0]!;
+    expect((await owner({ url: `/api/admin/directory/browse?unit=${region.id}` })).statusCode).toBe(200);
+    expect((await owner({ url: '/api/admin/directory/search?q=lagos%20province&level=province' })).statusCode).toBe(200);
   });
 
   it('narrows by a province number, whole numbers first, and reads “LP 12” as Lagos Province 12', async () => {

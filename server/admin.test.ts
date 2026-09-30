@@ -2,12 +2,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StaffRole } from '../src/shared/permissions';
 import { NOTIFICATION_CONSENT_VERSION } from '../src/shared/platform';
 import { validPayload } from '../src/shared/test-fixtures';
+import { parseCsv } from './csv';
 import {
   applicantSignIn,
   asUser,
+  cookieFrom,
   createStaff,
   createTestContext,
   fakeSubscription,
+  nextVisitor,
+  ORIGIN,
   staffSignIn,
   type Session,
   type TestContext,
@@ -78,6 +82,90 @@ describe('role permissions are enforced by the API', () => {
       const res = await as(role)({ method: method as 'POST', url, payload: {} });
       expect({ role, forbidden: res.statusCode === 403 }).toEqual({ role, forbidden: !['owner', 'programme_admin'].includes(role) });
     }
+  });
+});
+
+describe('staff accounts (security audit)', () => {
+  it('keeps an active owner even when two owners demote or suspend each other at the same moment', async () => {
+    const isolated = await createTestContext();
+    try {
+      const [a, b] = [await createStaff(isolated, { role: 'owner' }), await createStaff(isolated, { role: 'owner' })];
+      const [asA, asB] = [asUser(isolated.app, await staffSignIn(isolated, a)), asUser(isolated.app, await staffSignIn(isolated, b))];
+      // A little latency on every query, as a real database has, so the two requests really overlap.
+      const query = isolated.db.query.bind(isolated.db);
+      isolated.db.query = (async (text: string, params?: unknown[]) => {
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        return query(text, params);
+      }) as typeof isolated.db.query;
+      const results = await Promise.all([
+        asA({ method: 'POST', url: `/api/admin/staff/${b.id}/role`, payload: { role: 'reviewer' } }),
+        asB({ method: 'POST', url: `/api/admin/staff/${a.id}/role`, payload: { role: 'reviewer' } }),
+      ]).finally(() => (isolated.db.query = query));
+      expect(results.map((res) => res.statusCode).sort()).toEqual([200, 409]);
+      const owners = await isolated.db.query<{ n: number }>(`select count(*)::int as n from staff_users where role = 'owner' and status = 'active'`);
+      expect(owners.rows[0]!.n).toBe(1);
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it('ends a suspended person’s invitation and reset links, and lets owners lift a sign-in lock', async () => {
+    const invited = await as('owner')({ method: 'POST', url: '/api/admin/staff', payload: { email: 'links.end@example.org', displayName: 'Links End', role: 'reviewer' } });
+    const token = /token=([A-Za-z0-9_-]+)/.exec(ctx.outbox.latest('links.end@example.org')!.text)![1]!;
+    const check = () => ctx.app.inject({ method: 'POST', url: '/api/admin/setup/check', remoteAddress: nextVisitor(), headers: { origin: ORIGIN }, payload: { token } });
+    expect((await check()).statusCode).toBe(200);
+    const suspended = await as('owner')({ method: 'POST', url: `/api/admin/staff/${invited.json().id}/suspend` });
+    expect({ status: suspended.statusCode, body: suspended.json() }).toEqual({ status: 200, body: { ok: true } });
+    expect((await check()).json().code).toBe('INVALID_TOKEN');
+    await as('owner')({ method: 'POST', url: `/api/admin/staff/${invited.json().id}/reactivate` });
+    expect((await check()).json().code).toBe('INVALID_TOKEN'); // reactivating doesn't revive the old link
+
+    const locked = await createStaff(ctx, { role: 'reviewer', mfa: false });
+    const login = (password: string) =>
+      ctx.app.inject({ method: 'POST', url: '/api/admin/login', remoteAddress: nextVisitor(), headers: { origin: ORIGIN }, payload: { email: locked.email, password } });
+    for (let i = 0; i < 5; i++) await login(`wrong password ${i} here`);
+    expect((await login(locked.password)).statusCode).toBe(401);
+    for (const role of roles.filter((role) => role !== 'owner')) {
+      expect((await as(role)({ method: 'POST', url: `/api/admin/staff/${locked.id}/unlock` })).statusCode).toBe(403);
+    }
+    expect((await as('owner')({ method: 'POST', url: `/api/admin/staff/${locked.id}/unlock` })).statusCode).toBe(200);
+    expect((await as('owner')({ method: 'POST', url: `/api/admin/staff/${locked.id}/unlock` })).statusCode).toBe(409);
+    const signedIn = await login(locked.password);
+    expect(signedIn.statusCode).toBe(200);
+    expect(cookieFrom(signedIn)).not.toBe('');
+    const { rows } = await ctx.db.query(`select count(*)::int as n from audit_events where action = 'staff.unlocked' and target_id = $1`, [locked.id]);
+    expect(rows[0]).toEqual({ n: 1 });
+  });
+
+  it('reads odd query strings without failing: repeated keys, built-in names, impossible dates (security audit)', async () => {
+    for (const url of [
+      '/api/admin/applicants?q=a&q=b',
+      '/api/admin/applicants?sort=constructor',
+      '/api/admin/applicants?sort=__proto__',
+      '/api/admin/applicants?to=2026-02-30',
+      '/api/admin/reports/summary?from=2026-02-30',
+      '/api/admin/reports/trend?from=0000-01-01',
+      '/api/admin/reports/units?level=province&q=a&q=b',
+      '/api/admin/directory/search?q=lagos&q=b',
+      '/api/admin/accounts?q=a&q=b',
+    ]) {
+      expect((await as('owner')({ url })).statusCode, url).toBe(200);
+    }
+    const unknownCohort = await as('owner')({
+      method: 'POST',
+      url: '/api/admin/announcements',
+      payload: { title: 'Hello', body: 'Welcome', audience: 'applicants', cohortId: '00000000-0000-4000-8000-000000000000' },
+    });
+    expect(unknownCohort.statusCode).toBe(400);
+    expect(unknownCohort.json().fieldErrors.cohortId).toBeDefined();
+  });
+
+  it('shows raw job errors on the dashboard only to staff who look after the platform', async () => {
+    await ctx.db.query(`insert into jobs (kind, status, last_error) values ('probe.failed', 'failed', 'Push service said 400 for probe')`);
+    const failures = async (role: StaffRole) => ((await as(role)({ url: '/api/admin/dashboard' })).json().queue.recentFailures as { kind: string; last_error: string | null }[]).find((row) => row.kind === 'probe.failed');
+    expect(await failures('owner')).toMatchObject({ last_error: 'Push service said 400 for probe' });
+    expect(await failures('read_only')).toMatchObject({ last_error: null });
+    expect(await failures('reviewer')).toMatchObject({ last_error: null });
   });
 });
 
@@ -174,14 +262,23 @@ describe('applicant review', () => {
     expect(detail.notes[0]).toMatchObject({ body: 'Strong purpose statement.', author: 'Test programme_admin' });
   });
 
+  it('answers 400, not 500, when the database refuses a value, and logs nothing of it (security audit)', async () => {
+    const id = await submit('nul.note@example.com');
+    const before = ctx.logs.length;
+    const res = await as('programme_admin')({ method: 'POST', url: `/api/admin/applicants/${id}/notes`, payload: { body: 'Call back\u0000 tomorrow' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('BAD_REQUEST');
+    expect(ctx.logs.slice(before).join('')).not.toContain('Call back');
+  });
+
   it('exports a spreadsheet-safe CSV only with export permission, and audits it', async () => {
     await submit('csv@example.com', { fullName: '=HYPERLINK("http://evil.example","Click")' });
     expect((await as('communications')({ url: '/api/admin/applicants/export.csv' })).statusCode).toBe(403);
     const res = await as('programme_admin')({ url: '/api/admin/applicants/export.csv' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
-    const [header] = res.body.replace(/^﻿/, '').split('\r\n');
-    expect(header).toMatch(/^Reference,Submitted \(WAT\),Cohort,Review status,Published status,Full name,Email,Phone,/);
+    const [header] = parseCsv(res.body);
+    expect(header!.join(',')).toMatch(/^Reference,Submitted \(WAT\),Cohort,Review status,Published status,Full name,Email,Phone,/);
     expect(res.body).toContain(`"'=HYPERLINK(""http://evil.example"",""Click"")"`);
     const { rows } = await ctx.db.query(`select details from audit_events where action = 'applications.exported' order by id desc limit 1`);
     expect((rows[0] as { details: { rows: number } }).details.rows).toBeGreaterThan(0);
@@ -229,16 +326,17 @@ describe('staff management safeguards', () => {
 describe('accounts and cohorts', () => {
   it('suspends an account: sessions end and its devices stop receiving', async () => {
     const applicant = await applicantSignIn(ctx, 'suspend.me@example.com');
-    await asUser(ctx.app, applicant)({
+    const device = await asUser(ctx.app, applicant)({
       method: 'POST',
       url: '/api/push/subscribe',
-      payload: { subscription: fakeSubscription(), topics: ['general'], consentVersion: NOTIFICATION_CONSENT_VERSION },
+      payload: { subscription: fakeSubscription(), topics: ['general', 'application'], consentVersion: NOTIFICATION_CONSENT_VERSION },
     });
     const { rows } = await ctx.db.query<{ id: string }>(`select id from applicant_accounts where email = 'suspend.me@example.com'`);
     await as('programme_admin')({ method: 'POST', url: `/api/admin/accounts/${rows[0]!.id}/suspend` });
     expect((await asUser(ctx.app, applicant)({ url: '/api/account/me' })).statusCode).toBeGreaterThanOrEqual(401);
-    const devices = await ctx.db.query(`select status::text as status from push_subscriptions where account_id = $1`, [rows[0]!.id]);
-    expect(devices.rows).toEqual([{ status: 'revoked' }]);
+    // The device stops, and forgets the account (reactivating the account doesn't bring it back).
+    const devices = await ctx.db.query(`select status::text as status, account_id, topics from push_subscriptions where id = $1`, [device.json().id]);
+    expect(devices.rows).toEqual([{ status: 'revoked', account_id: null, topics: ['general'] }]);
   });
 
   it.each(['staff', 'applicant'] as const)('deletes an account (by %s) whose device had application updates, keeping the application', async (by) => {
@@ -253,6 +351,7 @@ describe('accounts and cohorts', () => {
     });
     const { rows } = await ctx.db.query<{ id: string }>('select id from applicant_accounts where email = $1', [email]);
     const accountId = rows[0]!.id;
+    const device = (await ctx.db.query<{ id: string }>('select id from push_subscriptions where account_id = $1', [accountId])).rows[0]!.id;
     const res =
       by === 'staff'
         ? await as('programme_admin')({ method: 'POST', url: `/api/admin/accounts/${accountId}/delete`, payload: { confirm: email } })
@@ -264,6 +363,13 @@ describe('accounts and cohorts', () => {
          join notification_consent_events e on e.subscription_id = s.id where e.account_id is null and s.deactivated_reason = 'account_deleted'`,
     );
     expect(devices.rows).toContainEqual({ account_id: null, status: 'revoked', topics: ['general'] });
+    // Nothing is left that would single out the browser (security audit).
+    const erased = await ctx.db.query(
+      `select endpoint_enc, keys_enc, endpoint_hash = 'erased:' || id::text as hash_erased, auth_hash = 'erased:' || id::text as auth_erased, device_label
+         from push_subscriptions where id = $1`,
+      [device],
+    );
+    expect(erased.rows).toEqual([{ endpoint_enc: '', keys_enc: '', hash_erased: true, auth_erased: true, device_label: null }]);
     const application = (await as('programme_admin')({ url: `/api/admin/applicants/${id}` })).json();
     expect(application).toMatchObject({ id, account: null });
   });

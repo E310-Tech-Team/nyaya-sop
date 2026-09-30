@@ -48,12 +48,29 @@ const unavailable = () =>
     { status: 503, headers: { 'cache-control': 'no-store' } },
   );
 
+const notFound = () => Response.json({ code: 'NOT_FOUND', message: 'Not found.' } satisfies ApiErrorBody, { status: 404, headers: { 'cache-control': 'no-store' } });
+
+/**
+ * Where a request goes on the API: always the API's own origin, only for /api paths. A raw path
+ * such as "/api/x/..\\..\\\\evil.example/p" normalises to "//evil.example/p", which as a relative
+ * URL would name another host; that must never receive a request (or the secret).
+ */
+export function apiTarget(requestUrl: string, origin: string): URL | null {
+  const { pathname, search } = new URL(requestUrl);
+  if (!/^\/api(\/|$)/.test(pathname)) return null;
+  const target = new URL(origin);
+  target.pathname = pathname;
+  target.search = search;
+  return target.origin === origin ? target : null;
+}
+
 export function forwardToApi(request: Request, env: EdgeEnv): Response {
   const origin = apiOrigin(env.API_ORIGIN);
   const secret = env.EDGE_PROXY_SECRET?.trim();
   if (!origin || !secret) return unavailable();
 
-  const { pathname, search } = new URL(request.url);
+  const target = apiTarget(request.url, origin);
+  if (!target) return notFound();
   const headers = new Headers(request.headers);
   headers.delete('host'); // the VPS's own host name goes upstream (Caddy picks its site by it)
   headers.set(EDGE_PROXY_SECRET_HEADER, secret);
@@ -62,7 +79,7 @@ export function forwardToApi(request: Request, env: EdgeEnv): Response {
   else headers.delete(EDGE_CLIENT_IP_HEADER);
 
   const build = releaseId(env);
-  return rewrite(new URL(`${pathname}${search}`, origin), {
+  return rewrite(target, {
     request: { headers },
     headers: build ? { 'x-app-build': build } : {},
   });

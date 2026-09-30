@@ -12,6 +12,7 @@
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Resource-Policy": "same-origin",
         "Origin-Agent-Cluster": "?1",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), browsing-topics=()",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Strict-Transport-Security": "max-age=15552000",
         "X-Content-Type-Options": "nosniff",

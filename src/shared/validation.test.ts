@@ -3,8 +3,12 @@ import { CONSENT_VERSION, referenceFromId } from './application';
 import { validPayload } from './test-fixtures';
 import {
   MESSAGES,
+  cleanText,
   isHoneypotFilled,
+  isValidEmail,
   normalizePhone,
+  sanitizeMeta,
+  truncate,
   validateApplication,
   validateEducation,
   validatePersonal,
@@ -127,6 +131,37 @@ describe('validateApplication', () => {
     const result = validateApplication(validPayload({ consentVersion: '' }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.fieldErrors.consentVersion).toBe(MESSAGES.consentRequired);
+  });
+});
+
+describe('text that has to be stored (security audit)', () => {
+  const EMOJI = '\u{1F600}';
+
+  it('removes characters Postgres or JSON would refuse, keeping real text', () => {
+    expect(cleanText('Ada\u0000 Obi')).toBe('Ada Obi');
+    expect(cleanText('Ada \u0000 Obi\u0007')).toBe('Ada Obi');
+    expect(cleanText('Ada\nObi\t Ọlá')).toBe('Ada Obi Ọlá');
+    expect(cleanText(`lone \ud83d half ${EMOJI}`)).toBe(`lone half ${EMOJI}`);
+    expect(cleanText('\udc00')).toBe('');
+  });
+
+  it('cuts to a number of characters without splitting an emoji', () => {
+    expect(truncate(`${'a'.repeat(119)}${EMOJI}tail`, 120)).toBe(`${'a'.repeat(119)}${EMOJI}`);
+    expect(truncate(`${'a'.repeat(118)} ${EMOJI}`, 119)).toBe('a'.repeat(118));
+    expect(truncate('short', 120)).toBe('short');
+  });
+
+  it('stores link tags a crafted link could otherwise use to break the form', () => {
+    const meta = sanitizeMeta({ utmSource: '\u0000', utmMedium: `${'m'.repeat(119)}${EMOJI}${EMOJI}`, utmCampaign: 'x'.repeat(10_000), referrer: 7 });
+    expect(meta).toEqual({ utmMedium: `${'m'.repeat(119)}${EMOJI}`, utmCampaign: 'x'.repeat(120) });
+    expect(JSON.stringify(meta)).not.toMatch(/\\u(d[89a-f]|00)/i);
+  });
+
+  it('refuses email addresses mail software would read as syntax, or that hide characters', () => {
+    for (const email of ['first.last+tag@example.co.uk', "o'brien@example.com", 'adé@exämple.ng']) expect(isValidEmail(email)).toBe(true);
+    for (const email of ['a,victim@example.com', 'a;b@example.com', '<a@example.com>', 'a"b@example.com', 'a(b)@example.com', 'a\u0000@example.com', 'a@exa\u200bmple.com', 'a\\b@example.com']) {
+      expect(isValidEmail(email)).toBe(false);
+    }
   });
 });
 

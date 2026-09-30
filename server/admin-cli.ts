@@ -20,7 +20,7 @@ import { createServices } from './app';
 import { audit, SYSTEM } from './audit';
 import { revokeStaffSessions } from './auth/sessions';
 import { createStaffInvite, siteLink } from './auth/staff-routes';
-import { createAuthToken } from './auth/tokens';
+import { createAuthToken, voidStaffTokens } from './auth/tokens';
 import { ConfigError, loadConfig, loadDotEnv } from './config';
 import { createDb } from './db';
 import { migrate } from './migrate';
@@ -67,6 +67,7 @@ async function main() {
       const staff = rows[0];
       if (!staff) throw new Error('No staff account with that email.');
       if (staff.status !== 'active') throw new Error(`That account is ${staff.status}; reactivate it (or resend the invitation) first.`);
+      await voidStaffTokens(db, staff.id, ['staff_password_reset']); // only the newest link works
       const token = await createAuthToken(db, 'staff_password_reset', email, 30, staff.id);
       await audit(db, SYSTEM, 'staff.password_reset_link', { type: 'staff', id: staff.id }, { via: 'cli' });
       console.log(`Password-reset link for ${email} (single use, 30 minutes). Give it to them privately:\n`);

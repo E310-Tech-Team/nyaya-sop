@@ -1,4 +1,5 @@
 import type { SubmissionMeta } from '../shared/application';
+import { sanitizeMeta } from '../shared/validation';
 import { readSession, writeSession } from './storage';
 
 const KEY = 'sop.attribution.v1';
@@ -6,7 +7,8 @@ const KEY = 'sop.attribution.v1';
 /**
  * Remembers how the visitor arrived (utm_* link tags and the referring site) so the
  * Programme team can see which announcements and WhatsApp links bring applications.
- * First touch wins for the session.
+ * First touch wins for the session. Values are cleaned and capped as the server stores them, so a
+ * link with oversized or malformed tags can't make the application too large to send.
  */
 export function captureAttribution(): void {
   if (readSession<SubmissionMeta>(KEY)) return;
@@ -24,7 +26,8 @@ export function captureAttribution(): void {
   } catch {
     // Unparseable referrer: ignore.
   }
-  writeSession(KEY, meta);
+  writeSession(KEY, sanitizeMeta(meta));
 }
 
-export const readAttribution = (): SubmissionMeta => readSession<SubmissionMeta>(KEY) ?? {};
+// Cleaned again on reading: the session may hold tags captured by an earlier version of the site.
+export const readAttribution = (): SubmissionMeta => sanitizeMeta(readSession<SubmissionMeta>(KEY));

@@ -10,6 +10,7 @@ import { ROLE_PERMISSIONS, type StaffRole } from '../../src/shared/permissions';
 import type { SessionSummary } from '../../src/shared/platform';
 import { isValidEmail, normalizeEmail } from '../../src/shared/validation';
 import { audit, type AuditActor } from '../audit';
+import { runInBackground } from '../background';
 import {
   hashPassword,
   newRecoveryCode,
@@ -25,7 +26,7 @@ import { deviceLabel, iso, isUuid, sendError, str } from '../http';
 import type { Services } from '../services';
 import { checkOrigin, staffGuard, type StaffContext } from './guards';
 import { clearSessionCookie, createStaffSession, csrfTokenFor, revokeStaffSessions, setSessionCookie } from './sessions';
-import { consumeAuthToken, createAuthToken, peekAuthToken, recentTokenCount } from './tokens';
+import { consumeAuthToken, createAuthToken, peekAuthToken, recentTokenCount, voidStaffTokens } from './tokens';
 
 const TOTP_BASE = { issuer: 'School of Purpose', algorithm: 'SHA1', digits: 6, period: 30 } as const;
 const LOCK_AFTER_FAILURES = 5;
@@ -57,24 +58,34 @@ export async function checkTotpCode(services: Services, staffId: string, secretE
   return rows.length === 1;
 }
 
+/**
+ * Recovery codes are stored as an HMAC under a key derived from APP_SECRET (not in the database),
+ * tied to their owner, so a copy of the database alone can't be searched for them. Codes issued
+ * before this used plain SHA-256 and still work until they're used or replaced.
+ */
+const recoveryHash = (services: Services, staffId: string, normalised: string) => services.secrets.hmac('recovery-code/v1', `${staffId}:${normalised}`);
+
 /** Uses up one recovery code. */
-async function useRecoveryCode(db: Queryable, staffId: string, code: string): Promise<boolean> {
+async function useRecoveryCode(services: Services, staffId: string, code: string): Promise<boolean> {
   const normalised = normaliseRecoveryCode(code);
   if (normalised.length !== 10) return false;
-  const { rows } = await db.query(
+  const { rows } = await services.db.query(
     `update staff_recovery_codes set used_at = now()
-      where staff_id = $1 and code_hash = $2 and used_at is null returning id`,
-    [staffId, sha256Hex(normalised)],
+      where staff_id = $1 and code_hash = any($2::text[]) and used_at is null returning id`,
+    [staffId, [recoveryHash(services, staffId, normalised), sha256Hex(normalised)]],
   );
   return rows.length === 1;
 }
 
-async function replaceRecoveryCodes(db: Queryable, staffId: string): Promise<string[]> {
+async function replaceRecoveryCodes(services: Services, staffId: string): Promise<string[]> {
   const codes = Array.from({ length: 10 }, newRecoveryCode);
-  await db.query('delete from staff_recovery_codes where staff_id = $1', [staffId]);
-  for (const code of codes) {
-    await db.query('insert into staff_recovery_codes (staff_id, code_hash) values ($1, $2)', [staffId, sha256Hex(normaliseRecoveryCode(code))]);
-  }
+  const hashes = codes.map((code) => recoveryHash(services, staffId, normaliseRecoveryCode(code)));
+  // One statement: the old codes stop working exactly when the new ones start.
+  await services.db.query(
+    `with removed as (delete from staff_recovery_codes where staff_id = $1)
+     insert into staff_recovery_codes (staff_id, code_hash) select $1, hash from unnest($2::text[]) as hash`,
+    [staffId, hashes],
+  );
   return codes;
 }
 
@@ -86,9 +97,55 @@ async function checkSecondFactor(services: Services, staffId: string, body: unkn
   const code = str(body, 'code', 10);
   if (code && (await checkTotpCode(services, staffId, secretEnc, code))) return 'totp';
   const recovery = str(body, 'recoveryCode', 20);
-  if (recovery && (await useRecoveryCode(services.db, staffId, recovery))) return 'recovery';
+  if (recovery && (await useRecoveryCode(services, staffId, recovery))) return 'recovery';
   return null;
 }
+
+// ── The account's attempt budget ─────────────────────────────────────────────
+
+/** How long a lock lasts: 15 minutes at the limit, doubling with each further failure, at most 24 hours. */
+const LOCK_LENGTH = (count: string) => `least(interval '24 hours', interval '15 minutes' * power(2, ${count} - $2::int))`;
+
+type Attempt = { count: number; relocked: boolean };
+
+/**
+ * Takes one attempt from the account's budget BEFORE a password or code is checked, in one
+ * statement, so requests racing each other can't get past the lockout. Below the limit each
+ * attempt counts. Once a lock has run out, one attempt at a time gets through: it re-locks the
+ * account as it passes (for longer each time), and a correct answer lifts that again. Null while
+ * the account is locked.
+ */
+async function takeAttempt(db: Queryable, staffId: string): Promise<Attempt | null> {
+  const { rows } = await db.query<{ count: number }>(
+    `update staff_users
+        set failed_login_count = failed_login_count + 1,
+            locked_until = case when failed_login_count >= $2::int then now() + ${LOCK_LENGTH('(failed_login_count + 1)')} else locked_until end
+      where id = $1 and (locked_until is null or locked_until <= now())
+        and (failed_login_count < $2::int or locked_until is not null)
+      returning failed_login_count as count`,
+    [staffId, LOCK_AFTER_FAILURES],
+  );
+  const count = rows[0]?.count;
+  return count === undefined ? null : { count, relocked: count > LOCK_AFTER_FAILURES };
+}
+
+/** A wrong answer: the attempt stays counted, and the one that reaches the limit locks the account. */
+async function attemptFailed(db: Queryable, staffId: string, attempt: Attempt): Promise<void> {
+  if (attempt.relocked || attempt.count < LOCK_AFTER_FAILURES) return;
+  await db.query(`update staff_users set locked_until = now() + ${LOCK_LENGTH('$3::int')} where id = $1`, [staffId, LOCK_AFTER_FAILURES, attempt.count]);
+}
+
+/** A right password that still needs the second factor: the attempt is handed back, and a lock it set is lifted. */
+async function attemptReturned(db: Queryable, staffId: string, attempt: Attempt): Promise<void> {
+  await db.query(
+    `update staff_users set failed_login_count = greatest(failed_login_count - 1, 0), locked_until = case when $2::boolean then now() else locked_until end where id = $1`,
+    [staffId, attempt.relocked],
+  );
+}
+
+/** Signed in (or reset) with every factor: the budget starts again. */
+const clearAttempts = (db: Queryable, staffId: string) =>
+  db.query('update staff_users set failed_login_count = 0, locked_until = null, last_login_at = now() where id = $1', [staffId]);
 
 export function sessionPayload(services: Services, staff: StaffContext) {
   return {
@@ -156,15 +213,8 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     }
     const generic = () =>
       sendError(reply, 401, 'UNAUTHORIZED', 'That email and password don’t match an active admin account, or the account is temporarily locked.');
-    const { rows } = await db.query<{
-      id: string;
-      status: string;
-      password_hash: string | null;
-      failed_login_count: number;
-      locked_until: Date | null;
-      mfa_enabled_at: Date | null;
-    }>(
-      'select id, status::text as status, password_hash, failed_login_count, locked_until, mfa_enabled_at from staff_users where email = $1',
+    const { rows } = await db.query<{ id: string; status: string; password_hash: string | null; mfa_enabled_at: Date | null }>(
+      'select id, status::text as status, password_hash, mfa_enabled_at from staff_users where email = $1',
       [email],
     );
     const staff = rows[0];
@@ -172,70 +222,72 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
       await verifyDummyPassword(password);
       return generic();
     }
-    if (staff.locked_until && new Date(staff.locked_until) > new Date()) {
+    const attempt = await takeAttempt(db, staff.id);
+    if (!attempt) {
       await verifyDummyPassword(password);
       await audit(db, { type: 'staff', id: staff.id }, 'staff.login_locked', { type: 'staff', id: staff.id });
       return generic();
     }
     if (!(await verifyPassword(password, staff.password_hash))) {
-      const failures = staff.failed_login_count + 1;
-      await db.query(
-        `update staff_users set failed_login_count = $2::int,
-                locked_until = case when $2::int >= $3::int
-                  then now() + least(interval '24 hours', interval '15 minutes' * power(2, $2::int - $3::int)) else null end
-          where id = $1`,
-        [staff.id, failures, LOCK_AFTER_FAILURES],
-      );
-      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_failed', { type: 'staff', id: staff.id }, { failures });
+      await attemptFailed(db, staff.id, attempt);
+      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_failed', { type: 'staff', id: staff.id }, { failures: attempt.count });
       return generic();
     }
-    // With a second factor, the failure count only resets once that is passed too, so signing
-    // in again doesn't buy an attacker who knows the password fresh guesses at the code.
-    if (!staff.mfa_enabled_at) {
-      await db.query('update staff_users set failed_login_count = 0, locked_until = null, last_login_at = now() where id = $1', [staff.id]);
-    }
+    // With a second factor, the budget only starts again once that is passed too, so signing in
+    // again doesn't buy an attacker who knows the password fresh guesses at the code.
+    if (staff.mfa_enabled_at) await attemptReturned(db, staff.id, attempt);
+    else await clearAttempts(db, staff.id);
     const session = await startSession(staff.id, request.headers['user-agent'], reply);
     await audit(db, { type: 'staff', id: staff.id }, 'staff.login', { type: 'staff', id: staff.id }, { step: 'password' });
     const next = staff.mfa_enabled_at ? 'mfa' : config.auth.staffMfaRequired ? 'mfa_setup' : 'done';
     return { next, csrfToken: csrfTokenFor(secrets, 'staff', session.id) };
   });
 
+  /**
+   * Signing in is complete: a new session (new token, new id) replaces the one used so far, so
+   * nothing issued before the second factor carries over.
+   */
+  const completeSession = async (staff: StaffContext, userAgent: string | undefined, reply: Parameters<typeof setSessionCookie>[0]) => {
+    const session = await startSession(staff.id, userAgent, reply);
+    await db.query('update staff_sessions set mfa_verified_at = now() where id = $1', [session.id]);
+    await db.query('update staff_sessions set revoked_at = now() where id = $1', [staff.sessionId]);
+    return csrfTokenFor(secrets, 'staff', session.id);
+  };
+
   app.post('/mfa/verify', { preHandler: signedInAny, config: { rateLimit: { max: 15, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
     const staff = request.staff!;
     if (!staff.mfaEnabled) return sendError(reply, 400, 'BAD_REQUEST', 'Two-step verification is not set up for this account.');
     if (staff.mfaVerified) return { ok: true };
-    const { rows: lock } = await db.query<{ locked: boolean }>(
-      'select coalesce(locked_until > now(), false) as locked from staff_users where id = $1',
-      [staff.id],
-    );
-    if (staff.mfaAttempts >= MAX_MFA_ATTEMPTS || lock[0]?.locked) {
+    const tooMany = async () => {
       await db.query('update staff_sessions set revoked_at = now() where id = $1', [staff.sessionId]);
       clearSessionCookie(reply, 'staff', config);
       return sendError(reply, 401, 'UNAUTHORIZED', 'Too many incorrect codes. Please sign in again later.');
-    }
+    };
+    // Both limits are taken before the code is checked, each in one statement: this session's
+    // attempts, then the account's budget (shared with passwords and every other session).
+    const { rows: reserved } = await db.query(
+      `update staff_sessions set mfa_attempts = mfa_attempts + 1
+        where id = $1 and mfa_attempts < $2::int and revoked_at is null and mfa_verified_at is null returning id`,
+      [staff.sessionId, MAX_MFA_ATTEMPTS],
+    );
+    if (!reserved.length) return tooMany();
+    const attempt = await takeAttempt(db, staff.id);
+    if (!attempt) return tooMany();
     const method = await checkSecondFactor(services, staff.id, request.body);
     if (!method) {
-      await db.query('update staff_sessions set mfa_attempts = mfa_attempts + 1 where id = $1', [staff.sessionId]);
-      // Wrong codes count towards the same account lockout as wrong passwords.
-      await db.query(
-        `update staff_users set failed_login_count = failed_login_count + 1,
-                locked_until = case when failed_login_count + 1 >= $2::int
-                  then now() + least(interval '24 hours', interval '15 minutes' * power(2, failed_login_count + 1 - $2::int)) else locked_until end
-          where id = $1`,
-        [staff.id, LOCK_AFTER_FAILURES],
-      );
+      await attemptFailed(db, staff.id, attempt);
       await audit(db, staffActor(staff), 'staff.mfa_failed', { type: 'staff', id: staff.id });
       return sendError(reply, 401, 'UNAUTHORIZED', 'That code didn’t work. Check your authenticator app and try again.');
     }
-    await db.query('update staff_users set failed_login_count = 0, locked_until = null, last_login_at = now() where id = $1', [staff.id]);
-    await db.query('update staff_sessions set mfa_verified_at = now() where id = $1', [staff.sessionId]);
+    await clearAttempts(db, staff.id);
+    const csrfToken = await completeSession(staff, request.headers['user-agent'], reply);
     await audit(db, staffActor(staff), 'staff.mfa_verified', { type: 'staff', id: staff.id }, { method });
     const remaining =
       method === 'recovery'
         ? (await db.query<{ n: number }>('select count(*)::int as n from staff_recovery_codes where staff_id = $1 and used_at is null', [staff.id]))
             .rows[0]!.n
         : null;
-    return { ok: true, recoveryCodesRemaining: remaining };
+    return { ok: true, recoveryCodesRemaining: remaining, csrfToken };
   });
 
   app.post('/mfa/enrol/start', { preHandler: signedInNoMfaYet }, async (request, reply) => {
@@ -263,10 +315,12 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
               mfa_enabled_at = now(), mfa_last_step = $2 where id = $1`,
       [staff.id, step],
     );
-    const recoveryCodes = await replaceRecoveryCodes(db, staff.id);
-    await db.query('update staff_sessions set mfa_verified_at = now() where id = $1', [staff.sessionId]);
+    const recoveryCodes = await replaceRecoveryCodes(services, staff.id);
+    // Sessions opened with the password alone end; this one continues under a new token.
+    const csrfToken = await completeSession(staff, request.headers['user-agent'], reply);
+    await db.query(`update staff_sessions set revoked_at = now() where staff_id = $1 and revoked_at is null and mfa_verified_at is null`, [staff.id]);
     await audit(db, staffActor(staff), 'staff.mfa_enabled', { type: 'staff', id: staff.id });
-    return { recoveryCodes };
+    return { recoveryCodes, csrfToken };
   });
 
   app.post('/mfa/recovery-codes', { preHandler: signedIn, config: { rateLimit: { max: 5, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
@@ -275,7 +329,7 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     if (!(await checkSecondFactor(services, staff.id, request.body))) {
       return sendError(reply, 401, 'UNAUTHORIZED', 'Enter a current code from your authenticator app.');
     }
-    const recoveryCodes = await replaceRecoveryCodes(db, staff.id);
+    const recoveryCodes = await replaceRecoveryCodes(services, staff.id);
     await audit(db, staffActor(staff), 'staff.recovery_codes_replaced', { type: 'staff', id: staff.id });
     return { recoveryCodes };
   });
@@ -301,6 +355,7 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
       await hashPassword(body.newPassword as string),
     ]);
     await revokeStaffSessions(db, staff.id, staff.sessionId);
+    await voidStaffTokens(db, staff.id, ['staff_password_reset']);
     await audit(db, staffActor(staff), 'staff.password_changed', { type: 'staff', id: staff.id });
     return { ok: true };
   });
@@ -393,11 +448,20 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     }
     const { rows } = await db.query<{ id: string }>(`select id from staff_users where email = $1 and status = 'active'`, [email]);
     const staff = rows[0];
-    if (staff && (await recentTokenCount(db, 'staff_password_reset', email, 30)) < 3) {
-      const token = await createAuthToken(db, 'staff_password_reset', email, RESET_MINUTES, staff.id);
-      if (await trySend(services, staffResetEmail(email, siteLink(services, `/admin/reset?token=${token}`), RESET_MINUTES))) {
-        await audit(db, { type: 'system', id: null }, 'staff.password_reset_requested', { type: 'staff', id: staff.id });
-      }
+    // The answer goes before any work for a real account (a new link, the email), so the time it
+    // takes doesn't say whether the address belongs to staff.
+    if (staff) {
+      runInBackground(
+        async () => {
+          if ((await recentTokenCount(db, 'staff_password_reset', email, 30)) >= 3) return;
+          await voidStaffTokens(db, staff.id, ['staff_password_reset']); // only the newest link works
+          const token = await createAuthToken(db, 'staff_password_reset', email, RESET_MINUTES, staff.id);
+          if (await trySend(services, staffResetEmail(email, siteLink(services, `/admin/reset?token=${token}`), RESET_MINUTES))) {
+            await audit(db, { type: 'system', id: null }, 'staff.password_reset_requested', { type: 'staff', id: staff.id });
+          }
+        },
+        (error) => request.log.error({ code: (error as { code?: unknown }).code }, 'Password reset link could not be prepared'),
+      );
     }
     return reply.code(202).send({ message: GENERIC_RESET });
   });
@@ -416,9 +480,16 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
       [peeked.staff_id],
     );
     if (rows[0]?.status !== 'active') return invalid();
-    // The emailed link alone isn't enough: a second factor is needed too.
-    if (rows[0].mfa_enabled_at && !(await checkSecondFactor(services, peeked.staff_id, request.body))) {
-      return sendError(reply, 401, 'MFA_REQUIRED', 'Enter a current code from your authenticator app (or a recovery code).');
+    // The emailed link alone isn't enough: a second factor is needed too, and wrong codes count
+    // against the same budget as sign-in (a stolen link doesn't bring unlimited guesses).
+    if (rows[0].mfa_enabled_at) {
+      const attempt = await takeAttempt(db, peeked.staff_id);
+      if (!attempt) return sendError(reply, 401, 'UNAUTHORIZED', 'Too many incorrect codes. Please try again later.');
+      if (!(await checkSecondFactor(services, peeked.staff_id, request.body))) {
+        await attemptFailed(db, peeked.staff_id, attempt);
+        await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.mfa_failed', { type: 'staff', id: peeked.staff_id }, { step: 'password_reset' });
+        return sendError(reply, 401, 'MFA_REQUIRED', 'Enter a current code from your authenticator app (or a recovery code).');
+      }
     }
     const consumed = await consumeAuthToken(db, 'staff_password_reset', tokenText);
     if (!consumed) return invalid();
@@ -427,6 +498,7 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
       [peeked.staff_id, await hashPassword(password as string)],
     );
     await revokeStaffSessions(db, peeked.staff_id);
+    await voidStaffTokens(db, peeked.staff_id, ['staff_password_reset']);
     await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.password_reset', { type: 'staff', id: peeked.staff_id });
     return { ok: true };
   });

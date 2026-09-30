@@ -222,6 +222,12 @@ describe('/api/push', () => {
     expect((await subscribe({ ...fakeSubscription(), keys: { p256dh: 'short', auth: 'x' } }, ['general'])).statusCode).toBe(400);
   });
 
+  it('ignores an expiry no date can hold, rather than failing (security audit)', async () => {
+    const res = await subscribe({ ...fakeSubscription(), expirationTime: 1e20 }, ['general']);
+    expect(res.statusCode).toBe(201);
+    expect((await ctx.db.query('select expiration_time from push_subscriptions where id = $1', [res.json().id])).rows).toEqual([{ expiration_time: null }]);
+  });
+
   it('keeps application and training updates for signed-in applicants', async () => {
     expect((await subscribe(fakeSubscription(), ['general', 'application'])).statusCode).toBe(403);
     const applicant = asUser(ctx.app, await applicantSignIn(ctx, 'devices@example.com'));
@@ -284,10 +290,31 @@ describe('/api/push', () => {
     const rotated = await anonymous()({ method: 'POST', url: '/api/push/rotate', payload: { oldEndpoint: old.endpoint, oldAuth: old.keys.auth, subscription: next } });
     expect(rotated.statusCode).toBe(200);
     expect(rotated.json()).toMatchObject({ status: 'active', topics: ['general', 'application'], linkedToAccount: true });
+    // Nobody saw a consent statement just now: the consent given before is kept, recorded as an update.
+    const consent = await ctx.db.query(
+      `select s.consent_version, (select array_agg(action order by created_at) from notification_consent_events where subscription_id = s.id) as actions
+         from push_subscriptions s where id = $1`,
+      [rotated.json().id],
+    );
+    expect(consent.rows[0]).toEqual({ consent_version: NOTIFICATION_CONSENT_VERSION, actions: ['update'] });
     const { rows } = await ctx.db.query(`select status::text as status, deactivated_reason from push_subscriptions where id = $1`, [oldId]);
     expect(rows[0]).toEqual({ status: 'revoked', deactivated_reason: 'replaced' });
     const forged = await anonymous()({ method: 'POST', url: '/api/push/rotate', payload: { oldEndpoint: next.endpoint, oldAuth: 'nope', subscription: fakeSubscription() } });
     expect(forged.statusCode).toBe(404);
+  });
+
+  it('never links a removed device back to the account without its sign-in', async () => {
+    const applicant = asUser(ctx.app, await applicantSignIn(ctx, 'removed.device@example.com'));
+    const sub = fakeSubscription();
+    const id = (await subscribe(sub, ['general', 'application'], applicant)).json().id;
+    expect((await applicant({ method: 'POST', url: `/api/account/devices/${id}/remove` })).statusCode).toBe(200);
+    // The browser's own background renewal, or anyone holding its keys, can't revive it...
+    const rotated = await anonymous()({ method: 'POST', url: '/api/push/rotate', payload: { oldEndpoint: sub.endpoint, oldAuth: sub.keys.auth, subscription: sub } });
+    expect(rotated.statusCode).toBe(404);
+    // ...and turning notifications on again without signing in gives an anonymous device only.
+    const again = await subscribe(sub, ['general']);
+    expect(again.json()).toMatchObject({ id, status: 'active', topics: ['general'], linkedToAccount: false });
+    expect((await applicant({ url: '/api/account/devices' })).json().devices).toEqual([]);
   });
 
   it('can pause new public sign-ups without affecting applicants', async () => {

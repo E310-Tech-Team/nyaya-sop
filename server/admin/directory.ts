@@ -29,7 +29,7 @@ import type { Services } from '../services';
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 // Units in their natural order: "Lagos Province 2" before "Lagos Province 10".
-const NATURAL = (column: string) => `regexp_replace(${column}, '\\d+$', ''), coalesce(substring(${column} from '(\\d+)$')::int, 0), ${column}`;
+const NATURAL = (column: string) => `regexp_replace(${column}, '\\d+$', ''), coalesce(substring(${column} from '(\\d+)$')::numeric, 0), ${column}`;
 
 // Touched by the August 2026 changes: a new unit, or one a new unit was created from (unit_lineage).
 const CHANGED_2026 = `exists (select 1 from unit_lineage l

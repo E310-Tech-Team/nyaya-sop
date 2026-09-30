@@ -10,6 +10,8 @@ vite.config.*.timestamp-*
 .cache/
 
 # Local configuration & secrets: never commit
+# The security audit report: for maintainers only, and the repository is public
+SECURITY-AUDIT.md
 .env
 .env.*
 !.env.example
@@ -21,12 +23,28 @@ backups/
 *.dump
 *.gz
 *.zip
+*.sql
+!server/migrations/*.sql
+*.bak
+*.tar
+*.tgz
+*.7z
+
+# Keys and certificates, and direnv's environment file
+*.pem
+*.key
+*.p12
+*.pfx
+.envrc
 
 # Spreadsheets and exports: the RCCG parish list and its issue reports, applicant CSV
 # exports (personal data). The repository is public; tests build their own sample files.
 *.xlsx
 *.xls
 *.csv
+*.tsv
+*.ods
+*.numbers
 
 # Large design originals (a compressed copy is committed)
 design/*-figma.png

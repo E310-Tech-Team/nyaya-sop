@@ -202,7 +202,7 @@ export default function DashboardPage() {
               />
               <Stat label="Notifications turned on" value={data.productLast30Days.notificationOptIns} />
               <Stat label="Notifications turned off" value={data.productLast30Days.notificationOptOuts} />
-              <Stat label="Recorded notification clicks" value={data.productLast30Days.recordedNotificationClicks} hint="A lower bound: not every click can be recorded." />
+              <Stat label="Reported notification clicks" value={data.productLast30Days.recordedNotificationClicks} hint="As devices reported them: not every click gets through, and reports aren't verified." />
             </dl>
           </Panel>
 
@@ -216,7 +216,8 @@ export default function DashboardPage() {
               <ul className="flex flex-col gap-1 font-sans text-[14px] text-ink">
                 {data.queue.recentFailures.map((failure, index) => (
                   <li key={index}>
-                    <strong>{failure.kind}</strong> · {when(failure.updated_at)} · {failure.last_error ?? 'no detail'}
+                    <strong>{failure.kind}</strong> · {when(failure.updated_at)}
+                    {failure.last_error ? ` · ${failure.last_error}` : ''}
                   </li>
                 ))}
               </ul>

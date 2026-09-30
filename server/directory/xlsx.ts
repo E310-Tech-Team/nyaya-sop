@@ -12,6 +12,10 @@ export type XlsxSheet = { name: string; hidden: boolean; rows: () => Generator<X
 
 // A workbook part larger than this is refused rather than inflated (zip bombs).
 const MAX_PART_BYTES = 256 * 1024 * 1024;
+// Excel's own limits (columns A to XFD, rows 1 to 1,048,576). A reference beyond them comes from a
+// damaged or hostile file: "ZZZZZZ1" alone would ask for 321 million empty cells.
+const MAX_COLUMNS = 16_384;
+const MAX_ROWS = 1_048_576;
 
 type ZipEntry = { method: number; compressedSize: number; uncompressedSize: number; localOffset: number };
 
@@ -79,12 +83,56 @@ function attribute(attributes: string, name: string): string | null {
   return match ? decodeXml(match[1]!) : null;
 }
 
+type XmlElement = { attributes: string; body: string; start: number; end: number };
+const NAME_END = new Set([' ', '\t', '\n', '\r', '>', '/']);
+
+/**
+ * Each <tag …>body</tag> or <tag …/>, in order. Found with indexOf, so reading stays linear even
+ * in a damaged file, where a lazy regex would rescan to the end for every unclosed tag. The
+ * elements read this way (rows, cells, strings) don't nest in themselves.
+ */
+function* elements(xml: string, tag: string): Generator<XmlElement> {
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  let at = xml.indexOf(open);
+  while (at !== -1) {
+    if (!NAME_END.has(xml[at + open.length] ?? '')) {
+      at = xml.indexOf(open, at + open.length); // a longer name, such as <cols> for <c
+      continue;
+    }
+    const tagEnd = xml.indexOf('>', at);
+    if (tagEnd === -1) throw new XlsxError('This Excel file is damaged.');
+    if (xml[tagEnd - 1] === '/') {
+      yield { attributes: xml.slice(at + open.length, tagEnd - 1), body: '', start: at, end: tagEnd + 1 };
+      at = xml.indexOf(open, tagEnd + 1);
+      continue;
+    }
+    const closeAt = xml.indexOf(close, tagEnd + 1);
+    if (closeAt === -1) throw new XlsxError('This Excel file is damaged.');
+    yield { attributes: xml.slice(at + open.length, tagEnd), body: xml.slice(tagEnd + 1, closeAt), start: at, end: closeAt + close.length };
+    at = xml.indexOf(open, closeAt + close.length);
+  }
+}
+
+/** The text between the first `open` and the `close` after it, if both are there. */
+function between(text: string, open: string, close: string): string | null {
+  const start = text.indexOf(open);
+  if (start === -1) return null;
+  const end = text.indexOf(close, start + open.length);
+  return end === -1 ? null : text.slice(start + open.length, end);
+}
+
 /** The text of every <t> element, skipping phonetic guides (<rPh>). */
 function textOf(xml: string): string {
-  let text = '';
-  for (const match of xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').matchAll(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g)) {
-    text += decodeXml(match[1] ?? '');
+  let visible = '';
+  let at = 0;
+  for (const guide of elements(xml, 'rPh')) {
+    visible += xml.slice(at, guide.start);
+    at = guide.end;
   }
+  visible += xml.slice(at);
+  let text = '';
+  for (const t of elements(visible, 't')) text += decodeXml(t.body);
   return text;
 }
 
@@ -92,27 +140,32 @@ function columnIndex(reference: string): number | null {
   const letters = /^[A-Z]+/.exec(reference)?.[0];
   if (!letters) return null;
   let index = 0;
-  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
+  for (const letter of letters) {
+    index = index * 26 + (letter.charCodeAt(0) - 64);
+    if (index > MAX_COLUMNS) throw new XlsxError('This Excel file refers to a column beyond XFD.');
+  }
   return index - 1;
 }
 
 function* sheetRows(xml: string, shared: string[]): Generator<XlsxRow> {
   let previousLine = 0;
-  for (const row of xml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-    const line = Number(attribute(row[1]!, 'r')) || previousLine + 1;
+  for (const row of elements(xml, 'row')) {
+    const line = Number(attribute(row.attributes, 'r')) || previousLine + 1;
+    if (!Number.isInteger(line) || line < 1 || line > MAX_ROWS) throw new XlsxError('This Excel file refers to a row outside 1 to 1,048,576.');
     previousLine = line;
     const cells: string[] = [];
     let next = 0;
-    for (const cell of (row[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const reference = attribute(cell[1]!, 'r');
+    for (const cell of elements(row.body, 'c')) {
+      const reference = attribute(cell.attributes, 'r');
       const index = (reference ? columnIndex(reference) : null) ?? next;
+      if (index >= MAX_COLUMNS) throw new XlsxError('This Excel file refers to a column beyond XFD.');
       next = index + 1;
-      const type = attribute(cell[1]!, 't');
-      const body = cell[2] ?? '';
+      const type = attribute(cell.attributes, 't');
+      const body = cell.body;
       let value: string;
-      if (type === 'inlineStr') value = textOf(/<is>([\s\S]*?)<\/is>/.exec(body)?.[1] ?? '');
+      if (type === 'inlineStr') value = textOf(between(body, '<is>', '</is>') ?? '');
       else {
-        const raw = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? '';
+        const raw = between(body, '<v>', '</v>') ?? '';
         if (type === 's') value = shared[Number(raw)] ?? '';
         else if (type === 'b') value = raw === '1' ? 'TRUE' : raw === '0' ? 'FALSE' : '';
         else value = decodeXml(raw);
@@ -132,23 +185,23 @@ export function readXlsx(file: Buffer): XlsxSheet[] {
   if (!workbook || !relationships) throw new XlsxError('This is not an Excel workbook (no xl/workbook.xml).');
 
   const targets = new Map<string, string>();
-  for (const match of relationships.matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
-    const id = attribute(match[1]!, 'Id');
-    const target = attribute(match[1]!, 'Target');
+  for (const relationship of elements(relationships, 'Relationship')) {
+    const id = attribute(relationship.attributes, 'Id');
+    const target = attribute(relationship.attributes, 'Target');
     if (id && target) targets.set(id, target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`);
   }
 
   const sharedXml = partText(file, entries, 'xl/sharedStrings.xml') ?? '';
-  const shared = [...sharedXml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)].map((match) => textOf(match[1] ?? ''));
+  const shared = [...elements(sharedXml, 'si')].map((item) => textOf(item.body));
 
-  return [...workbook.matchAll(/<sheet\b([^>]*?)\/?>/g)].map((match) => {
-    const name = attribute(match[1]!, 'name') ?? 'Sheet';
-    const relationship = /\s[\w]+:id="([^"]*)"/.exec(match[1]!)?.[1];
+  return [...elements(workbook, 'sheet')].map((sheet) => {
+    const name = attribute(sheet.attributes, 'name') ?? 'Sheet';
+    const relationship = /\s[\w]+:id="([^"]*)"/.exec(sheet.attributes)?.[1];
     const path = relationship ? targets.get(relationship) : undefined;
     if (!path) throw new XlsxError(`Sheet "${name}" is missing from this Excel file.`);
     return {
       name,
-      hidden: (attribute(match[1]!, 'state') ?? 'visible') !== 'visible',
+      hidden: (attribute(sheet.attributes, 'state') ?? 'visible') !== 'visible',
       rows: () => {
         const xml = partText(file, entries, path);
         if (xml === null) throw new XlsxError(`Sheet "${name}" is missing from this Excel file.`);
