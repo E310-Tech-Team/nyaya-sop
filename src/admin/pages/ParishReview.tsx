@@ -4,12 +4,13 @@ import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader,
 import { chainLine, chainRows } from '../../lib/parish';
 import { useAsync } from '../../lib/useAsync';
 import type { ParishChain } from '../../shared/directory';
-import { adminApi, type ReviewItem, type ReviewKind, type UnitMatch } from '../api';
+import { adminApi, type LookalikeCandidate, type ReviewItem, type ReviewKind, type UnitMatch } from '../api';
 import { ChainLine, LEVEL_LABELS, ParishFinder, UnitFinder } from '../directory-parts';
 
 const KINDS: { kind: ReviewKind; label: string }[] = [
   { kind: 'not_listed', label: 'Parish not listed' },
   { kind: 'details_wrong', label: 'Details look wrong' },
+  { kind: 'lookalike', label: 'Which parish?' },
   { kind: 'earlier_text', label: 'Earlier typed answers' },
 ];
 
@@ -119,7 +120,55 @@ function ReviewCard({ item, act }: { item: ReviewItem; act: Act }) {
     </p>
   );
   let body: ReactNode;
-  if (item.kind === 'details_wrong' && item.parish) {
+  if (item.kind === 'lookalike' && item.parish) {
+    const candidates = item.candidates ?? [];
+    const link = (candidate: LookalikeCandidate) =>
+      act(
+        () => adminApi.resolveReport(item.id, { action: 'link', parishId: candidate.id }),
+        `${item.application.fullName}’s application is linked to ${candidate.name}${candidate.code ? ` (${candidate.code})` : ''}.`,
+      );
+    body = (
+      <>
+        <p className="font-sans text-[15px] text-ink">
+          They chose <strong>{item.parish.name}</strong> ({chainLine(item.parish.chain)}). The RCCG list has {candidates.length} parishes with this
+          name here and nothing to tell them apart, so the form offered them as one. Which is theirs?
+        </p>
+        <ul className="flex flex-col divide-y divide-line rounded-[10px] border border-line">
+          {candidates.map((candidate) => (
+            <li key={candidate.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1 font-sans text-[14px] leading-[1.45]">
+                <strong>{candidate.name}</strong>
+                {candidate.linked && (
+                  <>
+                    {' '}
+                    <Badge>Linked now</Badge>
+                  </>
+                )}
+                <br />
+                <span className="text-muted">
+                  RCCG code {candidate.code ?? 'not recorded'} · {candidate.applications} {candidate.applications === 1 ? 'application' : 'applications'}
+                </span>
+              </div>
+              <Button tone="secondary" className="min-h-[36px] px-4 text-[13px]" onClick={() => void link(candidate)}>
+                {candidate.linked ? 'Keep this one' : 'Link this one'}
+                <span className="sr-only">: {`${candidate.name}, RCCG code ${candidate.code ?? 'not recorded'}`}</span>
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <p className="font-sans text-[13px] leading-[1.5] text-muted">
+          If you can’t tell, ask the applicant or the registry team. Until then the application counts under the first of these, so its province, region
+          and continent are already right.
+        </p>
+        <details className="rounded-[10px] border border-line px-3 py-2">
+          <summary className="cursor-pointer font-sans text-[14px] font-bold text-brand">It’s a different parish: link another</summary>
+          <div className="pt-3">
+            <LinkChoices item={item} act={act} initialQuery={item.parish.name} />
+          </div>
+        </details>
+      </>
+    );
+  } else if (item.kind === 'details_wrong' && item.parish) {
     const unitId = item.parish.chain.province?.id ?? item.parish.chain.region?.id ?? item.parish.chain.continent?.id ?? '';
     body = (
       <>
@@ -182,7 +231,7 @@ function ReviewCard({ item, act }: { item: ReviewItem; act: Act }) {
   }
   return (
     <li>
-      <Panel title={item.kind === 'details_wrong' ? item.parish?.name : (item.name ?? 'No name')} headingLevel={3}>
+      <Panel title={item.kind === 'details_wrong' || item.kind === 'lookalike' ? item.parish?.name : (item.name ?? 'No name')} headingLevel={3}>
         {who}
         {body}
       </Panel>
@@ -306,7 +355,7 @@ function ExactMatches({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Parishes applicants couldn't find, details they flagged, and answers typed before the directory. */
+/** Parishes applicants couldn't find, details they flagged, look-alike choices, and answers typed before the directory. */
 export default function ParishReviewPage() {
   const [params, setParams] = useSearchParams();
   const kind = (KINDS.some((entry) => entry.kind === params.get('kind')) ? params.get('kind') : 'not_listed') as ReviewKind;
@@ -333,7 +382,7 @@ export default function ParishReviewPage() {
         eyebrow="Admin"
         title="Parish review"
         documentTitle="Parish review · Admin"
-        description="Parishes applicants couldn’t find, details they said look wrong, and answers typed before the parish directory. Link each application to the right parish, add a missing parish, or correct the directory."
+        description="Parishes applicants couldn’t find, details they said look wrong, same-named parishes to tell apart, and answers typed before the parish directory. Link each application to the right parish, add a missing parish, or correct the directory."
       />
       <nav aria-label="Review lists" className="flex flex-wrap gap-2">
         {KINDS.map((entry) => (

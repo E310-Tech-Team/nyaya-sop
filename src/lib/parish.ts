@@ -18,7 +18,17 @@ export type ListedParish = {
   detailsWrong: boolean;
   /** The details changed since they were chosen, so they must be confirmed again. */
   changed: boolean;
+  /**
+   * How many same-named parishes in this unit the choice stands for (D-55), when more than one:
+   * the form offers them once, and staff settle which is the applicant's.
+   */
+  lookalikes?: number;
 };
+
+/** "2 parishes with this name here", for a look-alike group; null otherwise. */
+export function lookalikeNote(lookalikes: number | undefined): string | null {
+  return lookalikes && lookalikes > 1 ? `${lookalikes} parishes with this name here` : null;
+}
 
 export type ParishDraft =
   | ListedParish
@@ -109,6 +119,13 @@ const sameUnit = (a: ChainUnit | null, b: ChainUnit | null) => a?.id === b?.id &
 export function recheck(saved: ListedParish, current: ParishDetailsResponse | null): ParishDraft {
   if (!current || current.status === 'inactive') return { kind: 'withdrawn', name: saved.name, reason: 'inactive', mergedInto: null };
   if (current.status === 'merged') return { kind: 'withdrawn', name: saved.name, reason: 'merged', mergedInto: current.mergedInto };
-  if (current.name === saved.name && CHURCH_LEVELS.every((level) => sameUnit(current.chain[level], saved.chain[level]))) return saved;
-  return { ...saved, name: current.name, chain: current.chain, confirmed: false, changed: true };
+  const lookalikes = current.lookalikes && current.lookalikes > 1 ? current.lookalikes : undefined;
+  if (current.name === saved.name && CHURCH_LEVELS.every((level) => sameUnit(current.chain[level], saved.chain[level]))) {
+    // Only how many look alike changed (the registry merged or added one): nothing to confirm again.
+    if (lookalikes === saved.lookalikes) return saved;
+    const { lookalikes: _previous, ...rest } = saved;
+    return lookalikes ? { ...rest, lookalikes } : rest;
+  }
+  const { lookalikes: _previous, ...rest } = saved;
+  return { ...rest, name: current.name, chain: current.chain, confirmed: false, changed: true, ...(lookalikes ? { lookalikes } : {}) };
 }

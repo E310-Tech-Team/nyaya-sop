@@ -73,6 +73,12 @@ function ParishPanel({ app, canEdit, onChanged }: { app: ApplicantDetail; canEdi
       ) : (
         <p className="font-sans text-[14px] text-muted">No directory parish is linked.</p>
       )}
+      {parish.submitted?.lookalikes && (
+        <p className="font-sans text-[14px] text-ink">
+          They chose <strong>{parish.submitted.parish.name}</strong>, one of {parish.submitted.lookalikes} parishes with that name here. Which one is
+          theirs is settled in Parish review.
+        </p>
+      )}
       {parish.submitted &&
         (confirmedSame ? (
           <p className="font-sans text-[13px] text-muted">This is what the applicant confirmed.</p>
@@ -86,7 +92,12 @@ function ParishPanel({ app, canEdit, onChanged }: { app: ApplicantDetail; canEdi
         <ul className="flex flex-col gap-1 font-sans text-[14px] text-ink">
           {parish.reports.map((report) => (
             <li key={report.id}>
-              {report.kind === 'not_listed' ? `Reported as not listed (“${report.reportedName}”)` : 'Flagged: “details look wrong”'} · {REPORT_OUTCOMES[report.status]}
+              {report.kind === 'not_listed'
+                ? `Reported as not listed (“${report.reportedName}”)`
+                : report.kind === 'lookalike'
+                  ? 'Which parish? (one of several with this name)'
+                  : 'Flagged: “details look wrong”'}{' '}
+              · {REPORT_OUTCOMES[report.status]}
               {report.resolvedParish ? ` (${report.resolvedParish})` : ''}
               {report.resolvedAt ? `, by ${report.resolvedBy}, ${when(report.resolvedAt)}` : ''}
             </li>

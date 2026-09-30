@@ -104,7 +104,12 @@ export function reducer(state: State, action: Action): State {
 /** A parish answer read back from storage, or null if it doesn't have the expected shape. */
 function savedParish(value: unknown): ParishDraft | null {
   const parish = value as ParishDraft | null | undefined;
-  if (parish?.kind === 'listed' && typeof parish.id === 'string' && typeof parish.name === 'string' && parish.chain) return parish;
+  if (parish?.kind === 'listed' && typeof parish.id === 'string' && typeof parish.name === 'string' && parish.chain) {
+    // A look-alike count is a whole number above one, or absent.
+    if (parish.lookalikes === undefined || (Number.isInteger(parish.lookalikes) && parish.lookalikes > 1)) return parish;
+    const { lookalikes: _dropped, ...rest } = parish;
+    return rest;
+  }
   if (parish?.kind === 'not_listed' && typeof parish.name === 'string') return parish;
   if (parish?.kind === 'withdrawn' && typeof parish.name === 'string') return parish;
   return null;

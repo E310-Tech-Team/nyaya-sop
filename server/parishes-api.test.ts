@@ -66,10 +66,17 @@ describe('the parish question with the RCCG directory API', () => {
     expect((await ctx.app.inject({ url: '/api/config' })).json().parishDirectory).toEqual({ enabled: true });
     const { status, body } = await search('jesus house');
     expect(status).toBe(200);
-    const apiIds = await Promise.all([FIXTURE.jesusLagos3A, FIXTURE.jesusLagos3B, FIXTURE.jesusLagos2, FIXTURE.jesusRivers].map(localId));
+    // The two Jesus House parishes in Lagos Province 3 look alike (D-55): offered once, as the one
+    // with the lower code, saying there are two.
+    const apiIds = await Promise.all([FIXTURE.jesusLagos3A, FIXTURE.jesusLagos2, FIXTURE.jesusRivers].map(localId));
     expect(body.results.map((result) => result.id).sort()).toEqual(apiIds.sort());
-    // Same-named parishes carry their units, so applicants can tell them apart.
-    expect(body.results.map((result) => result.chain.province?.name).sort()).toEqual(['Lagos Province 2', 'Lagos Province 3', 'Lagos Province 3', 'Rivers Province 4']);
+    expect(body.total).toBe(3);
+    // Same-named parishes in different units carry their units, so applicants can tell them apart.
+    expect(body.results.map((result) => [result.chain.province?.name, result.lookalikes ?? 1]).sort()).toEqual([
+      ['Lagos Province 2', 1],
+      ['Lagos Province 3', 2],
+      ['Rivers Province 4', 1],
+    ]);
     expect(body.directory).toEqual({ source: 'api', release: 'SANDBOX.1', checkedAt: expect.any(String), stale: false });
 
     await makeStale();

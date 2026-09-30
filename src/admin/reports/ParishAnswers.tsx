@@ -27,7 +27,7 @@ function ParishAnswers({ summary }: { summary: ReportSummary }) {
   const canReview = useCanAll('applications.view_all', 'applications.edit', 'directory.manage');
   if (summary.applications === 0) return <EmptyReport title="No applications match these filters." />;
   const view = (extra: Record<string, string>) => (canApplicants ? applicantsHref(query, extra) : null);
-  const waiting = [summary.waiting.notListed, summary.waiting.detailsWrong, summary.waiting.earlierText];
+  const waiting = [summary.waiting.notListed, summary.waiting.detailsWrong, summary.waiting.lookalike, summary.waiting.earlierText];
   const waitingTotal = waiting.some((count) => count === null) ? null : waiting.reduce<number>((sum, count) => sum + (count ?? 0), 0);
 
   const answers = [
@@ -78,7 +78,7 @@ function ParishAnswers({ summary }: { summary: ReportSummary }) {
             icon={ClipboardListIcon}
             label="Waiting in Parish review"
             value={formatCount(waitingTotal)}
-            context={`${formatCount(summary.waiting.notListed)} not listed, ${formatCount(summary.waiting.detailsWrong)} with details flagged, ${formatCount(summary.waiting.earlierText)} earlier answers.`}
+            context={`${formatCount(summary.waiting.notListed)} not listed, ${formatCount(summary.waiting.detailsWrong)} with details flagged, ${formatCount(summary.waiting.lookalike)} to tell apart, ${formatCount(summary.waiting.earlierText)} earlier answers.`}
             extra={
               canReview && waitingTotal !== 0 ? (
                 <Link to="/admin/parish-review" className="font-bold text-brand underline underline-offset-4">

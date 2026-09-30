@@ -212,7 +212,7 @@ export type Summary = {
   parishesRepresented: number;
   activeParishes: number;
   /** Waiting in Parish review, among these applications. */
-  waiting: { notListed: number; detailsWrong: number; earlierText: number };
+  waiting: { notListed: number; detailsWrong: number; lookalike: number; earlierText: number };
   comparison: { from: string; to: string; days: number; applications: number; uniqueApplicants: number } | null;
   directory: Awaited<ReturnType<typeof directoryVersion>>;
 };
@@ -256,8 +256,9 @@ export async function reportSummary(db: Queryable, filters: ApplicationFilters):
     byPublished[status.published] += status.n;
   }
   const pending = whereOf(filters, [`r.status = 'pending'`]);
-  const reports = await db.query<{ not_listed: number; details_wrong: number }>(
-    `select count(*) filter (where r.kind = 'not_listed')::int as not_listed, count(*) filter (where r.kind = 'details_wrong')::int as details_wrong
+  const reports = await db.query<{ not_listed: number; details_wrong: number; lookalike: number }>(
+    `select count(*) filter (where r.kind = 'not_listed')::int as not_listed, count(*) filter (where r.kind = 'details_wrong')::int as details_wrong,
+            count(*) filter (where r.kind = 'lookalike')::int as lookalike
        from parish_reports r join applications a on a.id = r.application_id left join parishes p on p.id = a.parish_id
        ${pending.sql}`,
     pending.params,
@@ -299,7 +300,12 @@ export async function reportSummary(db: Queryable, filters: ApplicationFilters):
     noProvince: row.no_province!,
     parishesRepresented: row.parishes_represented!,
     activeParishes: active,
-    waiting: { notListed: reports.rows[0]!.not_listed, detailsWrong: reports.rows[0]!.details_wrong, earlierText: row.earlier_waiting! },
+    waiting: {
+      notListed: reports.rows[0]!.not_listed,
+      detailsWrong: reports.rows[0]!.details_wrong,
+      lookalike: reports.rows[0]!.lookalike,
+      earlierText: row.earlier_waiting!,
+    },
     comparison: previous && before ? { ...previous, applications: before.applications!, uniqueApplicants: before.unique_applicants! } : null,
     directory: await directoryVersion(db),
   };
@@ -918,7 +924,12 @@ export async function reportRoutes(app: FastifyInstance, services: Services) {
       noRegion: m(summary.noRegion),
       noProvince: m(summary.noProvince),
       parishesRepresented: m(summary.parishesRepresented),
-      waiting: { notListed: m(summary.waiting.notListed), detailsWrong: m(summary.waiting.detailsWrong), earlierText: m(summary.waiting.earlierText) },
+      waiting: {
+        notListed: m(summary.waiting.notListed),
+        detailsWrong: m(summary.waiting.detailsWrong),
+        lookalike: m(summary.waiting.lookalike),
+        earlierText: m(summary.waiting.earlierText),
+      },
       comparison: summary.comparison
         ? { ...summary.comparison, applications: m(summary.comparison.applications), uniqueApplicants: m(summary.comparison.uniqueApplicants) }
         : null,

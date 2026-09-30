@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ApiError, searchParishes } from '../lib/api';
-import { chainLine, chainRows, highlightParts, resultsAnnouncement, type ParishDraft } from '../lib/parish';
+import { chainLine, chainRows, highlightParts, lookalikeNote, resultsAnnouncement, type ParishDraft } from '../lib/parish';
 import { NIGERIAN_STATES, OUTSIDE_NIGERIA } from '../shared/application';
 import { isChainComplete, PARISH_SEARCH, type ParishSearchResponse, type ParishSuggestion } from '../shared/directory';
 import { LIMITS } from '../shared/validation';
@@ -200,9 +200,19 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
   function choose(suggestion: ParishSuggestion) {
     focusNext.current = 'confirm';
     setOpen(false);
-    setAnnouncement(`${suggestion.name} chosen. Check the details, then confirm.`);
+    const lookalikes = lookalikeNote(suggestion.lookalikes);
+    setAnnouncement(`${suggestion.name} chosen${lookalikes ? `, one of ${lookalikes}` : ''}. Check the details, then confirm.`);
     onChange(
-      { kind: 'listed', id: suggestion.id, name: suggestion.name, chain: suggestion.chain, confirmed: false, detailsWrong: false, changed: false },
+      {
+        kind: 'listed',
+        id: suggestion.id,
+        name: suggestion.name,
+        chain: suggestion.chain,
+        confirmed: false,
+        detailsWrong: false,
+        changed: false,
+        ...(suggestion.lookalikes && suggestion.lookalikes > 1 ? { lookalikes: suggestion.lookalikes } : {}),
+      },
       { fresh: true },
     );
   }
@@ -305,6 +315,13 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
               </div>
             ))}
           </dl>
+          {value.lookalikes && value.lookalikes > 1 && (
+            // D-55: the list has several parishes of this name here and nothing to tell them apart.
+            <p className={note}>
+              The RCCG list has {value.lookalikes} parishes called {value.name} here, with nothing to tell them apart. If yours is one of them, choose it:
+              our team will match your application to the right one.
+            </p>
+          )}
           {value.changed && !confirmed && (
             <p className="font-sans text-[13px] font-semibold leading-[1.5] text-brand">
               These details have changed since you chose this parish. Check them, then confirm again.
@@ -502,6 +519,9 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
                 )}
               </span>
               <span className="font-sans text-[13px] leading-[1.4] text-muted">{chainLine(result.chain)}</span>
+              {lookalikeNote(result.lookalikes) && (
+                <span className="font-sans text-[13px] font-semibold leading-[1.4] text-brand">{lookalikeNote(result.lookalikes)}</span>
+              )}
             </li>
           ))}
         </ul>

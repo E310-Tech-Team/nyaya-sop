@@ -285,7 +285,12 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
         current,
         /** The parish, province, region and continent as the applicant confirmed them. */
         submitted: snapshot
-          ? { parish: snapshot.parish, chain: Object.fromEntries(CHURCH_LEVELS.map((level) => [level, snapshot[level] ?? null])) }
+          ? {
+              parish: snapshot.parish,
+              chain: Object.fromEntries(CHURCH_LEVELS.map((level) => [level, snapshot[level] ?? null])),
+              // A look-alike choice (D-55): how many same-named parishes it stood for.
+              lookalikes: Array.isArray(snapshot.lookalikes) ? snapshot.lookalikes.length : null,
+            }
           : null,
         linkedBy: a.parish_linked_at ? { name: (a.parish_linked_by_name as string | null) ?? 'Former staff member', at: iso(a.parish_linked_at as Date) } : null,
         textReviewedAt: iso(a.parish_text_reviewed_at as Date | null),

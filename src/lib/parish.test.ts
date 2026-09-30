@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isChainComplete, type ParishChain, type ParishDetailsResponse } from '../shared/directory';
-import { chainLine, chainRows, highlightParts, parishAnswer, recheck, resultsAnnouncement, type ListedParish } from './parish';
+import { chainLine, chainRows, highlightParts, lookalikeNote, parishAnswer, recheck, resultsAnnouncement, type ListedParish } from './parish';
 
 const unit = (id: string, name: string) => ({ id, name });
 const LAGOS_3: ParishChain = {
@@ -133,10 +133,31 @@ describe('recheck', () => {
     );
   });
 
+  it('keeps a look-alike choice confirmed when only the number that look alike changes (D-55)', () => {
+    const saved = listed({ lookalikes: 2 });
+    expect(recheck(saved, current({ lookalikes: 2 }))).toBe(saved);
+    // The registry added a third, or merged the pair: the note follows; nothing to confirm again.
+    expect(recheck(saved, current({ lookalikes: 3 }))).toEqual(listed({ lookalikes: 3 }));
+    expect(recheck(saved, current())).toEqual(listed());
+    expect(recheck(listed(), current({ lookalikes: 2 }))).toEqual(listed({ lookalikes: 2 }));
+    // Renamed as well: confirmed again, with the count as it is now.
+    expect(recheck(saved, current({ name: 'Jesus House Parish', lookalikes: 2 }))).toEqual(
+      listed({ name: 'Jesus House Parish', confirmed: false, changed: true, lookalikes: 2 }),
+    );
+  });
+
   it('withdraws a choice that was merged or is no longer listed', () => {
     const into = unit('p2', 'House of Prayer');
     expect(recheck(listed(), current({ status: 'merged', mergedInto: into }))).toEqual({ kind: 'withdrawn', name: 'Jesus House', reason: 'merged', mergedInto: into });
     expect(recheck(listed(), current({ status: 'inactive' }))).toEqual({ kind: 'withdrawn', name: 'Jesus House', reason: 'inactive', mergedInto: null });
     expect(recheck(listed(), null)).toEqual({ kind: 'withdrawn', name: 'Jesus House', reason: 'inactive', mergedInto: null });
+  });
+});
+
+describe('lookalikeNote', () => {
+  it('speaks only for a group of two or more', () => {
+    expect(lookalikeNote(undefined)).toBeNull();
+    expect(lookalikeNote(1)).toBeNull();
+    expect(lookalikeNote(2)).toBe('2 parishes with this name here');
   });
 });
