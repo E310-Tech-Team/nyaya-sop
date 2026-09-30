@@ -88,7 +88,7 @@ Payments · delivering training, grading, mentorship or community management · 
 | F19 | Install guidance per device (one-tap where the browser allows; steps for iPhone, iPad, Android, desktop; in-app browser advice) | **Built** |
 | F20 | Offline: visited public pages work; account/admin pages explain they need a connection; nothing private cached | **Built** |
 | F21 | Notifications: topics (announcements for anyone; application updates and training reminders with an account), separate consent, device settings, neutral lock-screen text | **Built** · needs VAPID keys at deployment |
-| F22 | Applicant accounts (email link sign-in, claim by verified email, published status, inbox, devices, sessions, delete) | **Built** · needs an email provider at deployment |
+| F22 | Applicant accounts (email link sign-in, claim by verified email, published status, inbox, devices, sessions, delete) | **Built** · on since 2026-09-30 (email through Resend) |
 | F23 | Admin platform with individual staff accounts, two-step verification, five roles, audit history | **Built** |
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
@@ -186,7 +186,7 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | Q12 | Public contact email for the Programme team? | Open: set `VITE_CONTACT_EMAIL` when known ("Contact" links appear automatically) |
 | Q13 | Domain name for the site? | ✅ **Decided:** https://nyayasop.org, live since 2026-09-30; `www.nyayasop.org` redirects to it |
 | Q14 | Who are the owners and staff, and in which roles? | Open: needed before launch (the shared CSV password is gone; every person has their own account) |
-| Q17 | Which email provider and sender address? | Open: needed to switch on applicant sign-in and emailed invitations (the server is on DigitalOcean, so through port 2525: [DEPLOYMENT](DEPLOYMENT.md#email)) |
+| Q17 | Which email provider and sender address? | ✅ **Decided:** Resend over SMTP (port 2465: DigitalOcean blocks 465 and 587), sender `School of Purpose <no-reply@nyayasop.org>`; on since 2026-09-30 ([DEPLOYMENT](DEPLOYMENT.md#email)) |
 | Q18 | Which contact goes in `VAPID_SUBJECT` for push services? | Open: the installer used the first owner's address; switch to a team mailbox when there is one |
 | Q19 | How long are notes, audit history and consent records kept? | Open: see Q11 and [05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion) |
 | Q15 | Content still needed for the UX pass: response time, whether virtual-training admission is selective, training schedule/platform, boot camp dates/location details, sponsorship exclusions | Open: see [06 "Content needed"](06-Implementation-Plan.md#content-needed-from-the-programme-team) |
