@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { BackLink, PrimaryButton } from '../components/Buttons';
 import { FormActions, FormCard, StepHeader } from '../components/FormLayout';
 import { usePageTitle } from '../components/RouteEffects';
 import { site } from '../config/site';
 import { ApiError, submitApplication } from '../lib/api';
+import { chainLine, type ParishDraft } from '../lib/parish';
 import {
   AGE_RANGES,
   CONSENT_STATEMENT,
@@ -34,7 +35,7 @@ const FIELD_STEP: Record<ApplicationField, string> = {
   consentVersion: '/apply',
 };
 
-function SummarySection({ title, editTo, rows }: { title: string; editTo: string; rows: [string, string][] }) {
+function SummarySection({ title, editTo, rows }: { title: string; editTo: string; rows: [string, ReactNode][] }) {
   const headingId = `review-${editTo.split('/').pop()}`;
   return (
     <section className="w-full" aria-labelledby={headingId}>
@@ -60,6 +61,28 @@ function SummarySection({ title, editTo, rows }: { title: string; editTo: string
       </dl>
     </section>
   );
+}
+
+/** The parish as the review shows it when the question used the directory. */
+function parishSummary(parish: ParishDraft | null): ReactNode {
+  if (parish?.kind === 'listed') {
+    return (
+      <>
+        <span className="block">{parish.name}</span>
+        <span className="block text-[13px] text-muted">{chainLine(parish.chain)}</span>
+        {parish.detailsWrong && <span className="block text-[13px] text-muted">You told us these details look wrong.</span>}
+      </>
+    );
+  }
+  if (parish?.kind === 'not_listed') {
+    return (
+      <>
+        <span className="block">{collapseWhitespace(parish.name)}</span>
+        <span className="block text-[13px] text-muted">Not on our list yet: the Programme team will check it.</span>
+      </>
+    );
+  }
+  return 'Not answered';
 }
 
 function errorContent(error: ApiError) {
@@ -142,7 +165,7 @@ function errorContent(error: ApiError) {
 export default function ReviewPage() {
   usePageTitle('Review your application');
   const navigate = useNavigate();
-  const { draft, markSubmitted } = useApplication();
+  const { draft, markSubmitted, recheckParish } = useApplication();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const errorRef = useRef<HTMLDivElement>(null);
@@ -157,6 +180,8 @@ export default function ReviewPage() {
       markSubmitted(receipt);
       navigate('/apply/success', { replace: true });
     } catch (caught) {
+      // The server found the chosen parish merged or removed: check it again for the Personal step.
+      if (caught instanceof ApiError && caught.fieldErrors?.parishName && draft.parishMode === 'directory') recheckParish();
       setError(caught instanceof ApiError ? caught : new ApiError(0, 'INTERNAL_ERROR', String(caught)));
       setSubmitting(false);
       setTimeout(() => errorRef.current?.focus(), 0);
@@ -185,7 +210,7 @@ export default function ReviewPage() {
             ['Age range', labelFor(AGE_RANGES, personal.ageRange)],
             ['State of residence', personal.stateOfResidence],
             ['City/Town', collapseWhitespace(personal.city)],
-            ['RCCG parish', collapseWhitespace(personal.parishName) || 'Not provided'],
+            ['RCCG parish', draft.parishMode === 'directory' ? parishSummary(draft.parish) : collapseWhitespace(personal.parishName) || 'Not provided'],
           ]}
         />
         <div aria-hidden="true" className="h-px w-full bg-line opacity-65" />

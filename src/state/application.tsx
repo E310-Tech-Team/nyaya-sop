@@ -1,15 +1,19 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { ApiError, getParish } from '../lib/api';
 import { readAttribution } from '../lib/attribution';
+import { parishAnswer, recheck, type ParishDraft } from '../lib/parish';
 import { readSession, writeSession } from '../lib/storage';
 import {
   CONSENT_VERSION,
   type ApplicationPayload,
   type EducationAnswers,
+  type FieldErrors,
   type PersonalAnswers,
   type PurposeAnswers,
   type SubmitApplicationResponse,
 } from '../shared/application';
-import { hasErrors, validateEducation, validatePersonal, validatePurpose } from '../shared/validation';
+import type { ParishDetailsResponse } from '../shared/directory';
+import { hasErrors, validateEducation, validateParish, validatePersonal, validatePurpose } from '../shared/validation';
 
 export type Draft = {
   consent: boolean;
@@ -18,6 +22,10 @@ export type Draft = {
   purpose: PurposeAnswers;
   /** Honeypot value (should stay empty). */
   website: string;
+  /** 'directory' while the parish question searches the RCCG list (set by the Personal step). */
+  parishMode: 'text' | 'directory';
+  /** The parish answer in directory mode (the free text stays in personal.parishName). */
+  parish: ParishDraft | null;
 };
 
 type State = { draft: Draft; submission: SubmitApplicationResponse | null };
@@ -28,6 +36,9 @@ type Action =
   | { type: 'education'; value: Partial<EducationAnswers> }
   | { type: 'purpose'; value: Partial<PurposeAnswers> }
   | { type: 'honeypot'; value: string }
+  | { type: 'parishMode'; value: Draft['parishMode'] }
+  | { type: 'parish'; value: ParishDraft | null }
+  | { type: 'recheck'; id: string; current: ParishDetailsResponse | null }
   | { type: 'submitted'; value: SubmitApplicationResponse }
   | { type: 'clearDraft' };
 
@@ -49,6 +60,8 @@ export const emptyDraft = (): Draft => ({
   education: { educationLevel: '', currentStatus: '' },
   purpose: { purposeClarity: null },
   website: '',
+  parishMode: 'text',
+  parish: null,
 });
 
 function reducer(state: State, action: Action): State {
@@ -64,6 +77,19 @@ function reducer(state: State, action: Action): State {
       return { ...state, draft: { ...draft, purpose: { ...draft.purpose, ...action.value } } };
     case 'honeypot':
       return { ...state, draft: { ...draft, website: action.value } };
+    case 'parishMode': {
+      if (action.value === draft.parishMode) return state;
+      // Switched off while answering: keep what they chose as free text.
+      const chosen = draft.parish?.kind === 'listed' || draft.parish?.kind === 'not_listed' ? draft.parish.name : null;
+      const personal = action.value === 'text' && chosen ? { ...draft.personal, parishName: chosen } : draft.personal;
+      return { ...state, draft: { ...draft, personal, parishMode: action.value } };
+    }
+    case 'parish':
+      return { ...state, draft: { ...draft, parish: action.value } };
+    case 'recheck':
+      // Only if the applicant hasn't chosen something else meanwhile.
+      if (draft.parish?.kind !== 'listed' || draft.parish.id !== action.id) return state;
+      return { ...state, draft: { ...draft, parish: recheck(draft.parish, action.current) } };
     case 'submitted':
       // Keep the draft until the success page mounts (see clearDraft); clearing it here would
       // let the review page's step guard redirect before navigation to /apply/success lands.
@@ -71,6 +97,15 @@ function reducer(state: State, action: Action): State {
     case 'clearDraft':
       return { ...state, draft: emptyDraft() };
   }
+}
+
+/** A parish answer read back from storage, or null if it doesn't have the expected shape. */
+function savedParish(value: unknown): ParishDraft | null {
+  const parish = value as ParishDraft | null | undefined;
+  if (parish?.kind === 'listed' && typeof parish.id === 'string' && typeof parish.name === 'string' && parish.chain) return parish;
+  if (parish?.kind === 'not_listed' && typeof parish.name === 'string') return parish;
+  if (parish?.kind === 'withdrawn' && typeof parish.name === 'string') return parish;
+  return null;
 }
 
 function initialState(): State {
@@ -84,6 +119,8 @@ function initialState(): State {
         education: { ...base.education, ...saved.education },
         purpose: { ...base.purpose, ...saved.purpose },
         website: typeof saved.website === 'string' ? saved.website : '',
+        parishMode: saved.parishMode === 'directory' ? 'directory' : 'text',
+        parish: savedParish(saved.parish),
       }
     : base;
   return { draft, submission: readSession<SubmitApplicationResponse>(SUBMISSION_KEY) };
@@ -98,12 +135,25 @@ export const STEPS = [
 export type StepKey = (typeof STEPS)[number]['key'] | 'review';
 
 /**
+ * The Personal step's errors. In directory mode the parish must be chosen and confirmed (or
+ * reported as not listed) instead of typed.
+ */
+export function personalErrors(draft: Draft): FieldErrors {
+  const errors = validatePersonal(draft.personal);
+  if (draft.parishMode !== 'directory') return errors;
+  delete errors.parishName;
+  const checked = validateParish(parishAnswer(draft.parish), true);
+  if (!checked.ok) errors.parishName = checked.error;
+  return errors;
+}
+
+/**
  * The furthest route the applicant may open, given what they've completed.
  * Used to stop deep links from skipping consent or unanswered sections.
  */
 export function firstIncompletePath(draft: Draft): string {
   if (!draft.consent) return '/apply';
-  if (hasErrors(validatePersonal(draft.personal))) return '/apply/personal';
+  if (hasErrors(personalErrors(draft))) return '/apply/personal';
   if (hasErrors(validateEducation(draft.education))) return '/apply/education';
   if (hasErrors(validatePurpose(draft.purpose))) return '/apply/purpose';
   return '/apply/review';
@@ -121,8 +171,13 @@ export function toPayload(draft: Draft): ApplicationPayload {
     consentVersion: CONSENT_VERSION,
     website: draft.website,
     meta: readAttribution(),
+    // Only in directory mode: without it the server takes parishName as free text.
+    ...(draft.parishMode === 'directory' ? { parish: parishAnswer(draft.parish) } : {}),
   };
 }
+
+/** Where re-checking a saved parish stands: offline means it will be checked when back online. */
+export type ParishCheck = 'idle' | 'checking' | 'offline' | 'done';
 
 type ContextValue = {
   draft: Draft;
@@ -132,6 +187,12 @@ type ContextValue = {
   updateEducation: (value: Partial<EducationAnswers>) => void;
   updatePurpose: (value: Partial<PurposeAnswers>) => void;
   setHoneypot: (value: string) => void;
+  setParishMode: (value: Draft['parishMode']) => void;
+  /** `fresh`: just chosen from the search, so it needn't be checked again. */
+  setParish: (value: ParishDraft | null, options?: { fresh?: boolean }) => void;
+  parishCheck: ParishCheck;
+  /** Check the chosen parish against the directory again (after the server rejected it). */
+  recheckParish: () => void;
   markSubmitted: (value: SubmitApplicationResponse) => void;
   /** Forget the answers (after a confirmed submission); the submission receipt is kept. */
   clearDraft: () => void;
@@ -150,6 +211,45 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   const updateEducation = useCallback((value: Partial<EducationAnswers>) => dispatch({ type: 'education', value }), []);
   const updatePurpose = useCallback((value: Partial<PurposeAnswers>) => dispatch({ type: 'purpose', value }), []);
   const setHoneypot = useCallback((value: string) => dispatch({ type: 'honeypot', value }), []);
+  const setParishMode = useCallback((value: Draft['parishMode']) => dispatch({ type: 'parishMode', value }), []);
+
+  // A parish saved earlier may have been renamed, moved, merged or removed since: check it once
+  // per page load (only when there is one, so other pages send nothing), and again when back online.
+  const checked = useRef(new Set<string>());
+  const [checkRun, setCheckRun] = useState(0);
+  const [parishCheck, setParishCheck] = useState<ParishCheck>('idle');
+  const listedId = state.draft.parish?.kind === 'listed' ? state.draft.parish.id : null;
+  useEffect(() => {
+    if (!listedId || checked.current.has(listedId)) return;
+    const controller = new AbortController();
+    const settle = (current: ParishDetailsResponse | null) => {
+      checked.current.add(listedId);
+      dispatch({ type: 'recheck', id: listedId, current });
+      setParishCheck('done');
+    };
+    setParishCheck('checking');
+    getParish(listedId, controller.signal).then(settle, (error: unknown) => {
+      if (controller.signal.aborted) return;
+      if (error instanceof ApiError && error.status === 404) settle(null);
+      else setParishCheck('offline');
+    });
+    return () => controller.abort();
+  }, [listedId, checkRun]);
+  useEffect(() => {
+    if (parishCheck !== 'offline') return;
+    const retry = () => setCheckRun((run) => run + 1);
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [parishCheck]);
+
+  const setParish = useCallback((value: ParishDraft | null, options?: { fresh?: boolean }) => {
+    if (options?.fresh && value?.kind === 'listed') checked.current.add(value.id);
+    dispatch({ type: 'parish', value });
+  }, []);
+  const recheckParish = useCallback(() => {
+    checked.current.clear();
+    setCheckRun((run) => run + 1);
+  }, []);
   const markSubmitted = useCallback((value: SubmitApplicationResponse) => dispatch({ type: 'submitted', value }), []);
   const clearDraft = useCallback(() => dispatch({ type: 'clearDraft' }), []);
 
@@ -162,10 +262,14 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       updateEducation,
       updatePurpose,
       setHoneypot,
+      setParishMode,
+      setParish,
+      parishCheck,
+      recheckParish,
       markSubmitted,
       clearDraft,
     }),
-    [state, setConsent, updatePersonal, updateEducation, updatePurpose, setHoneypot, markSubmitted, clearDraft],
+    [state, setConsent, updatePersonal, updateEducation, updatePurpose, setHoneypot, setParishMode, setParish, parishCheck, recheckParish, markSubmitted, clearDraft],
   );
 
   return <ApplicationContext.Provider value={value}>{children}</ApplicationContext.Provider>;

@@ -11,12 +11,15 @@ export type Settings = {
   applicant_accounts_enabled: boolean;
   /** Lets owners pause new anonymous (public) notification sign-ups. */
   public_notifications_enabled: boolean;
+  /** The parish question searches the RCCG parish directory (docs/05 §2). Needs an imported list. */
+  parish_directory_enabled: boolean;
 };
 
 export const SETTING_DEFAULTS: Settings = {
   support_email: null,
   applicant_accounts_enabled: true,
   public_notifications_enabled: true,
+  parish_directory_enabled: false,
 };
 
 export const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as (keyof Settings)[];

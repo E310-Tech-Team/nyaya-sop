@@ -310,8 +310,9 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
   app.post<{ Params: { id: string } }>('/:id/correct', { preHandler: staffGuard(services, { permission: 'applications.edit' }) }, async (request, reply) => {
     const allowed = await visible(request, request.params.id);
     if (!allowed) return sendError(reply, 404, 'NOT_FOUND', 'Application not found.');
-    const { rows } = await db.query<{ full_name: string; email: string; phone_e164: string; gender: string; age_range: string; state_of_residence: string; city: string; parish_name: string | null }>(
-      `select full_name, email, phone_e164, gender::text as gender, age_range::text as age_range, state_of_residence, city, parish_name
+    const { rows } = await db.query<{ full_name: string; email: string; phone_e164: string; gender: string; age_range: string; state_of_residence: string; city: string; parish_name: string | null; parish_status: string }>(
+      `select full_name, email, phone_e164, gender::text as gender, age_range::text as age_range, state_of_residence, city, parish_name,
+              parish_status::text as parish_status
          from applications where id = $1`,
       [allowed.id],
     );
@@ -339,9 +340,21 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     };
     const changed = (Object.keys(next) as (keyof typeof next)[]).filter((key) => next[key] !== current[key]);
     if (!changed.length) return { ok: true, changed };
+    // A parish chosen from the directory, or reported as not listed, is changed in Parish review.
+    if (changed.includes('parish_name') && (current.parish_status === 'listed' || current.parish_status === 'reported')) {
+      return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', {
+        fieldErrors: { parishName: 'This parish comes from the parish directory, so it can’t be edited as text.' },
+      });
+    }
     try {
       await db.query(
-        `update applications set full_name = $2, email = $3, phone_e164 = $4, state_of_residence = $5, city = $6, parish_name = $7 where id = $1`,
+        `update applications
+            set full_name = $2, email = $3, phone_e164 = $4, state_of_residence = $5, city = $6, parish_name = $7::text,
+                parish_status = case
+                  when parish_status in ('legacy_text', 'not_provided')
+                    then (case when $7::text is null then 'not_provided' else 'legacy_text' end)::application_parish_status
+                  else parish_status end
+          where id = $1`,
         [allowed.id, next.full_name, next.email, next.phone_e164, next.state_of_residence, next.city, next.parish_name],
       );
     } catch (error) {

@@ -58,8 +58,10 @@ function createPostgresDb(options: Extract<AppConfig['database'], { driver: 'pos
 /** Embedded Postgres (WASM) for local development and tests. Never used in production. */
 export async function createPgliteDb(dataDir: string): Promise<Db> {
   const { PGlite } = await import('@electric-sql/pglite');
+  // Parish search uses trigram matching (migration 0007); production Postgres has it built in.
+  const { pg_trgm } = await import('@electric-sql/pglite/contrib/pg_trgm');
   if (!dataDir.startsWith('memory://')) await mkdir(dataDir, { recursive: true });
-  const lite = new PGlite(dataDir);
+  const lite = new PGlite(dataDir, { extensions: { pg_trgm } });
   await lite.waitReady;
 
   const queryable: Queryable = {

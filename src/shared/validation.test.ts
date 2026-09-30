@@ -106,7 +106,7 @@ describe('validateApplication', () => {
         ageRange: '21_24',
         stateOfResidence: 'Lagos',
         city: 'Ikeja',
-        parishName: null,
+        parish: { kind: 'typed', name: null },
         educationLevel: 'bachelors',
         currentStatus: 'employed',
         purposeClarity: 3,
@@ -138,5 +138,49 @@ describe('helpers', () => {
 
   it('derives a short reference', () => {
     expect(referenceFromId('7f3a9c2b-1d4e-4f00-8a1b-9c0d1e2f3a4b')).toBe('SOP-7F3A9C2B');
+  });
+});
+
+describe('the parish answer', () => {
+  const id = '3f2a1c9e-7b4d-4e8a-9c1f-2d3e4f5a6b7c';
+  const withParish = (parish: unknown) => ({ ...validPayload(), parish });
+  const parishOf = (result: ReturnType<typeof validateApplication>) => (result.ok ? result.value.parish : result.fieldErrors.parishName);
+
+  it('keeps the free text from an older form, even while the directory is on', () => {
+    expect(parishOf(validateApplication(validPayload({ parishName: '  Jesus   House ' }), { parishRequired: true }))).toEqual({
+      kind: 'typed',
+      name: 'Jesus House',
+    });
+  });
+
+  it('takes a confirmed listed parish, with or without a details flag', () => {
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id: id.toUpperCase(), confirmed: true })))).toEqual({
+      kind: 'listed',
+      parishId: id,
+      detailsWrong: false,
+    });
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id, confirmed: true, detailsWrong: true })))).toEqual({
+      kind: 'listed',
+      parishId: id,
+      detailsWrong: true,
+    });
+  });
+
+  it('needs a listed parish confirmed', () => {
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id, confirmed: false })))).toBe(MESSAGES.parishConfirm);
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id: 'not-an-id', confirmed: true })))).toBe(MESSAGES.parishRequired);
+  });
+
+  it('takes the name of a parish that is not listed', () => {
+    expect(parishOf(validateApplication(withParish({ kind: 'not_listed', name: ' Grace  Chapel ' })))).toEqual({ kind: 'not_listed', name: 'Grace Chapel' });
+    expect(parishOf(validateApplication(withParish({ kind: 'not_listed', name: ' ' })))).toBe(MESSAGES.parishNameRequired);
+    expect(parishOf(validateApplication(withParish({ kind: 'not_listed', name: '12' })))).toBe(MESSAGES.parishNameInvalid);
+    expect(parishOf(validateApplication(withParish({ kind: 'not_listed', name: 'x'.repeat(121) })))).toBe(MESSAGES.parishNameInvalid);
+  });
+
+  it('requires an answer from a form that uses the directory while it is on', () => {
+    expect(parishOf(validateApplication(withParish(null), { parishRequired: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish({ kind: 'other' }), { parishRequired: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish(null)))).toEqual({ kind: 'typed', name: null });
   });
 });

@@ -97,6 +97,22 @@ export type SubmissionMeta = {
   referrer?: string;
 };
 
+/**
+ * The parish answer when the form uses the parish directory: a listed parish the applicant
+ * confirmed, or one they couldn't find (the name as they know it). Older copies of the form
+ * send only `parishName`, as free text.
+ */
+export type ParishAnswer =
+  | { kind: 'listed'; id: string; confirmed: boolean; detailsWrong?: boolean }
+  | { kind: 'not_listed'; name: string };
+
+/** The parish answer after validation. */
+export type ParishChoice =
+  | { kind: 'listed'; parishId: string; detailsWrong: boolean }
+  | { kind: 'not_listed'; name: string }
+  /** The free-text question: the directory is off, or an older copy of the form sent it. */
+  | { kind: 'typed'; name: string | null };
+
 /** JSON body of `POST /api/applications`. */
 export type ApplicationPayload = PersonalAnswers &
   EducationAnswers &
@@ -105,6 +121,8 @@ export type ApplicationPayload = PersonalAnswers &
     /** Honeypot. Hidden from people; bots that fill every field give themselves away. */
     website?: string;
     meta?: SubmissionMeta;
+    /** Present when the form uses the parish directory (then it replaces `parishName`). */
+    parish?: ParishAnswer | null;
   };
 
 /** A payload after validation + normalisation: what the server stores. */
@@ -116,7 +134,7 @@ export type NormalizedApplication = {
   ageRange: AgeRange;
   stateOfResidence: string;
   city: string;
-  parishName: string | null;
+  parish: ParishChoice;
   educationLevel: EducationLevel;
   currentStatus: CurrentStatus;
   purposeClarity: number;

@@ -11,7 +11,7 @@ export function QuestionNumber({ n }: { n: string }) {
   );
 }
 
-function RequiredMark({ required }: { required: boolean }) {
+export function RequiredMark({ required }: { required: boolean }) {
   return required ? (
     <span className="text-brand" aria-hidden="true">
       {' '}
@@ -34,9 +34,9 @@ export function FieldError({ id, message }: { id: string; message?: string }) {
   );
 }
 
-const describedBy = (...ids: (string | false | undefined)[]) => ids.filter(Boolean).join(' ') || undefined;
+export const describedBy = (...ids: (string | false | undefined)[]) => ids.filter(Boolean).join(' ') || undefined;
 
-const controlClass = (invalid: boolean) =>
+export const controlClass = (invalid: boolean) =>
   // No transition: focus and error states must appear immediately.
   `h-[52px] w-full rounded-[8px] border bg-paper px-[15px] font-sans text-[16px] text-ink outline-none ` +
   `placeholder:text-muted focus:border-brand focus:shadow-[0_0_0_3px_rgba(132,29,38,0.22)] ` +

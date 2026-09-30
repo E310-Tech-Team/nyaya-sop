@@ -11,8 +11,12 @@ export function ErrorSummary({ count }: { count: number }) {
   );
 }
 
-/** Moves focus to the first invalid control once the error styles have rendered. */
+/**
+ * Moves focus to the first invalid control once the error styles have rendered. A control that
+ * can't carry aria-invalid (a button, such as "Yes, this is my parish") marks itself with
+ * data-focus-invalid instead.
+ */
 export function focusFirstInvalid(form: HTMLFormElement | null) {
   // setTimeout (not rAF): runs after React commits the error state, even in background tabs.
-  setTimeout(() => form?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+  setTimeout(() => form?.querySelector<HTMLElement>('[aria-invalid="true"], [data-focus-invalid="true"]')?.focus(), 0);
 }

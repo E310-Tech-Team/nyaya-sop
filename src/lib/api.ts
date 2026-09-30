@@ -6,6 +6,7 @@ import type {
   FieldErrors,
   SubmitApplicationResponse,
 } from '../shared/application';
+import type { ParishDetailsResponse, ParishSearchResponse } from '../shared/directory';
 import { noteServerBuild } from './pwa';
 
 export class ApiError extends Error {
@@ -70,3 +71,11 @@ export const getCurrentCohort = (signal?: AbortSignal) =>
 
 export const submitApplication = (payload: ApplicationPayload) =>
   apiRequest<SubmitApplicationResponse>('/applications', { method: 'POST', json: payload });
+
+/** Suggestions for the parish question; `state` only ranks them (parishes there come first). */
+export const searchParishes = (query: string, state: string | null, signal: AbortSignal) =>
+  apiRequest<ParishSearchResponse>(`/parishes/search?${new URLSearchParams(state ? { q: query, state } : { q: query })}`, { signal });
+
+/** One parish as it stands now, to re-check a choice saved earlier. */
+export const getParish = (id: string, signal?: AbortSignal) =>
+  apiRequest<ParishDetailsResponse>(`/parishes/${encodeURIComponent(id)}`, { signal, timeoutMs: 8_000 });

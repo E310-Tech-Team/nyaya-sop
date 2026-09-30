@@ -1,6 +1,6 @@
 # 05 — Backend Schema & API
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-30
 **Status:** **Built.** Self-hosted PostgreSQL 17 + a Fastify API + a background worker. Source of truth: [`server/migrations/`](../server/migrations/) (schema) and the route modules in [`server/`](../server/) (API).
 
 Related: [01-PRD §5 form content](01-PRD.md#5-form-content) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow.md) · [DEPLOYMENT](DEPLOYMENT.md)
@@ -30,6 +30,8 @@ flowchart LR
 | `0003_identity_audit.sql` | staff users, recovery codes, staff sessions, applicant accounts and sessions, single-use auth tokens, the application ↔ account link, audit events, settings, analytics events |
 | `0004_review_workflow.sql` | reviewer assignment, published status and message, internal notes, status history |
 | `0005_notifications_jobs.sql` | push subscriptions, notification consent history, announcements, campaigns, messages, deliveries, inbox, job queue |
+| `0006_parish_directory.sql` | the RCCG parish directory: church units (continent → area), parishes, aliases, unit lineage, directory imports, issues and changes |
+| `0007_parish_links.sql` | `pg_trgm`; parish search text and trigram indexes; applications' parish link (`parish_id`, `parish_status`, `parish_snapshot`); parish reports |
 
 Existing applications stay valid: new columns have defaults (`published_status = 'submitted'`, no account, no reviewer), and a person can claim an older application after signing in with the same email ([03 §8](03-App-Flow.md#8-applicant-accounts)). Verified on real PostgreSQL 17 over existing data (2026-09-26).
 
@@ -136,12 +138,15 @@ erDiagram
 | `published_message`, `published_at`, `published_by` | text (1–1000), timestamptz, FK → staff | the Programme team's message and who published it |
 | `assigned_reviewer_id` | uuid | FK → `staff_users`, `on delete set null` |
 | `account_id`, `claimed_at` | uuid, timestamptz | FK → `applicant_accounts`, `on delete set null`; both null or both set |
-| `full_name`, `email`, `phone_e164`, `gender`, `age_range`, `state_of_residence`, `city`, `parish_name`, `education_level`, `current_status`, `purpose_clarity` | | the form's answers, as defined in [`0001_init.sql`](../server/migrations/0001_init.sql) with the rules in §5: `email` lower-case and `unique (cohort_id, email)`, phone E.164, `purpose_clarity` 1–5, `parish_name` optional |
+| `full_name`, `email`, `phone_e164`, `gender`, `age_range`, `state_of_residence`, `city`, `parish_name`, `education_level`, `current_status`, `purpose_clarity` | | the form's answers, as defined in [`0001_init.sql`](../server/migrations/0001_init.sql) with the rules in §5: `email` lower-case and `unique (cohort_id, email)`, phone E.164, `purpose_clarity` 1–5, `parish_name` optional (≤ 200 since 0007: the directory's name for a listed parish, otherwise what was typed) |
+| `parish_id`, `parish_status`, `parish_snapshot` | uuid FK → `parishes`, `application_parish_status`, jsonb | 0007. `listed` (chosen from the directory: `parish_id` and the snapshot set), `reported` ("I can't find my parish": the typed name, plus a parish report), `legacy_text` (the free-text question), `not_provided`. The snapshot is the parish and its chain as the applicant confirmed them, with the import they came from |
 | `consent_version`, `consent_at` | text FK, timestamptz | the application's contact consent (separate from notification consent) |
 | `submission_meta` | jsonb | `{utmSource, utmMedium, utmCampaign, referrer}`; no IP addresses |
 | `created_at` | timestamptz | |
 
-Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_id, email)`, `(account_id)` partial, `(email)`, `(assigned_reviewer_id)` partial.
+Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_id, email)`, `(account_id)` partial, `(email)`, `(assigned_reviewer_id)` partial, `(parish_id)` partial.
+
+**`parish_reports`** (0007; for staff in Parish review, never shown to applicants): `application_id` FK cascade, `kind` (`not_listed` with the `reported_name` they typed, or `details_wrong` with the listed `parish_id`), `status` (pending/linked/added/fixed/rejected), `resolved_parish_id`, `resolved_by`, `resolved_at`; one of each kind per application.
 
 **`application_notes`** (staff only; never returned by any applicant endpoint): `application_id` FK cascade, `author_id` FK set null, `body` 1–4000, `created_at`.
 **`application_status_events`**: `kind` review|publication, `from_status`, `to_status`, `actor_id`, `created_at`, one row per change or publication.
@@ -177,6 +182,38 @@ Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_
 | `inbox_items` | `account_id` cascade, `kind` application_update/message, `title`, `body`, `link_path`, `message_id` (unique per account), `application_id`, `read_at` | Durable copy: push is only an optional alert |
 | `jobs` | `kind`, `payload`, `status` (pending/running/succeeded/failed/cancelled), `run_at`, `attempts`, `max_attempts`, `locked_by`, `locked_until`, `last_error` ≤ 300, `dedupe_key` unique | The queue (§4) |
 
+### Parish directory (0006)
+
+The RCCG parish list, loaded with `pnpm directory import` ([`server/directory/`](../server/directory/), [DEPLOYMENT](DEPLOYMENT.md#parish-directory)). No applicant data: applications link to parishes in a later migration ([06, Phase 16](06-Implementation-Plan.md#phase-16-parish-directory-in-progress-2026-09-30)).
+
+```mermaid
+erDiagram
+    CHURCH_UNITS ||--o{ CHURCH_UNITS : "is parent of"
+    CHURCH_UNITS ||--o{ PARISHES : contains
+    PARISHES ||--o{ PARISH_ALIASES : "also known as"
+    DIRECTORY_IMPORTS ||--o{ DIRECTORY_ISSUES : finds
+    DIRECTORY_IMPORTS ||--o{ DIRECTORY_CHANGES : records
+```
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `church_units` | `level` (continent/region/province/zone/area), `official_name`, `display_name`, `name_key`, `parent_id` + `parent_level`, `state` (provinces only), `external_id` (the RCCG API's ID, later), `status` (active/inactive/merged), `merged_into_id`, `origin` (import/staff) | Every level above the parish, in one table. `(parent_id, parent_level)` references `(id, level)` and `parent_level < level`, so a unit can only sit under an earlier level. Continent, region and province `name_key`s are unique across the church; zone and area keys only within their parent |
+| `parishes` | `unit_id`, `official_name`, `display_name`, `name_key` (unique per unit), `continent_id` / `region_id` / `province_id` / `zone_id` / `area_id`, `search_text`, `listed_rows`, `external_id`, `status`, `merged_into_id`, `origin` | `unit_id` is the lowest level the source gives (the region or continent when there is no province). The five chain columns and `search_text` (name key, other spellings, province and region keys; trigram-indexed, 0007) are caches, rebuilt in the same transaction as every change and checked after it |
+| `parish_aliases` | `parish_id` cascade, `alias`, `alias_key`, `import_id` | Spellings merged at import, earlier names |
+| `unit_lineage` | `level` + `new_key`, `source_level` + `source_key`, names, `approved_on` | Where new units came from (the 2026 changes), by name, so it can be loaded before they exist. Imports use it to recognise moved parishes |
+| `directory_imports` | `source` (spreadsheet/api), `source_label`, `checksum`, `structure_as_at`, `status` (planned/applied/reverted/failed), `counts` jsonb, `error`, `via` (cli/admin/sync), `staff_id` | Every applied or failed import; dry runs aren't recorded |
+| `directory_issues` | `import_id` cascade, `severity`, `code`, `line`, `message`, `details` | Same-name groups, parishes with no province, provinces with no state, ambiguous moves… Directory names only |
+| `directory_changes` | `import_id` or `staff_id`, `via`, `entity` (unit/parish), `entity_id`, `change` (create/update/move/reactivate/deactivate/merge), `before`, `after` | Every change with the fields in full, so an import can be reverted and each entry's history shown |
+
+How an import works ([`server/directory/plan.ts`](../server/directory/plan.ts)):
+
+- A **source** (the spreadsheet now, the RCCG API later) gives rows of continent, region, province and parish. Other columns, such as attendance, are never read.
+- Names are **cleaned** (web codes such as `&amp;amp;`, escaped apostrophes, spacing) and compared by **key**: `unitKey()` ignores capitals and punctuation, and `parishKey()` also a leading "RCCG" and a trailing "Parish" ([`src/shared/directory.ts`](../src/shared/directory.ts)). Changing a key function changes how imports recognise entries: recompute `name_key` for existing rows in the same change.
+- A region or province that repeats the name of the level above isn't a level: the parish sits under the level above.
+- Rows with the same unit and parish key are **one entry**. Entries the source no longer lists are **deactivated, never deleted**; entries staff added and merges staff made are left alone. A parish that reappears under the same name in a unit created from its old one (`unit_lineage`) is a **move** and keeps its ID.
+- Applying is one transaction that ends with a **consistency check** (no chain mismatches, nothing active under an inactive unit). Only the latest applied import can be **reverted**.
+- The current RCCG list (dry run, 2026-09-30): 50,107 rows → 6 continents, 67 regions, 469 provinces, **48,479 parish entries** (1,521 same-name groups covering 3,149 rows), 181 parishes with no province, 22 provinces whose name has no state. Nigeria only; it predates the August 2026 changes.
+
 ### Enums
 
 | Enum | Values |
@@ -187,6 +224,8 @@ Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_
 | `staff_status`, `applicant_account_status` | invited/active/suspended · active/suspended |
 | `auth_token_purpose` | `applicant_sign_in` · `staff_invite` · `staff_password_reset` |
 | `push_subscription_status`, `campaign_status`, `delivery_status`, `job_status` | see the tables above |
+| `church_level` | `continent` · `region` · `province` · `zone` · `area` (in this order; [`src/shared/directory.ts`](../src/shared/directory.ts)) |
+| `directory_status`, `directory_origin`, `directory_source`, `directory_import_status` | active/inactive/merged · import/staff · spreadsheet/api · planned/applied/reverted/failed |
 
 ## 3. API
 
@@ -198,8 +237,10 @@ JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors:
 |---|---|---|
 | `GET /api/health` | — | DB check |
 | `GET /api/cohorts/current` | 120/min | Open cohort |
-| `POST /api/applications` | 20/10 min | Submit an application (unchanged; also records `application_submitted`) |
-| `GET /api/config` | 120/min | `{accounts:{enabled}, push:{enabled, publicKey}, supportEmail, buildId}` |
+| `POST /api/applications` | 20/10 min | Submit an application (also records `application_submitted`); the parish answer is described below |
+| `GET /api/config` | 120/min | `{accounts:{enabled}, push:{enabled, publicKey}, supportEmail, buildId, parishDirectory:{enabled}}` (the directory is enabled when switched on in Settings and the list has active parishes) |
+| `GET /api/parishes/search?q=&state=&limit=` | 240/min | Active parishes whose name, province or region has every typed word at the start of a word (2–60 characters; "LP 12" = Lagos Province 12; "RCCG" and "Parish" ignored). Best first: words in the name, whole words, the applicant's `state`, then name and province order; the closest spellings (`fuzzy: true`) when nothing matches. `{results: [{id, name, chain, inState}], total, fuzzy}`, at most 10. Names and units only |
+| `GET /api/parishes/:id` | 240/min | One parish as it stands (`status` active/inactive/merged, `mergedInto`, `chain`), to re-check a saved draft; 404 if unknown |
 | `GET /api/announcements` | 120/min | Published public announcements |
 | `POST /api/events` | 60/min | Client analytics event (allowlisted names and properties only) |
 | `GET /api/dev/outbox` | — | **Development with the test outbox only**: the emails that would have been sent |
@@ -238,7 +279,9 @@ JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors:
 
 ### `POST /api/applications`
 
-Unchanged: see [§4 validation](#4-validation-rules) and the status table: 201 `{id, reference, submittedAt}`, 400 `VALIDATION_FAILED`, 403 `APPLICATIONS_CLOSED`, 409 `ALREADY_APPLIED`, 413, 415, 429 `RATE_LIMITED`. The honeypot field returns a normal-looking 201 and stores nothing.
+See [§5 validation](#5-validation-rules) and the status table: 201 `{id, reference, submittedAt}`, 400 `VALIDATION_FAILED`, 403 `APPLICATIONS_CLOSED`, 409 `ALREADY_APPLIED`, 413, 415, 429 `RATE_LIMITED`. The honeypot field returns a normal-looking 201 and stores nothing.
+
+**The parish answer.** A form that uses the parish directory sends `parish`: `{kind: 'listed', id, confirmed: true, detailsWrong?}` or `{kind: 'not_listed', name}`. While the directory is on, that answer is required. The server checks a listed parish is still active (a merged or deactivated one gets a field error asking the applicant to search again), fills in the chain itself, ignoring any names the browser sends, and stores the application and any parish report in one statement. A body without `parish` (an older copy of the form) is still accepted, with `parishName` as free text.
 
 ## 4. Jobs, campaigns and delivery
 
@@ -270,7 +313,7 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 | Gender / Age range / Education / Status | one of the enum values |
 | State of residence | one of 36 states, "FCT (Abuja)" or "Outside Nigeria" |
 | City/Town | required; 2–80 chars; contains a letter |
-| RCCG parish | optional; ≤ 120 |
+| RCCG parish | free text: optional, ≤ 120. From the directory (while it is on): a listed parish, confirmed, or the name of one that isn't listed (2–120, contains a letter) |
 | Purpose clarity | integer 1–5 |
 | Consent version | must exist in `consent_versions` |
 | Notification link | one of: `/`, `/about`, `/programme`, `/journey`, `/faq`, `/updates`, `/install`, `/notifications`, `/account`, `/account/application`, `/account/notifications` (checked again by the service worker) |
@@ -285,7 +328,7 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 - **Applicants:** passwordless single-use links (15 min, hashed, generic answers, per-IP and per-email throttles, button press to use); claiming needs the verified email to match plus confirmation; suspended accounts are signed out and their devices stop.
 - **Push:** VAPID private key only in the server environment; endpoints/keys encrypted at rest; ownership proven with the subscription's auth secret; SSRF protection ([02 §5](02-TRD.md#5-security-model-summary-details-in-05-6)); no silent pushes; every payload has an allowlisted same-origin link, an id and an expiry; lock-screen text for application updates is neutral.
 - **Headers:** strict CSP (`script-src 'self'`, `worker-src 'self'`, `manifest-src 'self'`, `frame-ancestors 'none'`), HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Robots-Tag: noindex` for `/admin` and `/account`.
-- **Logs:** request bodies never logged; auth, cookie and CSRF headers redacted; no endpoints, keys, notification content, emails or names (checked in tests and in the end-to-end run).
+- **Logs:** request bodies and query strings never logged (request logs record the path only: searches carry typed names and states); auth, cookie and CSRF headers redacted; no endpoints, keys, notification content, emails or names (checked in tests and in the end-to-end run).
 - **Service worker:** never caches `/api`, account or admin pages, or any non-GET request (tested).
 
 ### Roles and permissions

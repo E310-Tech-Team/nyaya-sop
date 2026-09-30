@@ -4,7 +4,7 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import Fastify, { LogController, type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
   referenceFromId,
   type CurrentCohortResponse,
@@ -25,6 +25,7 @@ import type { Db } from './db';
 import { cameViaEdgeProxy, edgeProxyCheck } from './edge-proxy';
 import { createEmailTransport, type EmailTransport } from './email';
 import { sendError } from './http';
+import { parishDirectoryEnabled, parishRoutes, resolveParish } from './parishes';
 import { publicRoutes } from './public';
 import { pushRoutes } from './push/routes';
 import { PushService } from './push/service';
@@ -79,6 +80,17 @@ export async function buildApp({
     logger: {
       level: config.logLevel,
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-csrf-token"]', 'res.headers["set-cookie"]'],
+      serializers: {
+        // Fastify's own request fields, but the path without its query string: searches carry what
+        // people typed (a parish name, an applicant's name in the admin area) and their state.
+        req: (request: FastifyRequest) => ({
+          method: request.method,
+          url: (request.url ?? '').split('?')[0],
+          host: request.host,
+          remoteAddress: request.ip,
+          remotePort: request.socket?.remotePort,
+        }),
+      },
       ...(logStream ? { stream: logStream } : {}),
     },
     trustProxy: config.trustProxy,
@@ -195,7 +207,8 @@ export async function buildApp({
         return reply.code(201).send({ id, reference: referenceFromId(id), submittedAt: new Date().toISOString() });
       }
 
-      const result = validateApplication(request.body);
+      // While the parish directory is on, a form that uses it must answer the parish question.
+      const result = validateApplication(request.body, { parishRequired: await parishDirectoryEnabled(db) });
       if (!result.ok) {
         return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', {
           fieldErrors: result.fieldErrors,
@@ -205,9 +218,15 @@ export async function buildApp({
       const cohort = await getCurrentCohort(db);
       if (!cohort?.is_open) return sendError(reply, 403, 'APPLICATIONS_CLOSED', 'Applications are currently closed.');
 
+      // A listed parish must still be on the list: the draft may be days old.
+      const parish = await resolveParish(db, result.value.parish);
+      if (!parish.ok) {
+        return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', { fieldErrors: { parishName: parish.error } });
+      }
+
       let row: Awaited<ReturnType<typeof insertApplication>>;
       try {
-        row = await insertApplication(db, cohort.id, result.value);
+        row = await insertApplication(db, cohort.id, result.value, parish.link);
       } catch (error) {
         if ((error as { code?: string }).code === '23503') {
           // Unknown consent version: the form is out of date.
@@ -237,6 +256,7 @@ export async function buildApp({
   );
 
   await app.register((instance) => publicRoutes(instance, services), { prefix: '/api' });
+  await app.register((instance) => parishRoutes(instance, services), { prefix: '/api/parishes' });
   await app.register((instance) => pushRoutes(instance, services), { prefix: '/api/push' });
   await app.register((instance) => accountRoutes(instance, services), { prefix: '/api/account' });
 

@@ -95,7 +95,7 @@ Payments · delivering training, grading, mentorship or community management · 
 
 ## 5. Form content
 
-The rules are enforced in the browser and on the server ([05 §4](05-Backend-Schema.md#4-validation-rules)). Everything is required except the parish.
+The rules are enforced in the browser and on the server ([05 §4](05-Backend-Schema.md#4-validation-rules)). Everything is required except the parish. **Parish directory (Phase 16, D-28/D-31):** built; once an owner switches it on, the parish becomes required and is chosen from the RCCG parish list, with "I can't find my parish" as the way through ([03, Personal step](03-App-Flow.md#the-parish-question-question-08-while-the-parish-directory-is-on)).
 
 ### Welcome: consent
 
@@ -112,7 +112,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 |
 | 06 | State of Residence | select | All 36 states + FCT (Abuja) + Outside Nigeria |
 | 07 | City/Town of Residence | text | 2–80 characters |
-| 08 | Name of RCCG Parish | text, optional | Hint: "If you attend an RCCG parish, tell us which one." |
+| 08 | Name of RCCG Parish | text, optional | Hint: "If you attend an RCCG parish, tell us which one." While the parish directory is on: "Your RCCG parish", required, a search of the RCCG list; province, region and continent fill in and are locked |
 
 ### Section 2: Education & Career
 
@@ -170,7 +170,7 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | # | Question | Status |
 |---|---|---|
 | Q1 | Where should submissions be stored? | ✅ **Decided:** self-hosted PostgreSQL on the VPS (2026-09-26) |
-| Q2 | Was a "RCCG member? Yes/No" question removed? | ✅ Resolved by rewording the parish hint; the parish stays optional. Reopen if the question should come back |
+| Q2 | Was a "RCCG member? Yes/No" question removed? | ✅ Resolved by rewording the parish hint; the parish stays optional. Reopen if the question should come back. **Superseded while the parish directory is on:** the parish is required and chosen from the RCCG list (D-31) |
 | Q3 | Time estimate: 5 or 12 minutes? | ✅ "About 5 minutes" (11 questions). Change in `src/config/site.ts` |
 | Q4 | Full state list / diaspora? | ✅ 36 states + FCT + "Outside Nigeria". **Confirm** |
 | Q5 | How is eligibility (18–30, RCCG) enforced? | Open: currently self-declared via the consent statement and age ranges |

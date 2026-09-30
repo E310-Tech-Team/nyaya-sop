@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { SAVED_PROGRESS_NOTE } from '../config/programme';
+import { usePublicConfig } from '../lib/config';
 import { progressLabel, stepForPath, stepIndex, stepState, type StepState } from '../lib/progress';
 import { STEPS, type StepKey } from '../state/application';
 import { SiteHeader } from './SiteHeader';
@@ -155,6 +156,8 @@ function SidePanel({ step }: { step: StepKey }) {
  */
 export function ApplicationLayout() {
   const { pathname } = useLocation();
+  // Loaded here so the Personal step knows straight away whether the parish question uses the directory.
+  usePublicConfig();
   const step = stepForPath(pathname);
   return (
     <div className="flex min-h-screen w-full flex-col bg-cream">

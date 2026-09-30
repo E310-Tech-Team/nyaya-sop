@@ -147,9 +147,36 @@ Shared chrome ([`FormLayout`](../src/components/FormLayout.tsx)):
 
 Behaviour:
 - Every change is saved to `sessionStorage` immediately (`sop.application.draft.v1`), so **refresh and Back never lose answers**. Answers are cleared when the tab closes or the application is submitted. Every step says so under its buttons: "Your answers are saved while this tab stays open." (Nothing is stored permanently, and answers can't be resumed on another device.)
-- Guidance sits next to the question it's about (email: how it's used; phone: country code; age range: 18–30; parish: optional).
+- Guidance sits next to the question it's about (email: how it's used; phone: country code; age range: 18–30; parish: optional free text, or a search of the RCCG parish list while the directory is on: see below).
 - **Save & Continue** validates with the shared rules ([05 §4](05-Backend-Schema.md#4-validation-rules)). Invalid: an "N answers need attention" alert, an inline message on each field, and focus on the first invalid field. Errors update live as answers are corrected.
 - Section 1 contains a hidden honeypot field for bots.
+
+#### The parish question (question 08) while the parish directory is on
+
+Off by default; an owner switches it on once the RCCG list is imported (`/api/config` → `parishDirectory.enabled`). Until then question 08 stays optional free text. [`ParishPicker`](../src/components/ParishPicker.tsx), [`src/lib/parish.ts`](../src/lib/parish.ts):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Search
+    Search --> Chosen: choose a suggestion (click, or arrows + Enter)
+    Chosen --> Confirmed: Yes, this is my parish
+    Chosen --> Search: Change parish
+    Confirmed --> Search: Change parish
+    Search --> NotListed: I can't find my parish
+    NotListed --> Search: Search the list instead
+    Confirmed --> Chosen: re-check finds new details (confirm again)
+    Confirmed --> Withdrawn: re-check finds it merged or removed
+    Withdrawn --> Search
+```
+
+- **Search:** at least 2 letters; suggestions 250 ms after typing stops, at most 10, parishes in the applicant's state (question 06) first. Each shows the parish (typed words in bold) and its province, region and continent. More than 10 matches: "Showing 10 of N, parishes in Lagos first. Add your province number to narrow the list." Typing "12" or "LP 12" narrows to that province. Nothing exact: "No exact match. Did you mean one of these?" with the closest spellings.
+- **Chosen:** a card with the parish and its province, region and continent as read-only text ("None (directly under Region 14)" when there is no province). **Yes, this is my parish** confirms it; **Change parish** returns to the search with what was typed. **Details look wrong? Tell us** flags the details for staff (a toggle; the applicant can still continue).
+- **Not listed:** the name as they know it (2–120 characters). The review says "Not on our list yet: the Programme team will check it."
+- **Outside Nigeria** (question 06): a note that the list covers Nigeria only, pointing to "I can't find my parish".
+- **Required:** Save & Continue needs a confirmed parish or a not-listed name; focus goes to **Yes, this is my parish** when only the confirmation is missing.
+- **States:** "Searching…" only when slow (300 ms); no match (tips); error with **Try again**; offline ("Finish the other questions and choose your parish when you're back online", searching again when the connection returns); too many searches from one network.
+- **Saved choices are re-checked** once per page load (`GET /api/parishes/:id`) while a draft holds one: renamed or moved means confirming again; merged or removed withdraws it with an explanation (and, for a merge, a button to search for the parish it became part of). Offline, the card says it will be checked when back online. The server checks again on submit; if it refuses the parish, the review links back to the Personal step, where the re-check shows why.
+- The draft stores the choice (`parishMode`, `parish`) with the other answers in `sessionStorage`. Only in directory mode does the submission include `parish`; otherwise `parishName` is free text, as before.
 
 ### `/apply/review`
 

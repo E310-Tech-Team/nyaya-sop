@@ -19,6 +19,7 @@
     "db:migrate": "node server-dist/migrate.js",
     "db:migrate:dev": "tsx server/migrate-cli.ts",
     "admin": "node --import tsx server/admin-cli.ts",
+    "directory": "node --import tsx server/directory-cli.ts",
     "push:keys": "node --import tsx server/vapid-cli.ts",
     "worker": "node server-dist/worker.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",

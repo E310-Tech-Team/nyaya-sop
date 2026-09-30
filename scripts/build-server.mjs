@@ -12,6 +12,7 @@ await build({
     migrate: 'server/migrate-cli.ts',
     worker: 'server/worker-cli.ts',
     admin: 'server/admin-cli.ts',
+    directory: 'server/directory-cli.ts',
     'push-keys': 'server/vapid-cli.ts',
   },
   outdir,

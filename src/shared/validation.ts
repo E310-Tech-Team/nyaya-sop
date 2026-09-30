@@ -16,6 +16,7 @@ import {
   type FieldErrors,
   type Gender,
   type NormalizedApplication,
+  type ParishChoice,
   type PersonalAnswers,
   type PurposeAnswers,
   type SubmissionMeta,
@@ -25,7 +26,7 @@ export const LIMITS = {
   fullName: { min: 2, max: 120 },
   email: { max: 254 },
   city: { min: 2, max: 80 },
-  parishName: { max: 120 },
+  parishName: { min: 2, max: 120 },
   consentVersion: { max: 40 },
   metaValue: { max: 120 },
 } as const;
@@ -45,6 +46,10 @@ export const MESSAGES = {
   cityRequired: 'Enter your city or town',
   cityInvalid: `Enter your city or town (${LIMITS.city.min}–${LIMITS.city.max} characters)`,
   parishTooLong: `Parish name must be ${LIMITS.parishName.max} characters or fewer`,
+  parishRequired: 'Choose your parish, or tell us it isn’t listed',
+  parishConfirm: 'Confirm that this is your parish',
+  parishNameRequired: 'Enter the name of your parish',
+  parishNameInvalid: `Enter your parish’s name (${LIMITS.parishName.min}–${LIMITS.parishName.max} characters)`,
   educationRequired: 'Choose your highest level of education',
   statusRequired: 'Choose your current status',
   purposeRequired: 'Choose a number from 1 to 5',
@@ -52,6 +57,7 @@ export const MESSAGES = {
 } as const;
 
 const HAS_LETTER = /\p{L}/u;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Pragmatic check: something@domain.tld, no spaces. Deliverability is confirmed by the reply email.
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
@@ -137,6 +143,32 @@ export function validatePurpose(answers: PurposeAnswers): FieldErrors {
   return errors;
 }
 
+/**
+ * The parish answer from a form that uses the parish directory (docs/05 §2). When the directory
+ * is on (`required`), an answer must be given: a listed parish, confirmed, or the name of one
+ * that isn't listed.
+ */
+export function validateParish(answer: unknown, required: boolean): { ok: true; value: ParishChoice } | { ok: false; error: string } {
+  if (answer === null || answer === undefined) {
+    return required ? { ok: false, error: MESSAGES.parishRequired } : { ok: true, value: { kind: 'typed', name: null } };
+  }
+  const value = (typeof answer === 'object' ? answer : {}) as Record<string, unknown>;
+  if (value.kind === 'listed') {
+    if (typeof value.id !== 'string' || !UUID_RE.test(value.id)) return { ok: false, error: MESSAGES.parishRequired };
+    if (value.confirmed !== true) return { ok: false, error: MESSAGES.parishConfirm };
+    return { ok: true, value: { kind: 'listed', parishId: value.id.toLowerCase(), detailsWrong: value.detailsWrong === true } };
+  }
+  if (value.kind === 'not_listed') {
+    const name = collapseWhitespace(typeof value.name === 'string' ? value.name : '');
+    if (!name) return { ok: false, error: MESSAGES.parishNameRequired };
+    if (name.length < LIMITS.parishName.min || name.length > LIMITS.parishName.max || !HAS_LETTER.test(name)) {
+      return { ok: false, error: MESSAGES.parishNameInvalid };
+    }
+    return { ok: true, value: { kind: 'not_listed', name } };
+  }
+  return { ok: false, error: MESSAGES.parishRequired };
+}
+
 export const hasErrors = (errors: FieldErrors): boolean => Object.keys(errors).length > 0;
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
@@ -161,8 +193,12 @@ export type ValidationResult =
   | { ok: true; value: NormalizedApplication }
   | { ok: false; fieldErrors: FieldErrors };
 
-/** Full check of an untrusted request body (the server's entry point). */
-export function validateApplication(input: unknown): ValidationResult {
+/**
+ * Full check of an untrusted request body (the server's entry point). `parishRequired` is set
+ * while the parish directory is on: a form using the directory must then answer the parish
+ * question. An older copy of the form (no `parish` field) is still accepted, with its free text.
+ */
+export function validateApplication(input: unknown, options: { parishRequired?: boolean } = {}): ValidationResult {
   const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
 
   const personal: PersonalAnswers = {
@@ -190,9 +226,14 @@ export function validateApplication(input: unknown): ValidationResult {
   if (!consentVersion || consentVersion.length > LIMITS.consentVersion.max) {
     fieldErrors.consentVersion = MESSAGES.consentRequired;
   }
+  let parish: ParishChoice = { kind: 'typed', name: collapseWhitespace(personal.parishName) || null };
+  if ('parish' in body && (body.parish != null || options.parishRequired)) {
+    const checked = validateParish(body.parish, options.parishRequired ?? false);
+    if (checked.ok) parish = checked.value;
+    else fieldErrors.parishName = checked.error;
+  }
   if (hasErrors(fieldErrors)) return { ok: false, fieldErrors };
 
-  const parishName = collapseWhitespace(personal.parishName);
   return {
     ok: true,
     value: {
@@ -203,7 +244,7 @@ export function validateApplication(input: unknown): ValidationResult {
       ageRange: personal.ageRange as AgeRange,
       stateOfResidence: personal.stateOfResidence,
       city: collapseWhitespace(personal.city),
-      parishName: parishName || null,
+      parish,
       educationLevel: education.educationLevel as EducationLevel,
       currentStatus: education.currentStatus as CurrentStatus,
       purposeClarity: purposeClarity as number,
