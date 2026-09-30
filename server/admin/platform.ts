@@ -10,7 +10,7 @@ import { voidStaffTokens } from '../auth/tokens';
 import { staffInviteEmail } from '../email';
 import { iso, isUuid, paging, sendError, str } from '../http';
 import { queueStats } from '../jobs/queue';
-import type { Services } from '../services';
+import { directoryNamespace, type Services } from '../services';
 import { getSettings, putSetting, SETTING_DEFAULTS } from '../settings';
 import { directoryReadiness } from './directory';
 
@@ -232,7 +232,7 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     settings: await getSettings(db, 0),
     health: await integrationHealth(services),
     // Whether the parish question can be switched on: what's loaded, from where, and what waits for review.
-    directory: await directoryReadiness(db),
+    directory: await directoryReadiness(services),
   }));
 
   app.patch('/settings', { preHandler: staffGuard(services, { permission: 'settings.manage' }) }, async (request, reply) => {
@@ -248,9 +248,21 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
       if (key in input) {
         if (typeof input[key] !== 'boolean') return sendError(reply, 400, 'VALIDATION_FAILED', `${key} must be true or false.`);
         if (key === 'parish_directory_enabled' && input[key] === true) {
-          const { rows } = await db.query<{ ready: boolean }>(`select exists (select 1 from parishes where status = 'active') as ready`);
+          // Ready means parishes from the source in use: the RCCG directory API's, or the imported list's.
+          const namespace = directoryNamespace(services);
+          const { rows } = await db.query<{ ready: boolean }>(
+            `select exists (select 1 from parishes where status = 'active' and external_namespace is not distinct from $1::text) as ready`,
+            [namespace],
+          );
           if (!rows[0]!.ready) {
-            return sendError(reply, 400, 'VALIDATION_FAILED', 'Import the RCCG parish list before switching the parish directory on (docs/DEPLOYMENT.md, "Parish directory").');
+            return sendError(
+              reply,
+              400,
+              'VALIDATION_FAILED',
+              namespace
+                ? 'The RCCG directory hasn’t synchronised yet: wait for the first sync (Parish directory shows it), then switch the question on.'
+                : 'Import the RCCG parish list before switching the parish directory on (docs/DEPLOYMENT.md, "Parish directory").',
+            );
           }
         }
         await putSetting(db, key, input[key] as boolean, request.staff!.id);

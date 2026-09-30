@@ -246,11 +246,21 @@ export async function inTransaction<T>(db: Db, run: (connection: Queryable) => P
 
 const actorFor = (meta: { staffId?: string | null }): AuditActor => (meta.staffId ? { type: 'staff', id: meta.staffId } : SYSTEM);
 
+/** Whether the RCCG directory API supplies the directory (any entry from it, in either environment). */
+export async function apiSuppliesDirectory(db: Queryable): Promise<boolean> {
+  const { rows } = await db.query<{ yes: boolean }>(`select exists (select 1 from church_units where external_id is not null) as yes`);
+  return rows[0]!.yes;
+}
+
+export const API_SUPPLIES_DIRECTORY = 'The directory comes from the RCCG directory API now, so a spreadsheet can no longer change it.';
+
 /** Applies the plan in one transaction and records it. Returns the import's ID. */
 export async function applyPlan(db: Db, plan: Plan, meta: ImportMeta): Promise<string> {
   const importId = randomUUID();
   try {
     await inTransaction(db, async (connection) => {
+      // The API is the authority once it has supplied entries: the old list must not overwrite them.
+      if (await apiSuppliesDirectory(connection)) throw new DirectoryError(API_SUPPLIES_DIRECTORY);
       await connection.query(
         `insert into directory_imports (id, source, source_label, checksum, structure_as_at, status, counts, via, staff_id)
          values ($1, $2, $3, $4, $5, 'applied', $6, $7, $8)`,
@@ -287,12 +297,14 @@ export type RevertResult = { units: { restored: number; deleted: number }; paris
 /** Undoes the latest applied import: restores what it changed and deletes what it created. */
 export async function revertImport(db: Db, importId: string, actor: AuditActor = SYSTEM): Promise<RevertResult> {
   return inTransaction(db, async (connection) => {
-    const { rows } = await connection.query<{ status: string; started_at: Date }>(
-      `select status::text as status, started_at from directory_imports where id = $1 for update`,
+    const { rows } = await connection.query<{ status: string; started_at: Date; source: string }>(
+      `select status::text as status, started_at, source::text as source from directory_imports where id = $1 for update`,
       [importId],
     );
     const target = rows[0];
     if (!target) throw new DirectoryError('There is no import with that ID.');
+    // The provider's releases are the record; the next sync puts its latest state back anyway.
+    if (target.source === 'api') throw new DirectoryError('A sync from the RCCG directory API can’t be reverted: the next sync restores the provider’s latest release.');
     if (target.status !== 'applied') throw new DirectoryError(`That import is ${target.status}; only an applied import can be reverted.`);
     const later = await connection.query(
       `select 1 from directory_imports where status = 'applied' and id <> $1 and started_at >= $2 limit 1`,

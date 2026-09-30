@@ -10,7 +10,15 @@ import { NIGERIAN_STATES } from '../../src/shared/application';
 import { CHURCH_LEVELS, cleanName, parishKey, stateFromProvince, unitKey, type ChurchLevel } from '../../src/shared/directory';
 import { audit } from '../audit';
 import type { Db, Queryable } from '../db';
-import { checkConsistency, DirectoryError, inTransaction, isConsistent, rebuildCaches } from './store';
+import { apiSuppliesDirectory, checkConsistency, DirectoryError, inTransaction, isConsistent, rebuildCaches } from './store';
+
+export const API_MANAGED =
+  'The directory comes from the RCCG directory API now: entries change there (ask the registry team) and reach this site with its next release.';
+
+/** Once the RCCG directory API supplies the directory, it is the only place entries change. */
+async function assertStaffEditable(connection: Queryable) {
+  if (await apiSuppliesDirectory(connection)) throw new DirectoryError(API_MANAGED);
+}
 
 /** The levels staff can add: the ones the RCCG list uses (zone and area arrive with the RCCG API). */
 export const EDITABLE_LEVELS = ['continent', 'region', 'province'] as const satisfies readonly ChurchLevel[];
@@ -164,6 +172,7 @@ export async function createUnit(
   staffId: string,
 ): Promise<string> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     const name = nameFrom(input.name, input.level);
     const parent = input.parentId ? await activeUnit(connection, input.parentId, 'That parent') : null;
     checkParent(input.level, parent);
@@ -200,6 +209,7 @@ export type UnitChanges = { displayName?: string; parentId?: string; state?: str
 /** Renames, moves or sets the state of a unit. Returns the fields that changed. */
 export async function updateUnit(db: Db, id: string, changes: UnitChanges, staffId: string): Promise<string[]> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     const unit = await activeUnit(connection, id, 'That unit');
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
@@ -261,6 +271,7 @@ export type MergeResult = { unitsMoved: number; parishesMoved: number; parishesM
  */
 export async function mergeUnit(db: Db, id: string, intoId: string, staffId: string): Promise<MergeResult> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     if (id === intoId) throw new DirectoryError('Choose a different unit to merge into.');
     const unit = await activeUnit(connection, id, 'That unit');
     const into = await activeUnit(connection, intoId, 'The unit to merge into');
@@ -313,6 +324,7 @@ export async function createParishIn(
   input: { unitId: string; name: string; splitFrom?: string },
   staffId: string,
 ): Promise<string> {
+  await assertStaffEditable(connection);
   const unit = await activeUnit(connection, input.unitId, 'That unit');
   const name = nameFrom(input.name, 'parish');
   const key = parishKey(name);
@@ -345,6 +357,7 @@ export type ParishChanges = { displayName?: string; unitId?: string; status?: 'a
 /** Renames, moves, deactivates or reactivates a parish. Returns the fields that changed. */
 export async function updateParish(db: Db, id: string, changes: ParishChanges, staffId: string): Promise<string[]> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     const parish = await lockParish(connection, id);
     if (parish.status === 'merged') throw new DirectoryError('That parish was merged into another; change that one instead.');
     const before: Record<string, unknown> = {};
@@ -448,6 +461,7 @@ async function mergeParishIn(connection: Queryable, id: string, intoId: string, 
 
 export async function mergeParish(db: Db, id: string, intoId: string, staffId: string): Promise<{ applicationsMoved: number }> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     const applicationsMoved = await mergeParishIn(connection, id, intoId, staffId);
     await settle(connection, [id, intoId]);
     await audit(connection, actor(staffId), 'directory.parish_merged', { type: 'parish', id }, { into: intoId, applicationsMoved });
@@ -461,6 +475,7 @@ export async function mergeParish(db: Db, id: string, intoId: string, staffId: s
  */
 export async function splitParish(db: Db, id: string, name: string, staffId: string): Promise<string> {
   return inTransaction(db, async (connection) => {
+    await assertStaffEditable(connection);
     const parish = await lockParish(connection, id);
     if (parish.status !== 'active') throw new DirectoryError('Only an active parish can be split.');
     return createParishIn(connection, { unitId: parish.unit_id, name, splitFrom: parish.id }, staffId);

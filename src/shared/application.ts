@@ -171,6 +171,8 @@ export type CurrentCohortResponse = {
 
 export type ApiErrorCode =
   | 'VALIDATION_FAILED'
+  /** The RCCG directory couldn't confirm the chosen parish just now: nothing was stored; try again. */
+  | 'DIRECTORY_UNAVAILABLE'
   | 'ALREADY_APPLIED'
   | 'APPLICATIONS_CLOSED'
   | 'RATE_LIMITED'

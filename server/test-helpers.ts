@@ -37,7 +37,11 @@ export type TestContext = {
   close: () => Promise<void>;
 };
 
-export async function createTestContext(env: Record<string, string> = {}): Promise<TestContext> {
+/**
+ * `directoryFetch`: the RCCG directory API the app talks to when DIRECTORY_API_ENV/KEY are set in
+ * `env` (a fake: server/directory/test-api.ts). Tests never reach the real provider.
+ */
+export async function createTestContext(env: Record<string, string> = {}, options: { directoryFetch?: typeof fetch } = {}): Promise<TestContext> {
   const staticDir = await mkdtemp(join(tmpdir(), 'sop-static-'));
   await mkdir(join(staticDir, 'assets'));
   await writeFile(join(staticDir, 'index.html'), '<!doctype html><title>SOP</title><div id="root"></div>');
@@ -61,7 +65,13 @@ export async function createTestContext(env: Record<string, string> = {}): Promi
   const push = new FakePushTransport();
   // EMAIL_TRANSPORT=none tests the "email not configured" behaviour; otherwise the outbox.
   const email = env.EMAIL_TRANSPORT === 'none' ? createEmailTransport(config) : outbox;
-  const services = createServices(config, db, { email, pushTransport: push });
+  const services = createServices(config, db, {
+    email,
+    pushTransport: push,
+    // Never the network: a test that configures the API passes its fake provider.
+    directoryFetch: options.directoryFetch ?? (async () => Promise.reject(new TypeError('no directory API in tests'))),
+    directorySleep: async () => {},
+  });
   const logs: string[] = [];
   const app = await buildApp({ config, db, services, logStream: { write: (line) => void logs.push(line) } });
   return {

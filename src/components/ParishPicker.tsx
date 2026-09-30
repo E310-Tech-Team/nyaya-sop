@@ -511,6 +511,13 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
             {rankState ? `, parishes in ${rankState} first` : ''}. Add your province number to narrow the list.
           </p>
         )}
+        {search.status === 'done' && search.response.directory?.stale && (
+          // Honest about freshness: the RCCG directory couldn't be checked for updates lately.
+          <p className={note}>
+            The RCCG parish list may be out of date: we couldn’t check it for updates recently. If your parish isn’t there, choose “I can’t
+            find my parish”.
+          </p>
+        )}
         {search.status === 'loading' && slow && <p className={note}>Searching…</p>}
         {search.status === 'done' && !results.length && (
           <p className={note}>

@@ -16,7 +16,7 @@ import { createParishIn } from '../directory/edits';
 import { DirectoryError, inTransaction } from '../directory/store';
 import { iso, isUuid, paging, sendError, str } from '../http';
 import { parishDetails, searchParishes } from '../parishes';
-import type { Services } from '../services';
+import { directoryNamespace, type Services } from '../services';
 import { linkApplicationParish, ParishLinkError } from './parish-links';
 
 export const REVIEW_KINDS = ['not_listed', 'details_wrong', 'earlier_text'] as const;
@@ -107,7 +107,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
           name: row.parish_name,
           parish: null,
           submitted: null,
-          suggestions: (await searchParishes(db, row.parish_name, row.state_of_residence, 3)).results,
+          suggestions: (await searchParishes(db, row.parish_name, row.state_of_residence, 3, directoryNamespace(services))).results,
           exactMatch: exact.get(row.application_id) ?? null,
         });
       }
@@ -132,7 +132,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
         name: row.reported_name,
         parish: row.parish_id ? await parishDetails(db, row.parish_id) : null,
         submitted: kind === 'details_wrong' ? chainFrom(row.parish_snapshot) : null,
-        suggestions: row.reported_name ? (await searchParishes(db, row.reported_name, row.state_of_residence, 3)).results : [],
+        suggestions: row.reported_name ? (await searchParishes(db, row.reported_name, row.state_of_residence, 3, directoryNamespace(services))).results : [],
         exactMatch: null,
       });
     }

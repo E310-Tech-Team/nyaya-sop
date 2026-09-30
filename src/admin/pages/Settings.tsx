@@ -4,12 +4,85 @@ import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader,
 import { APP_BUILD } from '../../lib/pwa';
 import { useAsync } from '../../lib/useAsync';
 import { adminApi, type DirectoryReadiness, type Health, type Settings } from '../api';
+import { useCan } from '../session';
+
+/** What a sync failure code means, in words (the codes are all the server keeps). */
+const SYNC_PROBLEMS: Record<string, string> = {
+  api_unauthorized: 'the RCCG directory refused the key (check DIRECTORY_API_KEY)',
+  api_forbidden: 'the key doesn’t cover the whole directory (ask the registry team)',
+  api_rate_limited: 'too many requests: it tries again at the next check',
+  api_unavailable: 'the RCCG directory didn’t answer',
+  api_timeout: 'the RCCG directory didn’t answer in time',
+  api_network: 'the RCCG directory couldn’t be reached',
+  api_invalid_response: 'the RCCG directory sent an unexpected answer',
+  api_bad_request: 'the RCCG directory refused a request',
+  incomplete_release: 'a release arrived incomplete, so it wasn’t applied',
+  inconsistent_pages: 'a release arrived incomplete, so it wasn’t applied',
+  release_chain: 'the releases don’t lead back to a base release',
+  empty_release: 'the latest release describes no units',
+  inconsistent: 'the result wouldn’t be consistent, so nothing was changed',
+};
+
+/** The RCCG directory API's side: which environment, which release, and how current the copy is. */
+function apiRows(api: NonNullable<DirectoryReadiness['api']>): [string, ReactNode][] {
+  const problem = api.lastError ? (SYNC_PROBLEMS[api.lastError] ?? `an error (${api.lastError})`) : null;
+  const handover = api.oldList.matched + api.oldList.ambiguous + api.oldList.unmatched;
+  return [
+    ['Source', `RCCG directory API, ${api.env === 'production' ? 'production' : 'sandbox (test data)'}`],
+    ['Release in use', api.release ? `${api.release}${api.releaseName ? ` (${api.releaseName})` : ''}` : 'None yet: waiting for the first sync'],
+    [
+      'Last confirmed current',
+      <span>
+        {api.checkedAt ? when(api.checkedAt) : 'Not yet'}{' '}
+        {!api.fresh && <Badge tone="warning">May be out of date</Badge>}
+      </span>,
+    ],
+    ['Last update applied', api.syncedAt ? when(api.syncedAt) : 'Not yet'],
+    ['How it stays current', `Checked every ${api.syncIntervalMinutes} minutes. After ${api.freshnessHours} hours without a confirmation, each application checks its parish with the RCCG directory directly.`],
+    ['Last problem', problem ? `${problem}: ${api.failures} in a row, last ${when(api.lastErrorAt)}` : 'None'],
+    ...(handover
+      ? ([
+          [
+            'Old list',
+            `${handover} parishes from the earlier list have applications: ${api.oldList.matched} with one exact match in the RCCG directory, ${api.oldList.ambiguous} with several, ${api.oldList.unmatched} with none. Their applications keep their answer until staff link them (pnpm directory legacy-report lists them).`,
+          ],
+        ] as [string, ReactNode][])
+      : []),
+  ];
+}
+
+/** "Check for updates now": queues a sync for the worker. */
+function CheckNow() {
+  const [state, setState] = useState<'idle' | 'busy' | 'queued' | 'failed'>('idle');
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
+        tone="secondary"
+        busy={state === 'busy'}
+        onClick={() => {
+          setState('busy');
+          adminApi.syncDirectoryNow().then(
+            () => setState('queued'),
+            () => setState('failed'),
+          );
+        }}
+      >
+        Check for updates now
+      </Button>
+      <p role="status" className="font-sans text-[13px] text-muted">
+        {state === 'queued' ? 'Queued: the worker checks within a minute. Reload to see the result.' : state === 'failed' ? 'That didn’t work. Try again in a moment.' : ''}
+      </p>
+    </div>
+  );
+}
 
 /** What the parish question would search: the list that's loaded, from where, and what's waiting. */
 function DirectoryPanel({ directory }: { directory: DirectoryReadiness }) {
   const { levels, parishes, latestImport } = directory;
+  const canManage = useCan('directory.manage');
   const link = 'font-bold text-brand underline underline-offset-4';
   const rows: [string, ReactNode][] = [
+    ...(directory.api ? apiRows(directory.api) : []),
     [
       'Active parishes',
       <span>
@@ -40,7 +113,11 @@ function DirectoryPanel({ directory }: { directory: DirectoryReadiness }) {
   return (
     <Panel
       title="Parish directory"
-      description="The RCCG parish list the parish question searches. Imports run on the server (docs/DEPLOYMENT.md, “Parish directory”)."
+      description={
+        directory.api
+          ? 'The RCCG parish directory the parish question searches: a copy kept in step with the RCCG directory API.'
+          : 'The RCCG parish list the parish question searches. Imports run on the server (docs/DEPLOYMENT.md, “Parish directory”).'
+      }
       actions={
         <Link to="/admin/directory" className="font-sans text-[14px] font-bold text-brand underline underline-offset-4">
           Open the directory
@@ -55,6 +132,7 @@ function DirectoryPanel({ directory }: { directory: DirectoryReadiness }) {
           </div>
         ))}
       </dl>
+      {directory.api && canManage && <CheckNow />}
     </Panel>
   );
 }

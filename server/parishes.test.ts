@@ -249,6 +249,7 @@ describe('POST /api/applications with the parish directory', () => {
       parish_snapshot: {
         parish: { id, name: 'Jesus House' },
         importId: expect.any(String),
+        externalId: null, // from the imported list: no RCCG directory API code
         continent: { id: expect.any(String), name: 'Continent 1' },
         region: { id: expect.any(String), name: 'Region 5' },
         province: { id: expect.any(String), name: 'Rivers Province 4' },

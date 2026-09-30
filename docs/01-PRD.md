@@ -92,7 +92,7 @@ Payments · delivering training, grading, mentorship or community management · 
 | F23 | Admin platform with individual staff accounts, two-step verification, five roles, audit history | **Built** |
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
-| F26 | Parish directory: applicants choose their parish from the RCCG list; staff correct the directory, review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish | **Built** (Phase 16; off until the list is imported on the VPS and switched on; the RCCG API later) |
+| F26 | Parish directory: applicants choose their parish from the RCCG list; staff review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish. The list comes from the official RCCG directory API, kept current automatically (D-53); where the API isn't configured, from an imported spreadsheet that staff can correct | **Built** (Phase 16; the API connection is tested against a fake of its contract, not yet live: off until the API key is on the server and the question is switched on in Settings) |
 
 ## 5. Form content
 

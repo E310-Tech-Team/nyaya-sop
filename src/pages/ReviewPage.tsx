@@ -124,6 +124,13 @@ function errorContent(error: ApiError) {
         </>
       );
     }
+    case 'DIRECTORY_UNAVAILABLE':
+      return (
+        <p>
+          <strong>We couldn’t confirm your parish just now.</strong> The RCCG parish directory didn’t answer, so your application
+          hasn’t been sent. Your answers are still saved while this tab stays open: wait a few minutes, then press Submit again.
+        </p>
+      );
     case 'ALREADY_APPLIED':
       return (
         <p>

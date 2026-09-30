@@ -6,6 +6,7 @@
  */
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { CHURCH_LEVELS, type ChurchLevel } from '../../src/shared/directory';
+import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
 import type { Queryable } from '../db';
 import {
@@ -21,10 +22,13 @@ import {
   type ParishChanges,
   type UnitChanges,
 } from '../directory/edits';
-import { DirectoryError } from '../directory/store';
+import { DIRECTORY_SYNC_JOB } from '../directory/api-jobs';
+import { isFresh, syncState } from '../directory/api-sync';
+import { apiSuppliesDirectory, DirectoryError } from '../directory/store';
 import { iso, isUuid, paging, sendError } from '../http';
+import { enqueue } from '../jobs/queue';
 import { parishDetails, searchParishes } from '../parishes';
-import type { Services } from '../services';
+import { directoryNamespace, type Services } from '../services';
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
 
@@ -52,15 +56,24 @@ async function ancestorsOf(db: Queryable, parentId: string | null): Promise<Unit
   return chain;
 }
 
-/** Counts for Settings and the directory screen: what's loaded, from where, and what's waiting. */
-export async function directoryReadiness(db: Queryable) {
+/**
+ * Counts for Settings and the directory screen: what's loaded, from where, and what's waiting. The
+ * counts are of the source in use (the RCCG directory API's environment, or the imported list), and
+ * `api` says how current the API's copy is: never the key, only its environment and figures.
+ */
+export async function directoryReadiness(services: Pick<Services, 'db' | 'directory' | 'config'>) {
+  const { db } = services;
+  const namespace = directoryNamespace(services);
   const levels = await db.query<{ level: ChurchLevel; active: number; total: number }>(
-    `select level::text as level, count(*) filter (where status = 'active')::int as active, count(*)::int as total from church_units group by level`,
+    `select level::text as level, count(*) filter (where status = 'active')::int as active, count(*)::int as total
+       from church_units where external_namespace is not distinct from $1::text group by level`,
+    [namespace],
   );
   const parishes = await db.query<{ active: number; inactive: number; merged: number; staff_added: number }>(
     `select count(*) filter (where status = 'active')::int as active, count(*) filter (where status = 'inactive')::int as inactive,
             count(*) filter (where status = 'merged')::int as merged, count(*) filter (where origin = 'staff')::int as staff_added
-       from parishes`,
+       from parishes where external_namespace is not distinct from $1::text`,
+    [namespace],
   );
   const latest = await db.query<{ id: string; source: string; source_label: string; structure_as_at: string | null; via: string; finished_at: Date | null }>(
     `select id, source::text as source, source_label, structure_as_at::text as structure_as_at, via, finished_at
@@ -86,6 +99,34 @@ export async function directoryReadiness(db: Queryable) {
     corrections: extra.rows[0]!.corrections,
     lineageWaiting: extra.rows[0]!.waiting,
     pendingReviews: extra.rows[0]!.reviews,
+    api: await apiStatus(services),
+  };
+}
+
+/** The RCCG directory API's side of the readiness: environment, release, freshness, last failure, handover report. */
+async function apiStatus(services: Pick<Services, 'db' | 'directory' | 'config'>) {
+  const namespace = directoryNamespace(services);
+  if (!namespace || !services.config.directoryApi) return null;
+  const state = await syncState(services.db, namespace);
+  const legacy = await services.db.query<{ status: string; n: number }>(
+    `select status::text as status, count(*)::int as n from directory_legacy_matches where namespace = $1 group by 1`,
+    [namespace],
+  );
+  const handover = Object.fromEntries(legacy.rows.map((row) => [row.status, row.n]));
+  return {
+    env: services.config.directoryApi.env,
+    release: state?.releaseVersion ?? null,
+    releaseName: state?.releaseName ?? null,
+    effectiveFrom: state?.effectiveFrom ?? null,
+    checkedAt: state?.checkedAt ?? null,
+    syncedAt: state?.syncedAt ?? null,
+    fresh: isFresh(state, services.config.directoryApi.freshnessHours),
+    freshnessHours: services.config.directoryApi.freshnessHours,
+    syncIntervalMinutes: services.config.directoryApi.syncIntervalMinutes,
+    lastError: state?.lastError ?? null,
+    lastErrorAt: state?.lastErrorAt ?? null,
+    failures: state?.failures ?? 0,
+    oldList: { matched: handover.matched ?? 0, ambiguous: handover.ambiguous ?? 0, unmatched: handover.unmatched ?? 0 },
   };
 }
 
@@ -147,7 +188,15 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
   const canView = staffGuard(services, { permission: 'directory.view' });
   const canManage = staffGuard(services, { permission: 'directory.manage' });
 
-  app.get('/overview', { preHandler: canView }, async () => directoryReadiness(db));
+  app.get('/overview', { preHandler: canView }, async () => directoryReadiness(services));
+
+  /** "Check for updates now": queues a sync of the RCCG directory API for the worker (never runs it in the request). */
+  app.post('/sync', { preHandler: canManage, config: { rateLimit: { max: 6, timeWindow: 60_000 } } }, async (request, reply) => {
+    if (!services.directory) return sendError(reply, 409, 'CONFLICT', 'The RCCG directory API isn’t configured on this server (docs/DEPLOYMENT.md, “Directory API”).');
+    await enqueue(db, { kind: DIRECTORY_SYNC_JOB, dedupeKey: `${DIRECTORY_SYNC_JOB}:manual:${new Date().toISOString().slice(0, 16)}`, maxAttempts: 1 });
+    await audit(db, { type: 'staff', id: request.staff!.id }, 'directory.sync_requested', { type: 'directory', id: services.directory.namespace });
+    return reply.code(202).send({ queued: true });
+  });
 
   /** One level of the tree: the units under a unit (continents at the top) and the parishes directly under it. */
   app.get<{ Querystring: { unit?: string; q?: string; page?: string; pageSize?: string; show?: string } }>('/browse', { preHandler: canView }, async (request, reply) => {
@@ -214,6 +263,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
         )
       : { rows: [] };
     return {
+      apiManaged: await apiSuppliesDirectory(db),
       unit: unit
         ? {
             id: unit.id,
@@ -259,7 +309,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
   app.get<{ Querystring: { q?: string; kind?: string; level?: string } }>('/search', { preHandler: canView }, async (request, reply) => {
     const query = request.query.q?.trim() ?? '';
     if (query.length < 2 || query.length > 60) return sendError(reply, 400, 'BAD_REQUEST', 'Type between 2 and 60 characters.');
-    if (request.query.kind === 'parish') return { parishes: (await searchParishes(db, query, null, 10)).results, units: [] };
+    if (request.query.kind === 'parish') return { parishes: (await searchParishes(db, query, null, 10, directoryNamespace(services))).results, units: [] };
     const level = CHURCH_LEVELS.includes(request.query.level as ChurchLevel) ? request.query.level : null;
     const { rows } = await db.query<{ id: string; name: string; level: ChurchLevel; parent: string | null }>(
       `select u.id, u.display_name as name, u.level::text as level, parent.display_name as parent
@@ -283,6 +333,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
       official_name: string;
       state: string | null;
       status: string;
+      external_id: string | null;
       origin: string;
       staff_fields: string[];
       parent_id: string | null;
@@ -293,7 +344,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
       parishes: number;
       applications: number;
     }>(
-      `select u.id, u.level::text as level, u.display_name as name, u.name_key, u.official_name, u.state, u.status::text as status,
+      `select u.id, u.level::text as level, u.display_name as name, u.name_key, u.official_name, u.state, u.status::text as status, u.external_id,
               u.origin::text as origin, to_jsonb(u.staff_fields) as staff_fields, u.parent_id, u.merged_into_id, m.display_name as merged_into,
               (select count(*)::int from church_units c where c.parent_id = u.id and c.status = 'active') as units,
               (select count(*)::int from parishes p where p.status = 'active' and u.id in (p.continent_id, p.region_id, p.province_id, p.zone_id, p.area_id)) as active_parishes,
@@ -324,7 +375,9 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
         origin: unit.origin,
         corrected: unit.staff_fields,
         mergedInto: unit.merged_into_id ? { id: unit.merged_into_id, name: unit.merged_into } : null,
+        externalId: unit.external_id,
       },
+      apiManaged: await apiSuppliesDirectory(db),
       ancestors: await ancestorsOf(db, unit.parent_id),
       counts: { units: unit.units, activeParishes: unit.active_parishes, parishesDirectly: unit.parishes, applications: unit.applications },
       lineage: {
@@ -343,6 +396,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
       origin: string;
       listed_rows: number;
       staff_fields: string[];
+      external_id: string | null;
       unit_id: string;
       unit_name: string;
       unit_level: ChurchLevel;
@@ -350,7 +404,7 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
       source_unit: string | null;
       applications: number;
     }>(
-      `select p.official_name, p.origin::text as origin, p.listed_rows, to_jsonb(p.staff_fields) as staff_fields,
+      `select p.official_name, p.origin::text as origin, p.listed_rows, to_jsonb(p.staff_fields) as staff_fields, p.external_id,
               p.unit_id, u.display_name as unit_name, u.level::text as unit_level, p.source_unit_id, s.display_name as source_unit,
               (select count(*)::int from applications a where a.parish_id = p.id) as applications
          from parishes p join church_units u on u.id = p.unit_id left join church_units s on s.id = p.source_unit_id
@@ -368,10 +422,13 @@ export async function directoryRoutes(app: FastifyInstance, services: Services) 
         corrected: extra.staff_fields,
         unit: { id: extra.unit_id, name: extra.unit_name, level: extra.unit_level },
         listedUnder: extra.source_unit_id ? { id: extra.source_unit_id, name: extra.source_unit } : null,
+        externalId: extra.external_id,
       },
       aliases: aliases.rows.map((row) => row.alias).filter((alias) => alias !== details.name && alias !== extra.official_name),
       applications: extra.applications,
       history: await historyOf(db, 'parish', details.id),
+      // Entries come from the RCCG directory API: staff correct them there, not here.
+      apiManaged: await apiSuppliesDirectory(db),
     };
   });
 

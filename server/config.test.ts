@@ -3,6 +3,66 @@ import { assertSafeToListen, ConfigError, isLoopbackAddress, loadConfig } from '
 import { csvCell } from './csv';
 import { smtpConnection } from './email';
 
+describe('the RCCG directory API settings', () => {
+  const KEY = 'fake-config-key-0123456789-SECRET';
+
+  it('is off unless configured, and takes one of the two environments with a key', () => {
+    expect(loadConfig({ NODE_ENV: 'development' }).directoryApi).toBeNull();
+    expect(loadConfig({ NODE_ENV: 'development', DIRECTORY_API_ENV: 'Sandbox', DIRECTORY_API_KEY: ` ${KEY} ` }).directoryApi).toEqual({
+      env: 'sandbox',
+      key: KEY,
+      syncIntervalMinutes: 15,
+      freshnessHours: 24,
+    });
+    expect(
+      loadConfig({ NODE_ENV: 'development', DIRECTORY_API_ENV: 'production', DIRECTORY_API_KEY: KEY, DIRECTORY_SYNC_INTERVAL_MINUTES: '60', DIRECTORY_FRESHNESS_HOURS: '12' })
+        .directoryApi,
+    ).toMatchObject({ env: 'production', syncIntervalMinutes: 60, freshnessHours: 12 });
+  });
+
+  it('refuses half a configuration, an unknown environment or a malformed key, without echoing the key', () => {
+    const errorOf = (env: Record<string, string>) => {
+      try {
+        loadConfig({ NODE_ENV: 'development', ...env });
+      } catch (error) {
+        return error as Error;
+      }
+      throw new Error('expected a configuration error');
+    };
+    expect(errorOf({ DIRECTORY_API_KEY: KEY }).message).toMatch(/DIRECTORY_API_ENV must be production or sandbox/);
+    expect(errorOf({ DIRECTORY_API_ENV: 'staging', DIRECTORY_API_KEY: KEY }).message).toMatch(/production or sandbox/);
+    expect(errorOf({ DIRECTORY_API_ENV: 'production' }).message).toMatch(/DIRECTORY_API_KEY is required/);
+    for (const bad of ['short', `${KEY} with spaces`, `${KEY}\u0007`]) {
+      const error = errorOf({ DIRECTORY_API_ENV: 'production', DIRECTORY_API_KEY: bad });
+      expect(error).toBeInstanceOf(ConfigError);
+      expect(error.message).not.toContain(bad.trim());
+    }
+    expect(errorOf({ DIRECTORY_API_ENV: 'production', DIRECTORY_API_KEY: KEY, DIRECTORY_SYNC_INTERVAL_MINUTES: '1' }).message).toMatch(/DIRECTORY_SYNC_INTERVAL_MINUTES/);
+  });
+
+  it('warns when a production server would use the sandbox directory', () => {
+    const production = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://sop:pw@db:5432/sop',
+      APP_SECRET: 'a-long-random-production-secret-0123456789abcdef',
+      SITE_URL: 'https://apply.example.org',
+    };
+    expect(loadConfig({ ...production, DIRECTORY_API_ENV: 'sandbox', DIRECTORY_API_KEY: KEY }).warnings.join(' ')).toMatch(/sandbox in production/);
+    expect(loadConfig({ ...production, DIRECTORY_API_ENV: 'production', DIRECTORY_API_KEY: KEY }).warnings.join(' ')).not.toMatch(/sandbox/);
+  });
+
+  it('keeps the key out of the browser: no client code reads it, and Vite only exposes VITE_ variables', async () => {
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const files = (await readdir('src', { recursive: true })).filter((file) => /\.(ts|tsx)$/.test(file) && !/\.test\./.test(file));
+    // Naming the setting in help text is fine (the admin area says which one to check); reading it is not.
+    const reads = /(?:import\.meta\.env|process\.env)\s*(?:\.|\[\s*['"`])DIRECTORY_API/;
+    for (const file of files) expect(await readFile(join('src', file), 'utf8'), file).not.toMatch(reads);
+    // Vite exposes VITE_* by default; a wider envPrefix or a define naming the key would leak it.
+    expect(await readFile('vite.config.ts', 'utf8')).not.toMatch(/envPrefix|DIRECTORY_API/);
+  });
+});
+
 describe('loadConfig', () => {
   it('uses the embedded database in development', () => {
     const config = loadConfig({ NODE_ENV: 'development' });

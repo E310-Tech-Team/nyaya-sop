@@ -34,6 +34,12 @@ export type AppConfig = {
   cookieSecure: boolean;
   email: { transport: EmailTransportKind; smtpUrl: string | null; from: string | null };
   push: { publicKey: string | null; privateKey: string | null; subject: string | null; extraHosts: string[] };
+  /**
+   * The RCCG directory API, the parish directory's source when set (server/directory/api.ts). The
+   * environment picks one of the provider's fixed addresses; nothing else about it is configurable.
+   * Null when not configured: the directory then keeps whatever was imported, if anything.
+   */
+  directoryApi: DirectoryApiConfig | null;
   worker: { mode: WorkerMode; pollMs: number };
   auth: {
     /** Staff must set up and use a second factor (on by default in production). */
@@ -49,6 +55,17 @@ export type AppConfig = {
 };
 
 export class ConfigError extends Error {}
+
+export type DirectoryApiEnv = 'production' | 'sandbox';
+export type DirectoryApiConfig = {
+  env: DirectoryApiEnv;
+  /** The consumer key, sent only as `Authorization: Bearer …` to the provider. Never logged. */
+  key: string;
+  /** How often the worker asks the provider for its latest release. */
+  syncIntervalMinutes: number;
+  /** How old the provider's last confirmation may be before submissions check the parish live. */
+  freshnessHours: number;
+};
 
 // server/config.ts in dev, server-dist/index.js when built: both are one level below the repo root.
 const DEFAULT_STATIC_DIR = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -182,6 +199,29 @@ function email(env: NodeJS.ProcessEnv, nodeEnv: AppConfig['env']): AppConfig['em
   return { transport, smtpUrl: transport === 'smtp' ? smtpUrl : null, from };
 }
 
+// A bearer token as issued: visible ASCII, no spaces. The value is never echoed in an error.
+const API_KEY_RE = /^[\x21-\x7e]{16,512}$/;
+
+function directoryApi(env: NodeJS.ProcessEnv, nodeEnv: AppConfig['env'], warnings: string[]): DirectoryApiConfig | null {
+  const which = env.DIRECTORY_API_ENV?.trim().toLowerCase() || '';
+  const key = env.DIRECTORY_API_KEY?.trim() || '';
+  if (!which && !key) return null;
+  if (which !== 'production' && which !== 'sandbox') {
+    throw new ConfigError('DIRECTORY_API_ENV must be production or sandbox when DIRECTORY_API_KEY is set');
+  }
+  if (!key) throw new ConfigError(`DIRECTORY_API_KEY is required with DIRECTORY_API_ENV=${which}`);
+  if (!API_KEY_RE.test(key)) throw new ConfigError('DIRECTORY_API_KEY must be the key as issued (16–512 visible characters, no spaces)');
+  if (which === 'sandbox' && nodeEnv === 'production') {
+    warnings.push('DIRECTORY_API_ENV=sandbox in production: the form would offer the sandbox directory, not the real one');
+  }
+  return {
+    env: which,
+    key,
+    syncIntervalMinutes: int('DIRECTORY_SYNC_INTERVAL_MINUTES', env.DIRECTORY_SYNC_INTERVAL_MINUTES, 15, 5, 1440),
+    freshnessHours: int('DIRECTORY_FRESHNESS_HOURS', env.DIRECTORY_FRESHNESS_HOURS, 24, 1, 168),
+  };
+}
+
 function readBuildId(staticDir: string): string {
   try {
     return readFileSync(resolve(staticDir, 'build-id.txt'), 'utf8').trim() || 'dev';
@@ -268,6 +308,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cookieSecure,
     email: email(env, nodeEnv),
     push: push(env),
+    directoryApi: directoryApi(env, nodeEnv, warnings),
     worker: {
       mode: env.WORKER_MODE?.trim() === 'off' ? 'off' : 'inline',
       pollMs: int('WORKER_POLL_MS', env.WORKER_POLL_MS, 2_000, 200, 60_000),
