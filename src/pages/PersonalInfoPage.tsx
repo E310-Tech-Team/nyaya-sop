@@ -1,26 +1,35 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { BackLink, PrimaryButton } from '../components/Buttons';
 import { ErrorSummary, focusFirstInvalid } from '../components/ErrorSummary';
 import { Honeypot, SelectField, TextField } from '../components/Fields';
 import { Divider, FormActions, FormCard, StepHeader } from '../components/FormLayout';
+import { ParishPicker } from '../components/ParishPicker';
 import { usePageTitle } from '../components/RouteEffects';
+import { usePublicConfig } from '../lib/config';
 import { AGE_RANGES, GENDERS, STATE_OPTIONS, type AgeRange, type Gender } from '../shared/application';
-import { LIMITS, hasErrors, validatePersonal } from '../shared/validation';
-import { useApplication } from '../state/application';
+import { LIMITS, hasErrors } from '../shared/validation';
+import { personalErrors, useApplication } from '../state/application';
 
 export default function PersonalInfoPage() {
   usePageTitle('Step 1 of 3: Personal Information');
   const navigate = useNavigate();
-  const { draft, updatePersonal, setHoneypot } = useApplication();
+  const { draft, updatePersonal, setHoneypot, setParishMode, setParish, parishCheck } = useApplication();
   const [showErrors, setShowErrors] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const answers = draft.personal;
-  const errors = showErrors ? validatePersonal(answers) : {};
+  const errors = showErrors ? personalErrors(draft) : {};
+
+  // The parish question searches the RCCG list while the directory is switched on (docs/03).
+  const config = usePublicConfig();
+  const directoryOn = config ? config.parishDirectory?.enabled === true : null;
+  useEffect(() => {
+    if (directoryOn !== null) setParishMode(directoryOn ? 'directory' : 'text');
+  }, [directoryOn, setParishMode]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (hasErrors(validatePersonal(answers))) {
+    if (hasErrors(personalErrors(draft))) {
       setShowErrors(true);
       focusFirstInvalid(formRef.current);
       return;
@@ -130,18 +139,31 @@ export default function PersonalInfoPage() {
             />
           </div>
           <Divider />
-          <TextField
-            id="parishName"
-            number="08"
-            label="Name of RCCG Parish"
-            required={false}
-            hint="If you attend an RCCG parish, tell us which one."
-            placeholder="Enter parish name"
-            maxLength={LIMITS.parishName.max}
-            value={answers.parishName}
-            onChange={(parishName) => updatePersonal({ parishName })}
-            error={errors.parishName}
-          />
+          {draft.parishMode === 'directory' ? (
+            <ParishPicker
+              id="parishName"
+              number="08"
+              state={answers.stateOfResidence}
+              value={draft.parish}
+              onChange={setParish}
+              check={parishCheck}
+              error={errors.parishName}
+              initialQuery={answers.parishName}
+            />
+          ) : (
+            <TextField
+              id="parishName"
+              number="08"
+              label="Name of RCCG Parish"
+              required={false}
+              hint="If you attend an RCCG parish, tell us which one."
+              placeholder="Enter parish name"
+              maxLength={LIMITS.parishName.max}
+              value={answers.parishName}
+              onChange={(parishName) => updatePersonal({ parishName })}
+              error={errors.parishName}
+            />
+          )}
         </FormCard>
 
         <ErrorSummary count={Object.keys(errors).length} />

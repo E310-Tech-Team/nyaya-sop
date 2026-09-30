@@ -6,6 +6,7 @@ import { cleanProperties, isAnalyticsEvent, recordEvent } from './analytics';
 import { checkOrigin } from './auth/guards';
 import type { OutboxTransport } from './email';
 import { iso, sendError } from './http';
+import { parishDirectoryEnabled } from './parishes';
 import type { Services } from './services';
 import { getSettings } from './settings';
 
@@ -29,6 +30,7 @@ export async function publicRoutes(app: FastifyInstance, services: Services) {
       push: { enabled: Boolean(services.push), publicKey: services.push?.publicKey ?? null },
       supportEmail: settings.support_email,
       buildId: config.buildId,
+      parishDirectory: { enabled: await parishDirectoryEnabled(db) },
     };
   });
 

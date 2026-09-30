@@ -30,6 +30,43 @@ export function toCsv(header: string[], rows: Cell[][]): string {
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
+/**
+ * RFC 4180 CSV (quoted fields, doubled quotes, CRLF or LF, an optional byte-order mark) as
+ * rows of cells. Blank lines are dropped.
+ */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  const source = text.replace(/^﻿/, '');
+  const endRow = () => {
+    row.push(cell);
+    if (row.some((value) => value.trim())) rows.push(row);
+    row = [];
+    cell = '';
+  };
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]!;
+    if (quoted) {
+      if (char !== '"') cell += char;
+      else if (source[index + 1] === '"') {
+        cell += '"';
+        index++;
+      } else quoted = false;
+    } else if (char === '"' && cell === '') quoted = true;
+    else if (char === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && source[index + 1] === '\n') index++;
+      endRow();
+    } else cell += char;
+  }
+  if (cell || row.length) endRow();
+  return rows;
+}
+
 // Reviewers are in Nigeria; show submission times in West Africa Time.
 const lagosTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Africa/Lagos',

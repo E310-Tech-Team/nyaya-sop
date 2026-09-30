@@ -1,7 +1,7 @@
 # 06 — Implementation Plan
 
-**Last updated:** 2026-09-29
-**Overall status:** Phases 0–6, 8, 9, **10 (supporting imagery, AI-generated)**, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch) and **15 (website on Vercel, API on the VPS)** are in progress. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 292 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Last updated:** 2026-09-30
+**Overall status:** Phases 0–6, 8, 9, **10 (supporting imagery, AI-generated)**, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)** and **14 (homepage hero entrance)** are **done**; 7 (launch), **15 (website on Vercel, API on the VPS)** and **16 (parish directory: the import command, parish search, application links and the form question are built)** are in progress. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 380 automated tests pass, plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
 
 Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
 
@@ -23,6 +23,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ✅ website on Vercel (`vercel.json` + `/api` middleware, Phase 15) · ⏳ the VPS isn't deployed yet, so the Vercel site's `/api` answers 503 |
 | Launch content | ⏳ Privacy notice, domain, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)) |
 | Brand | ✅ Official lockup in every header, menu, footer and the admin area; brand palette; favicons, app icons and social card from the brand mark ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
+| Parish directory | ✅ Import command (16.1, dry-run tested on the RCCG list), parish search and application links (16.2), the parish question in the form (16.3, off until switched on) · ⏳ admin screens and reports (16.4–16.6); the RCCG API later (16.8) |
 | Photography | ✅ AI-generated supporting photographs: fifteen, one per placement, reviewed, recorded and disclosed ([IMAGERY.md](IMAGERY.md)); hero, brand artwork and Blueprint paintings unchanged |
 
 ## Phases
@@ -221,6 +222,21 @@ Vercel (the owner's personal team "Zacchaeus' projects", project `school-of-purp
 | 15.6 | Connect the VPS | Not started: needs the VPS (7.10). Then `API_ORIGIN` in Vercel, `SITE_URL` + `EDGE_PROXY_SECRET` on the VPS (the secret is in the gitignored `.env.edge-proxy` on the machine that set up Vercel), and DEPLOYMENT §C3's checks |
 | 15.7 | Git deploys | Not started: connect the GitHub repository in Vercel once this work is merged (so `main` has `vercel.json` and the middleware); until then deploys are made with the CLI |
 
+### Phase 16: Parish directory (**In progress**, 2026-09-30)
+
+Applicants will choose their RCCG parish from the RCCG list instead of typing it: they type only the parish, and province, region and continent fill in and are locked. Staff get parish-based filters and reports. The reviewed plan, with the screens and metrics: [Parish Directory Plan](https://claude.ai/artifact/KQSCTs4DYDpe6Vgr3du8Hz) (D-28 to D-34). Data: the RCCG parish list (50,107 rows; Nigeria only; no zone, area or codes; before the August 2026 changes) and the 2026 list of new regions and provinces. Later updates come from an RCCG API (16.8). Schema and import rules: [05 §2](05-Backend-Schema.md#parish-directory-0006); running an import: [DEPLOYMENT](DEPLOYMENT.md#parish-directory).
+
+| # | Task | Status |
+|---|---|---|
+| 16.1 | Schema (0006) and `pnpm directory import / revert / lineage / status`: a swappable source (spreadsheet now, API later) with a built-in .xlsx reader, name cleaning, same-name rows listed once, parishes with no province, moves detected through `unit_lineage`, one-transaction apply ending with a consistency check, revert, an issues CSV for RCCG | Done: 50 tests (PGlite, including apply → re-apply → revert and a fake API source). A dry run of the RCCG list takes about 3 s: 48,479 entries, 1,521 same-name groups, 181 parishes with no province, 22 provinces with no state. Nothing imported yet |
+| 16.2 | Public parish search (the applicant's state first, province words, "LP 12"), lookup and submit validation; `applications` link columns; Settings switch (off) | Done: migration 0007 (`pg_trgm`, search text, `parish_id`/`parish_status`/`parish_snapshot`, `parish_reports`); `GET /api/parishes/search` and `/:id`; submit accepts a confirmed listed parish or "I can't find my parish" and still takes older forms' free text; `parishDirectory.enabled` in `/api/config`; the Settings switch (API only; refused until a list is imported); request logs no longer include query strings. 19 API tests; at 48,000 synthetic parishes most searches take 8–42 ms in PGlite |
+| 16.3 | The form: suggestions, prefilled and locked province, region and continent, confirmation, "I can't find my parish", "Details look wrong?", draft re-checks, offline, accessibility; the question becomes required | Done: `ParishPicker` (ARIA combobox, confirmation card, not-listed name), draft `parishMode`/`parish` with a once-per-load re-check, review summary, submit only sends `parish` in directory mode. 14 unit tests; walked through in Chromium with made-up parishes (keyboard, announcements, focus, validation, not listed, outside Nigeria, rename and removal re-checks, 375 px). Screen-reader pass on devices still to do |
+| 16.4 | Admin: Applicants list and detail, Parish review, Settings | Not started |
+| 16.5 | Parish directory screen: the tree, the Imports tab, splitting a same-name group | Not started |
+| 16.6 | Reports by continent, region, province and parish; dashboard card; totals export | Not started |
+| 16.7 | Rollout with the current list: back up, dry run, apply, switch the question on | Not started: needs the VPS (15.6) |
+| 16.8 | Connect the RCCG API: an API source, a one-time link of existing entries to its IDs, a scheduled sync with staff review of large changes; zone, area and the 2026 structure if it has them | Blocked: needs the API's documentation and access |
+
 ## Content needed from the Programme team
 
 The UX pass only uses facts already in the site copy. These need an owner's answer before they can be added:
@@ -252,7 +268,8 @@ The UX pass only uses facts already in the site copy. These need an owner's answ
 2. **Deploy a staging origin** (e.g. `staging.<domain>` with its own database and VAPID keys) and run the device tests in [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing): iPhone/iPad (Home Screen install + push), Android (Chrome, Samsung Internet), Safari on Mac, Firefox, Edge.
 3. **Deploy production:** create the VPS, point DNS, then run `deploy/install.sh` ([DEPLOYMENT: Quick install](DEPLOYMENT.md#quick-install-one-command): it generates `APP_SECRET` and the VAPID keys on the server and creates the first owner) or follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended); add `SMTP_URL`/`EMAIL_FROM`, back up `.env`, run the production checklist. With the website on Vercel (Phase 15), give the VPS its own API name and connect the two ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)).
 4. **Before announcing:** submit and delete a test application, set up nightly backups + off-site copies, add an uptime monitor, invite staff.
-5. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
+5. **Parish directory (Phase 16):** build 16.4–16.6; ask RCCG for the API's details and to confirm the 1,521 same-name groups (`pnpm directory import … --report` lists them).
+6. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
 
 ## Dependency graph
 
@@ -277,6 +294,8 @@ flowchart LR
     P13 --> P14[Phase 14 ✓<br/>hero entrance]
     P12 --> P15[Phase 15<br/>website on Vercel · API on the VPS]
     P15 -.-> P7
+    P12 --> P16[Phase 16<br/>parish directory]
+    P16 -.-> P7
     DEV --> P7
 ```
 
@@ -313,6 +332,14 @@ flowchart LR
 | D-25 | 2026-09-29 | The homepage hero's entrance is a GSAP (core) timeline, in the first-load bundle so nothing waits; every other screen keeps the CSS system. An element is animated by GSAP or CSS, never both. The glow's breathing and the desktop scroll drift are the only sanctioned loop and scroll-linked motion | Decided (user: "a real, visible animation"; extras approved) |
 | D-26 | 2026-09-29 | The website may be served by Vercel with the API, worker and database staying on the VPS (the owner's choice, "Site + VPS API"). `/api` goes through Vercel Routing Middleware rather than a `vercel.json` rewrite, so it can pass on the visitor's address with a shared secret that the VPS checks; one origin for the browser, the VPS stays the only place for data, jobs and secrets | Decided |
 | D-27 | 2026-09-29 | Supporting photographs may be AI-generated (photorealistic, fictional Nigerian young adults in modest professional clothing), replacing the rule that only permission-cleared RCCG NYAYA photos could be used. They are disclosed in the footer and on the success page, never captioned or described as real participants or events, and recorded with their prompts in IMAGERY.md. The homepage hero, the brand artwork and the Biblical Blueprint paintings are excluded | Decided (owner, 2026-09-29) |
+
+| D-28 | 2026-09-30 | The parish question uses the RCCG parish list: the applicant types only the parish and picks a suggestion; province, region and continent fill in from the directory and can't be edited. Zone and area join when RCCG provides them (the list has none). Another database considered earlier isn't used: it isn't a parish directory | Decided (owner) |
+| D-29 | 2026-09-30 | Launch with the current RCCG list (Nigeria only, before the August 2026 changes). Later updates come from an RCCG API rather than spreadsheets, so imports read from a swappable source and share one pipeline | Decided (owner) |
+| D-30 | 2026-09-30 | Rows with the same unit and parish name are one entry (48,479 from 50,107 rows); the 1,521 groups go back to RCCG to confirm, and staff can split a group that turns out to be several parishes | Decided (owner) |
+| D-31 | 2026-09-30 | The parish question becomes required, with "I can't find my parish" as the way through, including for applicants abroad (the list covers Nigeria only); ask RCCG for the foreign mission list | Decided (owner) |
+| D-32 | 2026-09-30 | Reports count by today's directory and keep each application's chain as submitted. Owners and programme admins see them; any other role given `reports.view` sees counts of 1–4 as "fewer than 5" | Decided (owner) |
+| D-33 | 2026-09-30 | Directory imports run from the command line (`pnpm directory`), reading the Excel file with a small built-in reader (no new dependency). The RCCG files and reports never enter the repository: spreadsheets and CSVs are gitignored | Decided |
+| D-34 | 2026-09-30 | One `church_units` table where each unit stores only its parent, declared so a parent is always an earlier level; each parish caches its chain, rebuilt and checked in the same transaction as every change | Decided |
 
 ## Doc maintenance
 

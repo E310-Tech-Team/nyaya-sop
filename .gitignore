@@ -22,6 +22,12 @@ backups/
 *.gz
 *.zip
 
+# Spreadsheets and exports: the RCCG parish list and its issue reports, applicant CSV
+# exports (personal data). The repository is public; tests build their own sample files.
+*.xlsx
+*.xls
+*.csv
+
 # Large design originals (a compressed copy is committed)
 design/*-figma.png
 # AI-generated image originals (the site builds from design/imagery/*/masters: docs/IMAGERY.md)

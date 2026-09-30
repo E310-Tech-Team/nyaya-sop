@@ -24,7 +24,7 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md) · [05-Backend-Sch
 | API server | Fastify | 5.12 | `@fastify/static`, `@fastify/helmet` (headers/CSP), `@fastify/rate-limit`, `@fastify/cookie` |
 | Database driver | node-postgres (`pg`) | 8.23 | Pool, 15 s statement timeout |
 | Database | PostgreSQL | 17 | Production. Migrations in `server/migrations/*.sql` (0001–0005) |
-| Dev/test database | PGlite | 0.5 | PostgreSQL compiled to WASM, in-process: no install needed. **Single process only** (see §10) |
+| Dev/test database | PGlite | 0.5 | PostgreSQL compiled to WASM, in-process: no install needed; loads the `pg_trgm` extension for parish search. **Single process only** (see §10) |
 | Web Push | `web-push` | 3.6 | Only for VAPID signing and aes128gcm encryption; requests go through our own SSRF-safe transport |
 | Email | `nodemailer` | 10.0 | SMTP; plus an in-memory test outbox for development and tests |
 | Two-step verification | `otpauth` (TOTP), `qrcode` | 9.5, 1.5 | RFC 6238 codes; QR code for enrolment rendered on the server as a data URL |
@@ -105,7 +105,8 @@ src/            React app
   lib/          api (CSRF-aware client), pwa (registration/updates), install, push, account, config, events
   sw/           sw.ts (service worker), routing.ts (+ tests)
   shared/       application, validation, permissions, platform (topics, statuses, link allowlist), time
-server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts, settings.ts, analytics.ts, public.ts, index.ts, worker-cli.ts, admin-cli.ts, vapid-cli.ts
+server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts, settings.ts, analytics.ts, public.ts, index.ts, worker-cli.ts, admin-cli.ts, vapid-cli.ts, directory-cli.ts
+  directory/    the RCCG parish directory: source.ts (spreadsheet now, API later), xlsx.ts (built-in .xlsx reader), plan.ts (pure import planner), store.ts (apply/revert), report.ts
   auth/         sessions, guards (session → CSRF/origin → MFA → permission), tokens, staff-routes
   account/      applicant routes, account deletion
   admin/        applicants, accounts + cohorts, communications (campaigns, announcements, test devices), platform (staff, settings, audit, dashboard)
@@ -142,6 +143,7 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 | `pnpm start` | `node server-dist/index.js`: production server |
 | `pnpm worker` | `node server-dist/worker.js`: background jobs as a separate process |
 | `pnpm admin …` | Staff bootstrap: `create-owner --email … --name …`, `reset-mfa --email …`, `list` (production: `node server-dist/admin.js …`) |
+| `pnpm directory …` | The RCCG parish directory: `import <file.xlsx>` (dry run; `--apply`, `--as-at`, `--report`), `revert <import-id>`, `lineage <file.csv>`, `status` (production: `node server-dist/directory.js …`; [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) |
 | `pnpm push:keys` | Prints a new VAPID key pair (production: `node server-dist/push-keys.js`) |
 | `pnpm test` / `pnpm typecheck` / `pnpm check` | Tests / types (app + server, then service worker) / everything CI runs |
 | `pnpm db:migrate` | Apply migrations without starting the server |
@@ -211,7 +213,7 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 
 1. **Fastify 5 ignores numeric `trustProxy`** (hop counts are "fail closed"), so config rejects them. Use proxy addresses.
 2. **`PORT` in development:** some launchers set `PORT` for the web dev server. `server/dev.ts` pins the API to `API_PORT` (default 3000).
-3. **PGlite is single-process:** don't run `pnpm admin …` while `pnpm dev` holds the same `.data/pglite` directory. Stop the dev server first (or use Postgres).
+3. **PGlite is single-process:** don't run `pnpm admin …` or `pnpm directory …` while `pnpm dev` holds the same `.data/pglite` directory. Stop the dev server first (or use Postgres).
 4. **SQL parameters used twice need explicit casts** (`$2::delivery_status` in both places): Postgres must deduce one type per parameter. Tests catch this for every query they run.
 5. **`ON DELETE SET NULL` runs table checks on the child row:** account deletion first drops application/training topics from the account's devices (`server/account/delete.ts`).
 6. **Service worker changes** take effect after the person chooses "Update now" (or all tabs close). Never make `sw.js` cacheable. Emergency: the kill-switch build.

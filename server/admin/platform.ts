@@ -226,9 +226,15 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
       await putSetting(db, 'support_email', value, request.staff!.id);
       changed.push('support_email');
     }
-    for (const key of ['applicant_accounts_enabled', 'public_notifications_enabled'] as const) {
+    for (const key of ['applicant_accounts_enabled', 'public_notifications_enabled', 'parish_directory_enabled'] as const) {
       if (key in input) {
         if (typeof input[key] !== 'boolean') return sendError(reply, 400, 'VALIDATION_FAILED', `${key} must be true or false.`);
+        if (key === 'parish_directory_enabled' && input[key] === true) {
+          const { rows } = await db.query<{ ready: boolean }>(`select exists (select 1 from parishes where status = 'active') as ready`);
+          if (!rows[0]!.ready) {
+            return sendError(reply, 400, 'VALIDATION_FAILED', 'Import the RCCG parish list before switching the parish directory on (docs/DEPLOYMENT.md, "Parish directory").');
+          }
+        }
         await putSetting(db, key, input[key] as boolean, request.staff!.id);
         changed.push(key);
       }

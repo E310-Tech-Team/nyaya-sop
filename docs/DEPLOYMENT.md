@@ -332,6 +332,31 @@ A job whose worker crashed is picked up again automatically when its lease (2 mi
 
 They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, each in a transaction, under a lock. To run them without starting the site: `docker compose run --rm app node server-dist/migrate.js`. **Back up first**; never edit an applied migration file.
 
+### Parish directory
+
+The parish question and the reports use the RCCG parish list, loaded from the command line ([05 §2](05-Backend-Schema.md#parish-directory-0006)). **Never commit the RCCG files or the issue reports**: the repository is public (`.gitignore` ignores spreadsheets and CSVs). Copy the file straight to the server and delete it afterwards.
+
+```bash
+docker compose cp "RCCG PARISHES.xlsx" app:/tmp/parishes.xlsx
+docker compose exec app node server-dist/directory.js import /tmp/parishes.xlsx --report /tmp/directory-issues.csv
+```
+
+That is a **dry run**: it shows what would change (rows, entries, units, same-name groups, parishes with no province, provinces with no state) and changes nothing. `docker compose cp app:/tmp/directory-issues.csv .` fetches the issue list to send to RCCG. Then back up (§A7) and apply:
+
+```bash
+docker compose exec app node server-dist/directory.js import /tmp/parishes.xlsx --apply --as-at YYYY-MM-DD
+docker compose exec app rm /tmp/parishes.xlsx /tmp/directory-issues.csv
+```
+
+- Only the CONTINENT, REGION, PROVINCE and PARISH columns are read (any order, under any title rows). Every other column, including attendance, is ignored and never stored.
+- `--as-at` records the date the list's structure is correct for.
+- Importing the same file again changes nothing. A newer file updates what changed and deactivates what's gone (never deletes); each parish keeps its ID.
+- **Undo** the latest import: `node server-dist/directory.js revert <import-id>` (the ID is printed when you apply).
+- **New provinces or regions:** before importing a list that has them, record where they came from so moved parishes keep their history. A CSV with the columns `level,unit,source` (optionally `source_level`, `approved_on`), one row per source, for example `province,LAGOS PROVINCE 135,LAGOS PROVINCE 2,2026-08-17`, then `node server-dist/directory.js lineage /tmp/lineage.csv` (dry run) and again with `--apply`.
+- `node server-dist/directory.js status` shows the counts, the latest imports and the consistency check.
+- **Switching it on:** once a list is imported, a staff member with `settings.manage` can switch the parish directory on with `PATCH /api/admin/settings` and `{"parish_directory_enabled": true}`; the API refuses while the directory is empty. The toggle on Admin → Settings is planned for phase 16.4. Parish search needs the `pg_trgm` extension: migration 0007 creates it, which works when the app's database user owns the database (as in Compose and the bare-metal steps); otherwise run `create extension pg_trgm;` as a superuser first.
+- Bare metal: the same commands in the app folder without `docker compose exec app`. In development: `pnpm directory …` (it uses `.data/pglite`, so stop `pnpm dev` first).
+
 ### Rotating secrets
 
 | Secret | How | Consequences |

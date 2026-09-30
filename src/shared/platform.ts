@@ -132,6 +132,8 @@ export type PublicConfig = {
   push: { enabled: boolean; publicKey: string | null };
   supportEmail: string | null;
   buildId: string;
+  /** The parish question searches the RCCG parish directory (docs/05 §2) instead of taking free text. */
+  parishDirectory: { enabled: boolean };
 };
 
 export type AccountSummary = { email: string; createdAt: string };

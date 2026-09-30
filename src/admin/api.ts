@@ -159,7 +159,12 @@ export type Health = {
   mfaRequired: boolean;
   buildId: string;
 };
-export type Settings = { support_email: string | null; applicant_accounts_enabled: boolean; public_notifications_enabled: boolean };
+export type Settings = {
+  support_email: string | null;
+  applicant_accounts_enabled: boolean;
+  public_notifications_enabled: boolean;
+  parish_directory_enabled: boolean;
+};
 
 export type AuditRow = {
   id: string;
