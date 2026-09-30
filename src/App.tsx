@@ -22,7 +22,7 @@ import SuccessPage from './pages/SuccessPage';
 import UpdatesPage from './pages/UpdatesPage';
 import WelcomePage from './pages/WelcomePage';
 import { ApplicationProvider } from './state/application';
-import { Loading } from './components/ui';
+import { Loading } from './components/ui/basic';
 
 // Loaded only when visited, so the public site stays as light as before.
 const AccountApp = lazy(() => import('./account/AccountApp'));

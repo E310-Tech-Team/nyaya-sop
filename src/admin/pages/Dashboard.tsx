@@ -3,8 +3,72 @@ import { Badge, LoadError, Loading, PageHeader, Panel, TableScroll, td, th, when
 import { useAsync } from '../../lib/useAsync';
 import { APPLICATION_STATUSES, REVIEW_STATUS_LABELS, TOPIC_DETAILS, type ApplicationStatus } from '../../shared/platform';
 import { adminApi, type Dashboard } from '../api';
+import { formatCount } from '../directory-parts';
 import { Stat } from '../parts';
-import { useStaff } from '../session';
+import { useCan, useStaff } from '../session';
+
+/** Applications by continent, the busiest regions, and those without a directory parish (reports.view). */
+function ParishCard() {
+  const { data, error, reload } = useAsync((signal) => adminApi.reportsOverview(signal), []);
+  const link = 'font-bold text-brand underline-offset-4 hover:underline';
+  return (
+    <Panel
+      title="Applications by parish"
+      description="Counted where each application’s parish is in today’s directory."
+      actions={
+        <Link to="/admin/reports" className="font-sans text-[14px] font-bold text-brand underline underline-offset-4">
+          Open reports
+        </Link>
+      }
+    >
+      {error ? (
+        <LoadError error={error} onRetry={reload} />
+      ) : !data ? (
+        <Loading />
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Applications" value={formatCount(data.total)} />
+            <Stat label="Without a directory parish" value={formatCount(data.unmatched)} hint="Not listed, typed on the earlier form, or not given." />
+          </dl>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <h3 className="font-sans text-[15px] font-bold text-ink">By continent</h3>
+              <ul className="flex flex-col gap-1 font-sans text-[14px] text-ink">
+                {data.continents.map((continent) => (
+                  <li key={continent.id} className="flex justify-between gap-3">
+                    <Link to={`/admin/reports/organisation?unit=${continent.id}`} className={link}>
+                      {continent.name}
+                    </Link>
+                    <span className="tabular-nums">{formatCount(continent.applications)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-col gap-2">
+              <h3 className="font-sans text-[15px] font-bold text-ink">Busiest regions</h3>
+              {data.topRegions.length ? (
+                <ol className="flex flex-col gap-1 font-sans text-[14px] text-ink">
+                  {data.topRegions.map((region) => (
+                    <li key={region.id} className="flex justify-between gap-3">
+                      <Link to={`/admin/reports/organisation?unit=${region.id}`} className={link}>
+                        {region.name}
+                      </Link>
+                      <span className="tabular-nums">{formatCount(region.applications)}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="font-sans text-[14px] text-muted">No applications linked to a parish yet.</p>
+              )}
+            </div>
+          </div>
+          {data.masked && <p className="font-sans text-[13px] text-muted">For your role, counts from 1 to 4 show as “fewer than 5”.</p>}
+        </>
+      )}
+    </Panel>
+  );
+}
 
 function ApplicationsTable({ rows }: { rows: Dashboard['applicationsByCohort'] }) {
   const cohorts = [...new Set(rows.map((row) => row.cohort))];
@@ -72,6 +136,7 @@ function HealthBadges({ health }: { health: Dashboard['health'] }) {
 /** Aggregates only; every label says exactly what was counted. */
 export default function DashboardPage() {
   const staff = useStaff();
+  const canReports = useCan('reports.view');
   const { data, error, reload } = useAsync((signal) => adminApi.dashboard(signal), []);
   const name = staff.step === 'signed-in' ? staff.session.staff.displayName : '';
   return (
@@ -90,6 +155,8 @@ export default function DashboardPage() {
           <Panel title="Applications by cohort and review status" actions={<Link to="/admin/applicants" className="font-sans text-[14px] font-bold text-brand underline underline-offset-4">Open applicants</Link>}>
             <ApplicationsTable rows={data.applicationsByCohort} />
           </Panel>
+
+          {canReports && <ParishCard />}
 
           <Panel title="People and devices">
             <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">

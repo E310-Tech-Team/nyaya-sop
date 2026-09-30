@@ -70,3 +70,9 @@ export function useCan(...permissions: Permission[]): boolean {
   const current = useStaff();
   return current.step === 'signed-in' && permissions.some((permission) => can(current.session.staff.role, permission));
 }
+
+/** Whether they have every one of these permissions (Parish review needs three). */
+export function useCanAll(...permissions: Permission[]): boolean {
+  const current = useStaff();
+  return current.step === 'signed-in' && permissions.every((permission) => can(current.session.staff.role, permission));
+}

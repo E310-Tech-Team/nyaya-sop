@@ -44,7 +44,7 @@ Open http://localhost:5173. `pnpm dev` starts Vite (web, with hot reload) and th
 ```
 src/                 React app
   pages/             Landing, programme pages, Welcome, the 3 form steps, Review, Success, Install, Notifications, Updates, 404
-  components/        Form layout, fields, buttons, header, route helpers, UI kit (ui.tsx), notification card/settings
+  components/        Form layout, fields, buttons, header, route helpers, account/admin UI kit (ui/: shadcn/ui primitives adapted to the brand, basic.tsx for public pages), notification card/settings
   account/           Applicant account area (/account/*, lazy-loaded)
   admin/             Admin platform (/admin/*, lazy-loaded)
   sw/                Service worker (sw.ts) and its tested caching policy (routing.ts)

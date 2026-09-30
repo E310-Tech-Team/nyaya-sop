@@ -43,6 +43,19 @@ describe('role permissions are enforced by the API', () => {
     ['GET', '/api/admin/staff', ['owner']],
     ['GET', '/api/admin/settings', ['owner']],
     ['GET', '/api/admin/audit', ['owner', 'programme_admin']],
+    // Parish directory, Parish review and Reports (docs/05 §6: decision D-32 for reports).
+    ['GET', '/api/admin/directory/overview', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/directory/browse', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/directory/imports', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/directory/lineage', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/parish-review', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/parish-review/earlier/matches', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/summary', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/units', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/units.csv', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/trend', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/cohorts', ['owner', 'programme_admin']],
+    ['GET', '/api/admin/reports/overview', ['owner', 'programme_admin']],
   ];
   it.each(matrix)('%s %s', async (method, url, allowed) => {
     for (const role of roles) {
@@ -53,6 +66,18 @@ describe('role permissions are enforced by the API', () => {
 
   it('rejects requests with no staff session at all', async () => {
     expect((await ctx.app.inject('/api/admin/applicants')).statusCode).toBe(401);
+  });
+
+  it.each([
+    ['POST', '/api/admin/directory/parishes'],
+    ['PATCH', `/api/admin/directory/parishes/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}`],
+    ['POST', `/api/admin/parish-review/reports/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}/resolve`],
+    ['POST', `/api/admin/applicants/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}/parish`],
+  ])('%s %s changes things only for owners and programme admins', async (method, url) => {
+    for (const role of roles) {
+      const res = await as(role)({ method: method as 'POST', url, payload: {} });
+      expect({ role, forbidden: res.statusCode === 403 }).toEqual({ role, forbidden: !['owner', 'programme_admin'].includes(role) });
+    }
   });
 });
 
@@ -90,6 +115,26 @@ describe('applicant review', () => {
     expect(detail.history.map((event: { to_status: string }) => event.to_status)).toEqual(['under_review', 'shortlisted']);
     const { rows } = await ctx.db.query(`select count(*)::int as n from audit_events where action = 'application.status_changed' and target_id = $1`, [id]);
     expect(rows[0]).toEqual({ n: 2 });
+  });
+
+  it('publishes only the status the publisher saw, even when it changes at the same moment', async () => {
+    const id = await submit('publish.race@example.com');
+    // Another reviewer's change lands between this request's check and its update.
+    const query = ctx.db.query.bind(ctx.db);
+    let raced = false;
+    ctx.db.query = (async (text: string, params?: unknown[]) => {
+      if (!raced && text.includes('set published_status = status')) {
+        raced = true;
+        await query(`update applications set status = 'under_review' where id = $1`, [id]);
+      }
+      return query(text, params);
+    }) as typeof ctx.db.query;
+    const publish = await as('programme_admin')({ method: 'POST', url: `/api/admin/applicants/${id}/publish`, payload: { expectedStatus: 'submitted' } });
+    ctx.db.query = query;
+    expect(raced).toBe(true);
+    expect(publish.statusCode).toBe(409);
+    const { rows } = await ctx.db.query(`select published_status::text as published, published_at from applications where id = $1`, [id]);
+    expect(rows[0]).toEqual({ published: 'submitted', published_at: null });
   });
 
   it('publishes a decision explicitly, with an inbox entry and a neutral push to the applicant’s device', async () => {

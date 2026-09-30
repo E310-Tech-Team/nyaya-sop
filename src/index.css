@@ -467,6 +467,52 @@
   }
 }
 
+/*
+ * Admin popovers, list boxes and sheets (the shadcn/ui primitives in src/components/ui, matched by
+ * their data-slot attributes, so nothing else is affected): a short entrance using the motion
+ * tokens, only without reduced motion. They close at once.
+ */
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-sheet-in-right {
+  from {
+    translate: 100% 0;
+  }
+}
+@keyframes ui-sheet-in-bottom {
+  from {
+    translate: 0 100%;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot='popover-content'][data-state='open'] {
+    transform-origin: var(--radix-popover-content-transform-origin);
+    animation: ui-pop-in var(--duration-feedback) var(--ease-enter);
+  }
+  [data-slot='select-content'][data-state='open'] {
+    transform-origin: var(--radix-select-content-transform-origin);
+    animation: ui-pop-in var(--duration-feedback) var(--ease-enter);
+  }
+  [data-slot='sheet-overlay'][data-state='open'] {
+    animation: ui-fade-in var(--duration-drawer-in) var(--ease-standard);
+  }
+  [data-slot='sheet-content'][data-side='right'][data-state='open'] {
+    animation: ui-sheet-in-right var(--duration-drawer-in) var(--ease-enter);
+  }
+  [data-slot='sheet-content'][data-side='bottom'][data-state='open'] {
+    animation: ui-sheet-in-bottom var(--duration-drawer-in) var(--ease-enter);
+  }
+}
+
 /* …and a 2px lift + arrow nudge only where hover is precise. */
 @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
   .motion-button:not(:disabled):hover {

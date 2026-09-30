@@ -2,19 +2,35 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Badge, Button, Input, LoadError, Loading, PageHeader, Pagination, Select, TableScroll, td, th, when } from '../../components/ui';
 import { useAsync } from '../../lib/useAsync';
+import { PARISH_ANSWER_LABELS } from '../../shared/directory';
 import { APPLICATION_STATUSES, PUBLISHED_STATUS_LABELS, REVIEW_STATUS_LABELS } from '../../shared/platform';
 import { adminApi } from '../api';
+import { UnitFinder } from '../directory-parts';
 import { PublishedBadge, ReviewBadge } from '../parts';
 import { useCan } from '../session';
 
-const FILTER_KEYS = ['q', 'cohort', 'status', 'published', 'reviewer', 'claimed', 'sort'] as const;
+const FILTER_KEYS = ['q', 'cohort', 'status', 'published', 'reviewer', 'claimed', 'from', 'to', 'parishStatus', 'parish', 'unit', 'direct', 'without', 'sort'] as const;
 const PAGE_SIZE = 25;
+const isId = (value: string) => /^[0-9a-f-]{36}$/i.test(value);
+
+/** A filter set from elsewhere (Reports, the directory) that has no control of its own here. */
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-brand/40 bg-rose/30 py-1 pl-3 pr-1 font-sans text-[13px] font-bold text-brand-deep">
+      {label}
+      <button type="button" aria-label={`Remove filter: ${label}`} onClick={onRemove} className="flex size-[28px] cursor-pointer items-center justify-center rounded-full hover:bg-white">
+        <span aria-hidden="true">×</span>
+      </button>
+    </span>
+  );
+}
 
 export default function ApplicantsPage() {
   const [params, setParams] = useSearchParams();
   const canViewAll = useCan('applications.view_all');
   const canExport = useCan('applications.export');
   const canAssign = useCan('applications.assign');
+  const canDirectory = useCan('directory.view');
   const filters = Object.fromEntries(FILTER_KEYS.map((key) => [key, params.get(key) ?? ''])) as Record<(typeof FILTER_KEYS)[number], string>;
   const page = Math.max(1, Number(params.get('page')) || 1);
   const [search, setSearch] = useState(filters.q);
@@ -24,6 +40,15 @@ export default function ApplicantsPage() {
   const list = useAsync((signal) => adminApi.applicants({ ...filters, page, pageSize: PAGE_SIZE }, signal), [params.toString()]);
   const cohorts = useAsync((signal) => adminApi.cohorts(signal), []);
   const reviewers = useAsync((signal) => (canAssign ? adminApi.reviewers(signal) : Promise.resolve({ items: [] })), [canAssign]);
+  // Names for filters that arrive by link (Reports, the directory): a unit or one parish.
+  const unitName = useAsync(
+    (signal) => (filters.unit && canDirectory ? adminApi.unitDetail(filters.unit, signal).then((detail) => detail.unit.name) : Promise.resolve(null)),
+    [filters.unit, canDirectory],
+  );
+  const parishName = useAsync(
+    (signal) => (isId(filters.parish) && canDirectory ? adminApi.parishEntry(filters.parish, signal).then((entry) => entry.parish.name) : Promise.resolve(null)),
+    [filters.parish, canDirectory],
+  );
 
   const update = (changes: Partial<Record<string, string>>) => {
     const next = new URLSearchParams(params);
@@ -38,8 +63,9 @@ export default function ApplicantsPage() {
     event.preventDefault();
     update({ q: search.trim() });
   };
-  const activeFilters = FILTER_KEYS.filter((key) => key !== 'sort' && filters[key]).length;
-  const foldedFilters = FILTER_KEYS.filter((key) => key !== 'sort' && key !== 'q' && filters[key]).length;
+  const activeFilters = FILTER_KEYS.filter((key) => key !== 'sort' && key !== 'direct' && filters[key]).length;
+  const foldedFilters = FILTER_KEYS.filter((key) => key !== 'sort' && key !== 'q' && key !== 'direct' && filters[key]).length;
+  const exportFilters = Object.fromEntries(FILTER_KEYS.filter((key) => key !== 'sort').map((key) => [key, filters[key] || undefined]));
 
   return (
     <>
@@ -51,7 +77,7 @@ export default function ApplicantsPage() {
         actions={
           canExport ? (
             <a
-              href={adminApi.exportUrl({ ...filters, sort: undefined })}
+              href={adminApi.exportUrl(exportFilters)}
               className="inline-flex min-h-[44px] items-center rounded-full border border-line-strong bg-white px-5 font-sans text-[14px] font-bold text-ink hover:border-brand hover:text-brand"
             >
               Download CSV{activeFilters ? ' (filtered)' : ''}
@@ -72,6 +98,20 @@ export default function ApplicantsPage() {
           />
           <Button type="submit">Search</Button>
         </form>
+        {(filters.unit || isId(filters.parish) || filters.without) && (
+          <div className="flex flex-wrap gap-2">
+            {filters.unit && (
+              <FilterChip
+                label={`${filters.direct === '1' ? 'Directly under' : 'Within'} ${unitName.data ?? 'a unit of the directory'}`}
+                onRemove={() => update({ unit: '', direct: '' })}
+              />
+            )}
+            {isId(filters.parish) && <FilterChip label={`Parish: ${parishName.data ?? 'one parish'}`} onRemove={() => update({ parish: '' })} />}
+            {(filters.without === 'region' || filters.without === 'province') && (
+              <FilterChip label={`Parishes with no ${filters.without}`} onRemove={() => update({ without: '' })} />
+            )}
+          </div>
+        )}
         <button
           type="button"
           aria-expanded={filtersOpen}
@@ -124,6 +164,26 @@ export default function ApplicantsPage() {
             ]}
           />
           <Select
+            label="Parish answer"
+            value={filters.parishStatus}
+            onChange={(event) => update({ parishStatus: event.currentTarget.value })}
+            options={[{ value: '', label: 'Any' }, ...Object.entries(PARISH_ANSWER_LABELS).map(([value, label]) => ({ value, label }))]}
+          />
+          {!isId(filters.parish) && (
+            <Select
+              label="Directory parish"
+              value={filters.parish}
+              onChange={(event) => update({ parish: event.currentTarget.value })}
+              options={[
+                { value: '', label: 'Any' },
+                { value: 'any', label: 'Linked to a parish' },
+                { value: 'none', label: 'No parish linked' },
+              ]}
+            />
+          )}
+          <Input label="Submitted from (WAT)" type="date" value={filters.from} onChange={(event) => update({ from: event.currentTarget.value })} />
+          <Input label="Submitted to (WAT)" type="date" value={filters.to} onChange={(event) => update({ to: event.currentTarget.value })} />
+          <Select
             label="Sort"
             value={filters.sort || 'newest'}
             onChange={(event) => update({ sort: event.currentTarget.value === 'newest' ? '' : event.currentTarget.value })}
@@ -134,6 +194,14 @@ export default function ApplicantsPage() {
               { value: 'status', label: 'Review status' },
             ]}
           />
+          {canDirectory && !filters.unit && (
+            <details className="rounded-[10px] border border-line px-3 py-2 sm:col-span-2 lg:col-span-4">
+              <summary className="cursor-pointer font-sans text-[14px] font-bold text-brand">Filter by province, region or continent</summary>
+              <div className="pt-3">
+                <UnitFinder label="Province, region or continent" action="Filter" onChoose={(unit) => update({ unit: unit.id, direct: '' })} />
+              </div>
+            </details>
+          )}
         </div>
         {activeFilters > 0 && (
           <div>
@@ -157,6 +225,7 @@ export default function ApplicantsPage() {
                 <tr>
                   <th scope="col" className={th}>Applicant</th>
                   <th scope="col" className={th}>Location</th>
+                  <th scope="col" className={th}>Parish</th>
                   <th scope="col" className={th}>Cohort</th>
                   <th scope="col" className={th}>Submitted (WAT)</th>
                   <th scope="col" className={th}>Review status</th>
@@ -180,6 +249,23 @@ export default function ApplicantsPage() {
                       </div>
                     </td>
                     <td className={td}>{row.location}</td>
+                    <td className={td}>
+                      {row.parish.linked ? (
+                        <>
+                          {row.parish.linked.name}
+                          {row.parish.linked.place && <div className="text-[13px] text-muted">{row.parish.linked.place}</div>}
+                        </>
+                      ) : row.parish.answer ? (
+                        <>
+                          {row.parish.answer}
+                          <div className="mt-1">
+                            <Badge tone="warning">{row.parish.status === 'reported' ? 'Not listed' : 'Typed'}</Badge>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className={td}>{row.cohortName}</td>
                     <td className={`${td} whitespace-nowrap`}>{when(row.submittedAt)}</td>
                     <td className={td}>
@@ -193,7 +279,7 @@ export default function ApplicantsPage() {
                 ))}
                 {list.data.items.length === 0 && (
                   <tr>
-                    <td className={td} colSpan={7}>
+                    <td className={td} colSpan={8}>
                       No applications match.
                     </td>
                   </tr>

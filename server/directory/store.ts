@@ -1,7 +1,8 @@
 /**
  * Reads the parish directory for the planner, and applies or reverts a plan (docs/05 §2,
- * "Parish directory"). The only code that writes the directory tables. Every apply and revert
- * is one transaction that ends with a consistency check: if the check fails, nothing changes.
+ * "Parish directory"). With ./edits.ts (staff corrections), the only code that writes the
+ * directory tables. Every change is one transaction that ends with a consistency check: if the
+ * check fails, nothing changes.
  */
 import { randomUUID } from 'node:crypto';
 import type { ChurchLevel } from '../../src/shared/directory';
@@ -32,11 +33,12 @@ export async function loadSnapshot(db: Queryable): Promise<Snapshot> {
   const [units, parishes, aliases, lineage] = [
     await db.query<UnitRecord>(
       `select id, level::text as level, official_name, display_name, name_key, parent_id, parent_level::text as parent_level,
-              state, status::text as status, merged_into_id, origin::text as origin
+              state, status::text as status, merged_into_id, origin::text as origin, to_jsonb(staff_fields) as staff_fields
          from church_units`,
     ),
     await db.query<ParishRecord>(
-      `select id, unit_id, official_name, display_name, name_key, listed_rows, status::text as status, merged_into_id, origin::text as origin
+      `select id, unit_id, official_name, display_name, name_key, listed_rows, status::text as status, merged_into_id, origin::text as origin,
+              to_jsonb(staff_fields) as staff_fields, source_unit_id
          from parishes`,
     ),
     await db.query<{ parish_id: string; alias: string }>('select parish_id, alias from parish_aliases'),
@@ -45,12 +47,16 @@ export async function loadSnapshot(db: Queryable): Promise<Snapshot> {
   return { units: units.rows, parishes: parishes.rows, aliases: aliases.rows, lineage: lineage.rows };
 }
 
+// Some parishes only (a staff edit): their IDs as one JSON array in $1.
+const IN_SCOPE = `in (select value::uuid from jsonb_array_elements_text($1::jsonb))`;
+
 // Each parish's path up the hierarchy, flattened to one column per level, and the text parish
 // search matches: its name key, other spellings, and its province and region keys.
-const DERIVED = `
+const derived = (scoped: boolean) => `
   with recursive chain as (
     select p.id as parish_id, u.id as unit_id, u.level, u.parent_id, 1 as depth
       from parishes p join church_units u on u.id = p.unit_id
+     ${scoped ? `where p.id ${IN_SCOPE}` : ''}
     union all
     select c.parish_id, u.id, u.level, u.parent_id, c.depth + 1
       from chain c join church_units u on u.id = c.parent_id
@@ -76,10 +82,11 @@ const DERIVED = `
     left join church_units province on province.id = f.province_id
     left join church_units region on region.id = f.region_id`;
 
-/** Brings every parish's cached chain and search text up to date. Returns how many changed. */
-export async function rebuildCaches(db: Queryable): Promise<number> {
+/** Brings the cached chain and search text up to date: every parish's, or just these. Returns how many changed. */
+export async function rebuildCaches(db: Queryable, parishIds?: string[]): Promise<number> {
+  if (parishIds && !parishIds.length) return 0;
   const { rows } = await db.query<{ changed: number }>(
-    `with derived as (${DERIVED}),
+    `with derived as (${derived(Boolean(parishIds))}),
           updated as (
             update parishes p
                set continent_id = d.continent_id, region_id = d.region_id, province_id = d.province_id,
@@ -90,34 +97,38 @@ export async function rebuildCaches(db: Queryable): Promise<number> {
                    is distinct from (d.continent_id, d.region_id, d.province_id, d.zone_id, d.area_id, d.search_text)
             returning 1)
      select count(*)::int as changed from updated`,
+    parishIds ? [JSON.stringify(parishIds)] : [],
   );
   return rows[0]!.changed;
 }
 
 export type Consistency = { chainMismatches: number; searchMismatches: number; activeUnderInactive: number; unitsUnderInactive: number };
 
-/** Every count must be zero. */
-export async function checkConsistency(db: Queryable): Promise<Consistency> {
+/** Every count must be zero. With `parishIds`, the parish checks cover just those parishes; units are always all checked. */
+export async function checkConsistency(db: Queryable, parishIds?: string[]): Promise<Consistency> {
+  const scoped = Boolean(parishIds);
+  const inScope = scoped ? `p.id ${IN_SCOPE}` : 'true';
   const { rows } = await db.query<Consistency>(
-    `with derived as (${DERIVED})
+    `with derived as (${derived(scoped)})
      select
        (select count(*)::int from parishes p left join derived d on d.parish_id = p.id
-         where (p.continent_id, p.region_id, p.province_id, p.zone_id, p.area_id)
+         where ${inScope} and (p.continent_id, p.region_id, p.province_id, p.zone_id, p.area_id)
                is distinct from (d.continent_id, d.region_id, d.province_id, d.zone_id, d.area_id)) as "chainMismatches",
        (select count(*)::int from parishes p left join derived d on d.parish_id = p.id
-         where p.search_text is distinct from d.search_text) as "searchMismatches",
+         where ${inScope} and p.search_text is distinct from d.search_text) as "searchMismatches",
        (select count(*)::int from parishes p
-         where p.status = 'active'
+         where ${inScope} and p.status = 'active'
            and exists (select 1 from church_units u
                         where u.id in (p.unit_id, p.continent_id, p.region_id, p.province_id, p.zone_id, p.area_id)
                           and u.status <> 'active')) as "activeUnderInactive",
        (select count(*)::int from church_units c join church_units u on u.id = c.parent_id
          where c.status = 'active' and u.status <> 'active') as "unitsUnderInactive"`,
+    scoped ? [JSON.stringify(parishIds)] : [],
   );
   return rows[0]!;
 }
 
-const isConsistent = (check: Consistency) => Object.values(check).every((count) => count === 0);
+export const isConsistent = (check: Consistency) => Object.values(check).every((count) => count === 0);
 
 const UNIT_COLUMNS = `official_name text, display_name text, parent_id uuid, parent_level church_level, state text, status directory_status`;
 const PARISH_COLUMNS = `unit_id uuid, official_name text, display_name text, listed_rows int, status directory_status`;
@@ -217,7 +228,7 @@ const auditSummary = (counts: PlanCounts) => ({
   parishes: counts.parishes,
 });
 
-async function inTransaction<T>(db: Db, run: (connection: Queryable) => Promise<T>): Promise<T> {
+export async function inTransaction<T>(db: Db, run: (connection: Queryable) => Promise<T>): Promise<T> {
   return db.withConnection(async (connection) => {
     await connection.exec('begin');
     try {
@@ -288,6 +299,9 @@ export async function revertImport(db: Db, importId: string, actor: AuditActor =
       [importId, target.started_at],
     );
     if (later.rows.length) throw new DirectoryError('A later import has been applied since; revert that one first.');
+    // Restoring the import's "before" values would silently undo staff corrections made since.
+    const edited = await connection.query(`select 1 from directory_changes where via = 'staff' and created_at >= $1 limit 1`, [target.started_at]);
+    if (edited.rows.length) throw new DirectoryError('Staff have changed the directory since this import, so it can’t be reverted automatically.');
     const { rows: used } = await connection.query<{ n: number }>(
       `with added as (select entity_id from directory_changes where import_id = $1 and entity = 'parish' and change = 'create')
        select (select count(*) from applications where parish_id in (select entity_id from added))

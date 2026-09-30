@@ -4,7 +4,7 @@ import { guideFor, currentPlatform } from '../../lib/install';
 import { unblockInstructions } from '../../lib/push';
 import { NOTIFICATION_CONSENT_STATEMENT, NOTIFICATION_TOPICS, TOPIC_DETAILS, type NotificationTopic } from '../../shared/platform';
 import { GuideSteps, InAppBrowserNotice } from '../InstallGuide';
-import { Button, Checkbox, Loading, Notice } from '../ui';
+import { Button, Checkbox, Loading, Notice } from '../ui/basic';
 import { usePushDevice } from './usePushDevice';
 
 const UNSUPPORTED: Record<'in-app-browser' | 'old-apple-os' | 'not-secure' | 'no-push', string> = {

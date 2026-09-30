@@ -101,4 +101,10 @@ export type ApplicationExportRow = {
   consent_version: string;
   consent_at: Date;
   submission_meta: Record<string, string>;
+  /** How the parish question was answered, and the linked parish in today's directory. */
+  parish_status?: string;
+  directory_parish?: string | null;
+  province?: string | null;
+  region?: string | null;
+  continent?: string | null;
 };

@@ -2,9 +2,12 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader, Panel, Select, TextArea, errorMessage, when } from '../../components/ui';
 import { ApiError } from '../../lib/api';
+import { chainRows } from '../../lib/parish';
 import { useAsync } from '../../lib/useAsync';
+import { CHURCH_LEVELS, PARISH_ANSWER_LABELS, type ParishChain } from '../../shared/directory';
 import { APPLICATION_UPDATE_NOTIFICATION, PUBLISHED_STATUS_LABELS, REVIEW_STATUS_LABELS } from '../../shared/platform';
-import { adminApi, type ApplicantDetail } from '../api';
+import { adminApi, type ApplicantDetail, type ParishReport } from '../api';
+import { DirectoryStatusBadge, ParishFinder } from '../directory-parts';
 import { ConfirmByTyping, PublishedBadge, ReviewBadge, useAction } from '../parts';
 import { useCan } from '../session';
 
@@ -18,6 +21,104 @@ function Details({ rows }: { rows: [string, ReactNode][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+const REPORT_OUTCOMES: Record<ParishReport['status'], string> = {
+  pending: 'waiting in Parish review',
+  linked: 'linked to a parish',
+  added: 'parish added to the directory',
+  fixed: 'directory corrected',
+  rejected: 'closed without a change',
+};
+
+const sameChain = (a: ParishChain, b: ParishChain) => CHURCH_LEVELS.every((level) => (a[level]?.id ?? null) === (b[level]?.id ?? null));
+
+/** The parish answer: what the applicant gave, the parish it links to now, and any reports. */
+function ParishPanel({ app, canEdit, onChanged }: { app: ApplicantDetail; canEdit: boolean; onChanged: () => void }) {
+  const { parish } = app;
+  const { busy, run, notice } = useAction();
+  const change = (parishId: string | null, success: string) => run('parish', () => adminApi.changeApplicantParish(app.id, parishId), success).then((ok) => ok && onChanged());
+  const current = parish.current;
+  const confirmedSame = Boolean(current && parish.submitted && parish.submitted.parish.id === current.id && sameChain(parish.submitted.chain, current.chain));
+  return (
+    <Panel title="RCCG parish" description={PARISH_ANSWER_LABELS[parish.status]}>
+      {notice}
+      {parish.status !== 'listed' && parish.answer && (
+        <p className="font-sans text-[15px] text-ink">
+          {parish.status === 'reported' ? 'They couldn’t find their parish and typed' : 'They typed'}: <strong>{parish.answer}</strong>
+        </p>
+      )}
+      {current ? (
+        <div className="flex flex-col gap-2">
+          <p className="font-sans text-[13px] font-bold uppercase tracking-[0.06em] text-muted">In the directory now</p>
+          <Details
+            rows={[
+              [
+                'Parish',
+                <>
+                  {current.name} <DirectoryStatusBadge status={current.status} />
+                  {current.mergedInto && <span className="text-muted"> (merged into {current.mergedInto.name})</span>}
+                </>,
+              ],
+              ...chainRows(current.chain),
+            ]}
+          />
+          {parish.linkedBy && (
+            <p className="font-sans text-[13px] text-muted">
+              Linked by {parish.linkedBy.name}, {when(parish.linkedBy.at)}.
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="font-sans text-[14px] text-muted">No directory parish is linked.</p>
+      )}
+      {parish.submitted &&
+        (confirmedSame ? (
+          <p className="font-sans text-[13px] text-muted">This is what the applicant confirmed.</p>
+        ) : (
+          <div className="flex flex-col gap-2 rounded-[10px] bg-cream px-3 py-2">
+            <p className="font-sans text-[13px] font-bold uppercase tracking-[0.06em] text-muted">As the applicant confirmed it</p>
+            <Details rows={[['Parish', parish.submitted.parish.name], ...chainRows(parish.submitted.chain)]} />
+          </div>
+        ))}
+      {parish.reports.length > 0 && (
+        <ul className="flex flex-col gap-1 font-sans text-[14px] text-ink">
+          {parish.reports.map((report) => (
+            <li key={report.id}>
+              {report.kind === 'not_listed' ? `Reported as not listed (“${report.reportedName}”)` : 'Flagged: “details look wrong”'} · {REPORT_OUTCOMES[report.status]}
+              {report.resolvedParish ? ` (${report.resolvedParish})` : ''}
+              {report.resolvedAt ? `, by ${report.resolvedBy}, ${when(report.resolvedAt)}` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <div className="flex flex-col gap-2">
+          {/* Keyed by the parish, so it closes and clears once the change is made. */}
+          <details key={current?.id ?? 'none'} className="rounded-[10px] border border-line px-3 py-2">
+            <summary className="cursor-pointer font-sans text-[14px] font-bold text-brand">{current ? 'Change the parish' : 'Link a parish'}</summary>
+            <div className="pt-3">
+              <ParishFinder
+                label="Parish"
+                hint="What the applicant confirmed or typed stays on the application."
+                initialQuery={current?.name ?? parish.answer ?? ''}
+                action="Link"
+                exclude={current ? [current.id] : []}
+                onChoose={(chosen) => change(chosen.id, `Linked to ${chosen.name}.`)}
+              />
+            </div>
+          </details>
+          {parish.linkedBy && parish.status !== 'listed' && (
+            <div>
+              <Button tone="ghost" busy={busy === 'parish'} onClick={() => void change(null, 'Link removed: the answer is back in Parish review.')}>
+                Remove the link
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -236,7 +337,8 @@ function CorrectionPanel({ app, onChanged }: { app: ApplicantDetail; onChanged: 
         {field('phone', 'Phone number', 'tel')}
         {field('stateOfResidence', 'State of residence')}
         {field('city', 'City or town')}
-        {field('parishName', 'RCCG parish (optional)')}
+        {/* A parish from the directory, or reported as not listed, changes in the parish panel. */}
+        {(app.parish.status === 'legacy_text' || app.parish.status === 'not_provided') && field('parishName', 'RCCG parish as typed (optional)')}
         <div className="sm:col-span-2">
           <Button type="submit" busy={busy}>
             Save corrections
@@ -297,10 +399,10 @@ export default function ApplicantDetailPage() {
                 ['Age range', app.personal.ageRange],
                 ['State of residence', app.personal.stateOfResidence],
                 ['City or town', app.personal.city],
-                ['RCCG parish', app.personal.parishName],
               ]}
             />
           </Panel>
+          <ParishPanel app={app} canEdit={canEdit} onChanged={reload} />
           <Panel title="Education and purpose">
             <Details
               rows={[

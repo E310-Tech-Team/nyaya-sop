@@ -14,6 +14,7 @@ import {
   referenceFromId,
   type PersonalAnswers,
 } from '../../src/shared/application';
+import { CHURCH_LEVELS } from '../../src/shared/directory';
 import { can } from '../../src/shared/permissions';
 import {
   PUBLISHED_STATUS_LABELS,
@@ -26,12 +27,16 @@ import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
 import { staffActor } from '../auth/staff-routes';
 import { applicationsToCsv } from '../csv';
+import { inTransaction } from '../directory/store';
 import { iso, isUuid, paging, sendError, str } from '../http';
 import { notifyApplicationUpdate } from '../notifications/dispatch';
+import { parishDetails } from '../parishes';
 import type { ApplicationExportRow } from '../repository';
 import type { Services } from '../services';
+import { applicationConditions, type ApplicationFilters } from './application-filters';
+import { linkApplicationParish, ParishLinkError } from './parish-links';
 
-type Filters = { q?: string; cohort?: string; status?: string; published?: string; reviewer?: string; claimed?: string; sort?: string };
+type Filters = ApplicationFilters & { q?: string; reviewer?: string; claimed?: string; sort?: string };
 
 const SORTS: Record<string, string> = {
   newest: 'a.created_at desc, a.id',
@@ -58,19 +63,25 @@ function whereFor(request: FastifyRequest, filters: Filters) {
     if (reference) add((p) => `replace(a.id::text, '-', '') ilike ${p}`, `${reference[1]!.toLowerCase()}%`);
     else {
       const like = `%${escapeLike(q)}%`;
-      add((p) => `(a.full_name ilike ${p} or a.email ilike ${p} or a.city ilike ${p} or a.parish_name ilike ${p})`, like);
+      add((p) => `(a.full_name ilike ${p} or a.email ilike ${p} or a.city ilike ${p} or a.parish_name ilike ${p} or p.display_name ilike ${p})`, like);
     }
   }
-  if (filters.cohort && isUuid(filters.cohort)) add((p) => `a.cohort_id = ${p}`, filters.cohort);
-  if (isApplicationStatus(filters.status)) add((p) => `a.status = ${p}::application_status`, filters.status);
-  if (isApplicationStatus(filters.published)) add((p) => `a.published_status = ${p}::application_status`, filters.published);
   if (filters.reviewer === 'me') add((p) => `a.assigned_reviewer_id = ${p}`, staff.id);
   else if (filters.reviewer === 'unassigned') clauses.push('a.assigned_reviewer_id is null');
   else if (isUuid(filters.reviewer)) add((p) => `a.assigned_reviewer_id = ${p}`, filters.reviewer);
   if (filters.claimed === 'yes') clauses.push('a.account_id is not null');
   if (filters.claimed === 'no') clauses.push('a.account_id is null');
+  // Cohort, statuses, dates and parish: the same conditions Reports counts with.
+  const shared = applicationConditions(filters, params.length);
+  clauses.push(...shared.clauses);
+  params.push(...shared.params);
   return { where: clauses.length ? `where ${clauses.join(' and ')}` : '', params };
 }
+
+// The application's current parish, and the unit that places it: its province, or the region or
+// continent it sits directly under. The list and the export join it as `p` (the filters use it).
+const PARISH_JOIN = `left join parishes p on p.id = a.parish_id
+         left join church_units place on place.id = coalesce(p.province_id, p.region_id, p.continent_id)`;
 
 export async function applicantRoutes(app: FastifyInstance, services: Services) {
   const { db } = services;
@@ -108,16 +119,23 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
       reviewer_name: string | null;
       claimed: boolean;
       notes: number;
+      parish_status: string;
+      parish_name: string | null;
+      parish_id: string | null;
+      parish_display: string | null;
+      parish_place: string | null;
       total: number;
     }>(
       `select a.id, a.full_name, a.email, a.city, a.state_of_residence, c.name as cohort_name, a.created_at,
               a.status::text as status, a.published_status::text as published_status,
               a.assigned_reviewer_id as reviewer_id, r.display_name as reviewer_name, a.account_id is not null as claimed,
               (select count(*)::int from application_notes n where n.application_id = a.id) as notes,
+              a.parish_status::text as parish_status, a.parish_name, a.parish_id, p.display_name as parish_display, place.display_name as parish_place,
               count(*) over ()::int as total
          from applications a
          join cohorts c on c.id = a.cohort_id
          left join staff_users r on r.id = a.assigned_reviewer_id
+         ${PARISH_JOIN}
          ${where}
         order by ${order}
         limit ${pageSize} offset ${offset}`,
@@ -140,6 +158,11 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
         reviewer: row.reviewer_id ? { id: row.reviewer_id, name: row.reviewer_name } : null,
         claimed: row.claimed,
         notes: row.notes,
+        parish: {
+          status: row.parish_status,
+          answer: row.parish_name,
+          linked: row.parish_id ? { id: row.parish_id, name: row.parish_display!, place: row.parish_place } : null,
+        },
       })),
     };
   });
@@ -150,8 +173,14 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
       `select a.id, a.created_at, c.slug as cohort_slug, a.status::text as status, a.published_status::text as published_status,
               a.full_name, a.email, a.phone_e164, a.gender::text as gender, a.age_range::text as age_range, a.state_of_residence,
               a.city, a.parish_name, a.education_level::text as education_level, a.current_status::text as current_status,
-              a.purpose_clarity, a.consent_version, a.consent_at, a.submission_meta
+              a.purpose_clarity, a.consent_version, a.consent_at, a.submission_meta,
+              a.parish_status::text as parish_status, p.display_name as directory_parish,
+              prov.display_name as province, reg.display_name as region, cont.display_name as continent
          from applications a join cohorts c on c.id = a.cohort_id
+         ${PARISH_JOIN}
+         left join church_units prov on prov.id = p.province_id
+         left join church_units reg on reg.id = p.region_id
+         left join church_units cont on cont.id = p.continent_id
          ${where}
         order by a.created_at`,
       params,
@@ -173,15 +202,36 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     const { rows } = await db.query<Record<string, unknown> & { id: string; created_at: Date }>(
       `select a.*, a.status::text as status, a.published_status::text as published_status, a.gender::text as gender,
               a.age_range::text as age_range, a.education_level::text as education_level, a.current_status::text as current_status,
-              c.name as cohort_name, c.slug as cohort_slug, r.display_name as reviewer_name,
-              acc.email as account_email, acc.status::text as account_status
+              a.parish_status::text as parish_status, c.name as cohort_name, c.slug as cohort_slug, r.display_name as reviewer_name,
+              acc.email as account_email, acc.status::text as account_status, linker.display_name as parish_linked_by_name
          from applications a join cohorts c on c.id = a.cohort_id
          left join staff_users r on r.id = a.assigned_reviewer_id
          left join applicant_accounts acc on acc.id = a.account_id
+         left join staff_users linker on linker.id = a.parish_linked_by
         where a.id = $1`,
       [allowed.id],
     );
     const a = rows[0]!;
+    const reports = await db.query<{
+      id: string;
+      kind: string;
+      status: string;
+      reported_name: string | null;
+      created_at: Date;
+      resolved_at: Date | null;
+      resolved_by: string | null;
+      resolved_parish: string | null;
+    }>(
+      `select r.id, r.kind::text as kind, r.status::text as status, r.reported_name, r.created_at, r.resolved_at,
+              s.display_name as resolved_by, rp.display_name as resolved_parish
+         from parish_reports r
+         left join staff_users s on s.id = r.resolved_by
+         left join parishes rp on rp.id = r.resolved_parish_id
+        where r.application_id = $1 order by r.created_at`,
+      [allowed.id],
+    );
+    const current = a.parish_id ? await parishDetails(db, a.parish_id as string) : null;
+    const snapshot = a.parish_snapshot as ({ parish: { id: string; name: string } } & Record<string, unknown>) | null;
     const notes = await db.query<{ id: string; body: string; created_at: Date; author: string | null }>(
       `select n.id, n.body, n.created_at, s.display_name as author from application_notes n
          left join staff_users s on s.id = n.author_id where n.application_id = $1 order by n.created_at`,
@@ -226,7 +276,45 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
       account: a.account_id ? { email: a.account_email, status: a.account_status, claimedAt: iso(a.claimed_at as Date) } : null,
       notes: notes.rows.map((note) => ({ id: note.id, body: note.body, createdAt: iso(note.created_at), author: note.author ?? 'Former staff member' })),
       history: history.rows.map((event) => ({ ...event, created_at: iso(event.created_at) })),
+      parish: {
+        status: a.parish_status,
+        /** What the applicant typed, or the directory's name for the parish they chose (as it was then). */
+        answer: a.parish_name,
+        /** The application's parish in today's directory (chosen by the applicant or linked by staff). */
+        current,
+        /** The parish, province, region and continent as the applicant confirmed them. */
+        submitted: snapshot
+          ? { parish: snapshot.parish, chain: Object.fromEntries(CHURCH_LEVELS.map((level) => [level, snapshot[level] ?? null])) }
+          : null,
+        linkedBy: a.parish_linked_at ? { name: (a.parish_linked_by_name as string | null) ?? 'Former staff member', at: iso(a.parish_linked_at as Date) } : null,
+        textReviewedAt: iso(a.parish_text_reviewed_at as Date | null),
+        reports: reports.rows.map((report) => ({
+          id: report.id,
+          kind: report.kind,
+          status: report.status,
+          reportedName: report.reported_name,
+          createdAt: iso(report.created_at),
+          resolvedAt: iso(report.resolved_at),
+          resolvedBy: report.resolved_at ? (report.resolved_by ?? 'Former staff member') : null,
+          resolvedParish: report.resolved_parish,
+        })),
+      },
     };
+  });
+
+  /** Sets the application's parish from the directory (or, with null, removes a link staff made). */
+  app.post<{ Params: { id: string } }>('/:id/parish', { preHandler: staffGuard(services, { permission: 'applications.edit' }) }, async (request, reply) => {
+    const allowed = await visible(request, request.params.id);
+    if (!allowed) return sendError(reply, 404, 'NOT_FOUND', 'Application not found.');
+    const parishId = (request.body as { parishId?: unknown } | null)?.parishId;
+    if (parishId !== null && !isUuid(parishId)) return sendError(reply, 400, 'VALIDATION_FAILED', 'Choose a parish from the directory.');
+    try {
+      const result = await inTransaction(db, (connection) => linkApplicationParish(connection, allowed.id, parishId, request.staff!.id));
+      return { ok: true, ...result };
+    } catch (error) {
+      if (error instanceof ParishLinkError) return sendError(reply, 400, 'VALIDATION_FAILED', error.message);
+      throw error;
+    }
   });
 
   app.post<{ Params: { id: string } }>('/:id/notes', { preHandler: staffGuard(services, { permission: 'applications.note' }) }, async (request, reply) => {
@@ -289,10 +377,13 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
       return sendError(reply, 409, 'CONFLICT', 'The review status changed since you opened this. Reload and check before publishing.');
     }
     const message = typeof body?.message === 'string' && body.message.trim() ? body.message.trim().slice(0, 1000) : null;
-    await db.query(
-      `update applications set published_status = status, published_message = $2, published_at = now(), published_by = $3 where id = $1`,
-      [allowed.id, message, request.staff!.id],
+    // Only the status the publisher saw: if someone changed it since, nothing is published.
+    const { rows: published } = await db.query(
+      `update applications set published_status = status, published_message = $2, published_at = now(), published_by = $3
+        where id = $1 and status = $4::application_status returning id`,
+      [allowed.id, message, request.staff!.id, allowed.status],
     );
+    if (!published.length) return sendError(reply, 409, 'CONFLICT', 'The review status changed since you opened this. Reload and check before publishing.');
     await db.query(
       `insert into application_status_events (application_id, kind, from_status, to_status, actor_id)
        select $1, 'publication', null, status, $2 from applications where id = $1`,
