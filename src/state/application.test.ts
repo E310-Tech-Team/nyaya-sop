@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ListedParish } from '../lib/parish';
 import { validPayload } from '../shared/test-fixtures';
 import { MESSAGES } from '../shared/validation';
-import { emptyDraft, firstIncompletePath, personalErrors, reducer, toPayload, type Draft, type State } from './application';
+import { emptyDraft, firstIncompletePath, isReachable, personalErrors, reducer, restoreDraft, toPayload, type Draft, type State } from './application';
 
 function completeDraft(overrides: Partial<Draft> = {}): Draft {
   const { fullName, email, phone, gender, ageRange, stateOfResidence, city, parishName, educationLevel, currentStatus, purposeClarity } = validPayload();
@@ -125,5 +125,41 @@ describe('changing the parish', () => {
     const off = reducer(chosen, { type: 'parishMode', value: 'text' }).draft;
     expect(off.personal.parishName).toBe('Jesus House');
     expect(personalErrors(off)).toEqual({});
+  });
+});
+
+describe('a draft saved with a gender the form no longer offers (docs/06 D-54)', () => {
+  // As sessionStorage hands it back: JSON, possibly from before 2026-09-30.
+  const saved = (gender: unknown, overrides: Partial<Draft> = {}) => {
+    const draft = completeDraft(overrides);
+    return JSON.parse(JSON.stringify({ ...draft, personal: { ...draft.personal, gender } })) as Partial<Draft>;
+  };
+  const answered = { parishMode: 'directory', parish: jesusHouse(true) } satisfies Partial<Draft>;
+
+  it('loads with "Prefer not to say" cleared and every other answer kept', () => {
+    const expected = completeDraft(answered);
+    expect(restoreDraft(saved('prefer_not_to_say', answered))).toEqual({ ...expected, personal: { ...expected.personal, gender: '' } });
+  });
+
+  it('asks for the gender again on the Personal step, and the step guards send later steps there', () => {
+    const draft = restoreDraft(saved('prefer_not_to_say'));
+    expect(personalErrors(draft)).toEqual({ gender: MESSAGES.genderRequired });
+    expect(firstIncompletePath(draft)).toBe('/apply/personal');
+    expect(isReachable(draft, '/apply/personal')).toBe(true);
+    for (const path of ['/apply/education', '/apply/purpose', '/apply/review']) expect(isReachable(draft, path)).toBe(false);
+  });
+
+  it('clears any other value that isn’t an option, and keeps male or female', () => {
+    for (const gender of ['other', 'Female', '', 5, null, { value: 'male' }]) expect(restoreDraft(saved(gender)).personal.gender).toBe('');
+    expect(restoreDraft(saved(undefined)).personal.gender).toBe(''); // missing from an older draft
+    for (const gender of ['male', 'female'] as const) {
+      const draft = restoreDraft(saved(gender));
+      expect(draft.personal.gender).toBe(gender);
+      expect(firstIncompletePath(draft)).toBe('/apply/review');
+    }
+  });
+
+  it('starts from an empty draft when nothing was saved', () => {
+    expect(restoreDraft(null)).toEqual(emptyDraft());
   });
 });

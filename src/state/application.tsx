@@ -6,6 +6,7 @@ import { parishAnswer, recheck, type ParishDraft } from '../lib/parish';
 import { readSession, writeSession } from '../lib/storage';
 import {
   CONSENT_VERSION,
+  isGender,
   type ApplicationPayload,
   type EducationAnswers,
   type FieldErrors,
@@ -115,22 +116,32 @@ function savedParish(value: unknown): ParishDraft | null {
   return null;
 }
 
-function initialState(): State {
-  const saved = readSession<Partial<Draft>>(DRAFT_KEY);
+/**
+ * A draft read back from sessionStorage. Merged section by section so older or partial saved
+ * drafts can't break the shape. A gender the form no longer offers ("Prefer not to say", saved
+ * before 2026-09-30, or anything else) is cleared, keeping every other answer: the Personal step
+ * then asks again, and the step guards send later steps back to it.
+ */
+export function restoreDraft(saved: Partial<Draft> | null): Draft {
   const base = emptyDraft();
-  // Merge section by section so older/partial saved drafts can't break the shape.
-  const draft: Draft = saved
-    ? {
-        consent: saved.consent === true,
-        personal: { ...base.personal, ...saved.personal },
-        education: { ...base.education, ...saved.education },
-        purpose: { ...base.purpose, ...saved.purpose },
-        website: typeof saved.website === 'string' ? saved.website : '',
-        parishMode: saved.parishMode === 'directory' ? 'directory' : 'text',
-        parish: savedParish(saved.parish),
-      }
-    : base;
-  return { draft, submission: readSession<SubmitApplicationResponse>(SUBMISSION_KEY) };
+  if (!saved) return base;
+  const personal = { ...base.personal, ...saved.personal };
+  return {
+    consent: saved.consent === true,
+    personal: { ...personal, gender: isGender(personal.gender) ? personal.gender : '' },
+    education: { ...base.education, ...saved.education },
+    purpose: { ...base.purpose, ...saved.purpose },
+    website: typeof saved.website === 'string' ? saved.website : '',
+    parishMode: saved.parishMode === 'directory' ? 'directory' : 'text',
+    parish: savedParish(saved.parish),
+  };
+}
+
+function initialState(): State {
+  return {
+    draft: restoreDraft(readSession<Partial<Draft>>(DRAFT_KEY)),
+    submission: readSession<SubmitApplicationResponse>(SUBMISSION_KEY),
+  };
 }
 
 /** The steps in order, with the route each lives at. */

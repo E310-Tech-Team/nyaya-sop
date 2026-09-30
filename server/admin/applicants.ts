@@ -8,10 +8,11 @@ import {
   AGE_RANGES,
   CURRENT_STATUSES,
   EDUCATION_LEVELS,
-  GENDERS,
   PURPOSE_SCALE,
+  STORED_GENDERS,
   labelFor,
   referenceFromId,
+  type FieldErrors,
   type PersonalAnswers,
 } from '../../src/shared/application';
 import { CHURCH_LEVELS } from '../../src/shared/directory';
@@ -37,6 +38,10 @@ import { applicationConditions, FILTER_KEYS, filterNames, type ApplicationFilter
 import { linkApplicationParish, ParishLinkError } from './parish-links';
 
 type Filters = ApplicationFilters & { q?: string; reviewer?: string; claimed?: string; sort?: string };
+
+/** What staff may correct in an application (`POST /:id/correct`): contact details and the typed parish. */
+const CORRECTABLE_FIELDS = ['fullName', 'email', 'phone', 'stateOfResidence', 'city', 'parishName'] as const;
+type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
 
 const SORTS: Record<string, string> = {
   newest: 'a.created_at desc, a.id',
@@ -255,7 +260,8 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
         fullName: a.full_name,
         email: a.email,
         phone: a.phone_e164,
-        gender: labelFor(GENDERS, a.gender),
+        // An earlier application may hold an answer the form no longer offers: labelled, not hidden.
+        gender: labelFor(STORED_GENDERS, a.gender),
         ageRange: labelFor(AGE_RANGES, a.age_range),
         stateOfResidence: a.state_of_residence,
         city: a.city,
@@ -403,29 +409,36 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     return { ok: true, notified: Boolean(allowed.account_id) };
   });
 
-  /** Data correction of contact details, validated with the same rules as the form. */
+  /**
+   * Data correction of contact details (`CORRECTABLE_FIELDS`), validated with the same rules as the
+   * form. Gender and age range stay as the applicant answered: a `gender` in the body is ignored.
+   */
   app.post<{ Params: { id: string } }>('/:id/correct', { preHandler: staffGuard(services, { permission: 'applications.edit' }) }, async (request, reply) => {
     const allowed = await visible(request, request.params.id);
     if (!allowed) return sendError(reply, 404, 'NOT_FOUND', 'Application not found.');
-    const { rows } = await db.query<{ full_name: string; email: string; phone_e164: string; gender: string; age_range: string; state_of_residence: string; city: string; parish_name: string | null; parish_status: string }>(
-      `select full_name, email, phone_e164, gender::text as gender, age_range::text as age_range, state_of_residence, city, parish_name,
-              parish_status::text as parish_status
+    const { rows } = await db.query<{ full_name: string; email: string; phone_e164: string; state_of_residence: string; city: string; parish_name: string | null; parish_status: string }>(
+      `select full_name, email, phone_e164, state_of_residence, city, parish_name, parish_status::text as parish_status
          from applications where id = $1`,
       [allowed.id],
     );
     const current = rows[0]!;
-    const input = (request.body ?? {}) as Partial<Record<'fullName' | 'email' | 'phone' | 'stateOfResidence' | 'city' | 'parishName', unknown>>;
+    const input = (request.body ?? {}) as Partial<Record<CorrectableField, unknown>>;
     const merged: PersonalAnswers = {
       fullName: typeof input.fullName === 'string' ? input.fullName : current.full_name,
       email: typeof input.email === 'string' ? input.email : current.email,
       phone: typeof input.phone === 'string' ? input.phone : current.phone_e164,
-      gender: current.gender as PersonalAnswers['gender'],
-      ageRange: current.age_range as PersonalAnswers['ageRange'],
+      // Not corrected here, so not checked below.
+      gender: '',
+      ageRange: '',
       stateOfResidence: typeof input.stateOfResidence === 'string' ? input.stateOfResidence : current.state_of_residence,
       city: typeof input.city === 'string' ? input.city : current.city,
       parishName: typeof input.parishName === 'string' ? input.parishName : (current.parish_name ?? ''),
     };
-    const errors = validatePersonal(merged);
+    // Only the correctable fields are checked: an earlier application's stored gender may be one
+    // the form no longer offers ("Prefer not to say"), and that mustn't block fixing an email address.
+    const found = validatePersonal(merged);
+    const errors: FieldErrors = {};
+    for (const field of CORRECTABLE_FIELDS) if (found[field]) errors[field] = found[field];
     if (Object.keys(errors).length) return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', { fieldErrors: errors });
     const next = {
       full_name: cleanText(merged.fullName),

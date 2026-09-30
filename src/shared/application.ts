@@ -3,18 +3,29 @@
  * Keep this module free of DOM, React and Node imports.
  *
  * The `value`s below are stored in Postgres enums (server/migrations/0001_init.sql);
- * change both together.
+ * change both together. The `gender` enum is `STORED_GENDERS`: today's options plus an
+ * earlier one that stored applications keep (migration 0011).
  */
 
 export const CONSENT_VERSION = '2026-09-v1';
 export const CONSENT_STATEMENT =
   'I confirm that I am an RCCG member aged 18-30 and consent to being contacted about this programme.';
 
+/** The gender options applicants choose from: the form's select and the shared validation. */
 export const GENDERS = [
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
-  { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ] as const;
+
+/**
+ * Answers the form offered once and no longer does. "Prefer not to say" was an option until
+ * 2026-09-30 (docs/06 D-54): applications saved with it keep it, so staff screens and exports
+ * still label it, but nobody can choose it again (the validation, and migration 0011's trigger).
+ */
+export const EARLIER_GENDERS = [{ value: 'prefer_not_to_say', label: 'Prefer not to say (earlier form)' }] as const;
+
+/** Every value the `gender` enum holds, in its order: for labelling stored applications. */
+export const STORED_GENDERS = [...GENDERS, ...EARLIER_GENDERS] as const;
 
 export const AGE_RANGES = [
   { value: '18_20', label: '18-20' },
@@ -61,10 +72,16 @@ export const NIGERIAN_STATES = [
 export const OUTSIDE_NIGERIA = 'Outside Nigeria';
 export const STATE_OPTIONS: readonly string[] = [...NIGERIAN_STATES, OUTSIDE_NIGERIA];
 
+/** A gender an applicant can choose today. */
 export type Gender = (typeof GENDERS)[number]['value'];
+/** A gender as stored: one of today's options, or an earlier one (read-only). */
+export type StoredGender = (typeof STORED_GENDERS)[number]['value'];
 export type AgeRange = (typeof AGE_RANGES)[number]['value'];
 export type EducationLevel = (typeof EDUCATION_LEVELS)[number]['value'];
 export type CurrentStatus = (typeof CURRENT_STATUSES)[number]['value'];
+
+/** True for a gender applicants can choose today; false for an earlier answer, '' or anything else. */
+export const isGender = (value: unknown): value is Gender => GENDERS.some((option) => option.value === value);
 
 /** Section 1, as typed by the applicant (not yet normalised). */
 export type PersonalAnswers = {

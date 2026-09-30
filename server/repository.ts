@@ -1,4 +1,4 @@
-import type { NormalizedApplication } from '../src/shared/application';
+import type { NormalizedApplication, StoredGender } from '../src/shared/application';
 import type { Queryable } from './db';
 import type { ParishLink } from './parishes';
 
@@ -95,7 +95,8 @@ export type ApplicationExportRow = {
   full_name: string;
   email: string;
   phone_e164: string;
-  gender: string;
+  /** Can be an answer the form no longer offers ("prefer_not_to_say", before 2026-09-30). */
+  gender: StoredGender;
   age_range: string;
   state_of_residence: string;
   city: string;
