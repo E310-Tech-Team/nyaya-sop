@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONSENT_VERSION, referenceFromId } from './application';
+import { CONSENT_VERSION, GENDERS, STORED_GENDERS, labelFor, referenceFromId, type ApplicationPayload } from './application';
 import { validPayload } from './test-fixtures';
 import {
   MESSAGES,
@@ -82,6 +82,39 @@ describe('validatePersonal', () => {
 
   it('limits the parish name’s length (whether an answer is needed depends on the directory: see below)', () => {
     expect(validatePersonal(validPayload({ parishName: 'x'.repeat(121) })).parishName).toBe(MESSAGES.parishTooLong);
+  });
+});
+
+describe('gender: male or female (docs/06 D-54)', () => {
+  const withGender = (gender: unknown) => ({ ...validPayload(), gender }) as unknown as ApplicationPayload;
+
+  it('offers exactly Male and Female', () => {
+    expect(GENDERS).toEqual([
+      { value: 'male', label: 'Male' },
+      { value: 'female', label: 'Female' },
+    ]);
+  });
+
+  it('accepts male and female, in the form and on the server', () => {
+    for (const gender of ['male', 'female']) {
+      expect(validatePersonal(withGender(gender))).toEqual({});
+      const result = validateApplication(withGender(gender));
+      expect(result.ok && result.value.gender).toBe(gender);
+    }
+  });
+
+  it('refuses "Prefer not to say", an empty answer and anything else', () => {
+    const refused = ['prefer_not_to_say', 'Prefer not to say', '', ' ', 'Male', 'FEMALE', 'other', 'non_binary', 1, null, undefined, true, ['male'], { value: 'female' }];
+    for (const gender of refused) {
+      expect(validatePersonal(withGender(gender))).toEqual({ gender: MESSAGES.genderRequired });
+      expect(validateApplication(withGender(gender))).toEqual({ ok: false, fieldErrors: { gender: MESSAGES.genderRequired } });
+    }
+  });
+
+  it('still labels an earlier "Prefer not to say" answer for staff screens and exports', () => {
+    expect(labelFor(STORED_GENDERS, 'prefer_not_to_say')).toBe('Prefer not to say (earlier form)');
+    expect(labelFor(STORED_GENDERS, 'female')).toBe('Female');
+    expect(labelFor(GENDERS, 'prefer_not_to_say')).toBe('');
   });
 });
 

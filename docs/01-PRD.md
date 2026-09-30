@@ -109,7 +109,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | 01 | Full Name | text | 2–120 characters; any script (e.g. Yoruba diacritics) |
 | 02 | Email Address | email | Duplicate emails per cohort are rejected |
 | 03 | Phone Number | tel | Nigerian formats (`0801 234 5678`, `8012345678`, `+234…`) or international with country code; stored as E.164 |
-| 04 | Gender | select | Male · Female · Prefer not to say |
+| 04 | Gender | select | Male · Female (D-54). Until 2026-09-30 the form also offered "Prefer not to say": applications saved with it keep it, and staff see it as "Prefer not to say (earlier form)" |
 | 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 |
 | 06 | State of Residence | select | All 36 states + FCT (Abuja) + Outside Nigeria |
 | 07 | City/Town of Residence | text | 2–80 characters |

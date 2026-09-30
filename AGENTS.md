@@ -18,6 +18,7 @@ Expression-of-interest site: React SPA (Vite, installable PWA with a service wor
 ## Conventions
 
 - **Form options and validation live in `src/shared/`** and are imported by both the browser and the server. Enum values there must match the Postgres enums in `server/migrations/`. Change both together, via a **new** migration file (never edit an applied one).
+- A form option that is withdrawn stays in its enum for the rows that hold it (06 D-54: "Prefer not to say"): keep it in a separate list that labels stored rows (`GENDERS` is what the form offers; `STORED_GENDERS` adds `EARLIER_GENDERS`), refuse it in the shared validation, clear it from saved drafts (`restoreDraft`), and back that with a trigger that only checks new rows and changed values (migration 0011), not a CHECK constraint: even a `NOT VALID` one fails every later update of those rows.
 - Server code must not import React/DOM; `src/shared/` must not import Node or DOM APIs.
 - Styling: Tailwind v4 utilities; design tokens (`bg-brand`, `text-muted`, `font-display`, …) are defined in `src/index.css` `@theme`. The homepage hero and the reused editorial sections still use the Figma export's arbitrary values.
 - Marketing pages (`/`, `/about`, `/programme`, `/journey`, `/faq`): mobile/tablet layout below `xl` (1280px); from 1280px a 1440px frame scaled with CSS `zoom` (`.landing-desktop` for the fixed compositions, `.landing-scale` for fluid sections; `useLandingZoom` sets it). Form pages switch to the side-panel layout at `lg` (1024px).

@@ -2,8 +2,8 @@ import {
   AGE_RANGES,
   CURRENT_STATUSES,
   EDUCATION_LEVELS,
-  GENDERS,
   PURPOSE_SCALE,
+  STORED_GENDERS,
   formatPhone,
   labelFor,
   referenceFromId,
@@ -123,7 +123,7 @@ export function applicationsToCsv(rows: ApplicationExportRow[]): string {
       row.full_name,
       row.email,
       formatPhone(row.phone_e164),
-      labelFor(GENDERS, row.gender),
+      labelFor(STORED_GENDERS, row.gender), // an earlier application may say "Prefer not to say (earlier form)"
       labelFor(AGE_RANGES, row.age_range),
       row.state_of_residence,
       row.city,

@@ -6,9 +6,9 @@ import {
   AGE_RANGES,
   CURRENT_STATUSES,
   EDUCATION_LEVELS,
-  GENDERS,
   PURPOSE_SCALE,
   STATE_OPTIONS,
+  isGender,
   type AgeRange,
   type CurrentStatus,
   type EducationAnswers,
@@ -133,7 +133,8 @@ export function validatePersonal(answers: PersonalAnswers): FieldErrors {
   if (!answers.phone.trim()) errors.phone = MESSAGES.phoneRequired;
   else if (!normalizePhone(answers.phone)) errors.phone = MESSAGES.phoneInvalid;
 
-  if (!isOneOf(GENDERS, answers.gender)) errors.gender = MESSAGES.genderRequired;
+  // Male or female: "Prefer not to say", an option until 2026-09-30, is refused like any other value.
+  if (!isGender(answers.gender)) errors.gender = MESSAGES.genderRequired;
   if (!isOneOf(AGE_RANGES, answers.ageRange)) errors.ageRange = MESSAGES.ageRangeRequired;
   if (!STATE_OPTIONS.includes(answers.stateOfResidence)) errors.stateOfResidence = MESSAGES.stateRequired;
 
