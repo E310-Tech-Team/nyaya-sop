@@ -76,7 +76,7 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. In short, on an Ubuntu VPS (as
 
 It installs Docker, generates the secrets on the server, builds and starts Caddy (HTTPS), the app, the worker and Postgres, creates the first owner and schedules backups. Run it again after `git pull` to update.
 
-Production is released by GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): pull requests get `pnpm check` and a Docker image build; every push to `main` gets the same checks, then `deploy/ci-deploy.sh` releases it on the server over SSH and the live site is checked. It needs a one-time setup on the server and in GitHub first ([DEPLOYMENT, Automatic deployment](docs/DEPLOYMENT.md#automatic-deployment-github-actions)).
+Production is released by GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): pull requests get `pnpm check` and a Docker image build; every push to `main` gets the same checks, then (while the repository variable `AUTO_DEPLOY` is `on`) `deploy/ci-deploy.sh` releases it on the server over SSH and the live site is checked. It needs a one-time setup on the server and in GitHub first ([DEPLOYMENT, Automatic deployment](docs/DEPLOYMENT.md#automatic-deployment-github-actions)).
 
 To serve the website from Vercel instead (the VPS keeps the API, worker and database), see [DEPLOYMENT §C](docs/DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps).
 

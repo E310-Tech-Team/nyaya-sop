@@ -316,7 +316,9 @@ Then A6's browser checks on the Vercel address: a test application, `/admin` sig
 
 Production is released by one workflow, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): every push to `main` (a merged pull request) is checked, released and then checked live ([06 D-51](06-Implementation-Plan.md#decisions-log)). It is the only way releases reach production: the Vercel project's Git integration stays disconnected (Phase 15 is on hold), and `deploy/install.sh` by hand is for emergencies ([below](#releasing-by-hand)).
 
-**Status (2026-09-30): built and tested locally; it runs once the owner has done the [one-time setup](#one-time-setup-the-owner).** Until then the deploy job of each push to `main` fails at "Check the settings" and changes nothing.
+**Status (2026-09-30): built and tested locally; it runs once the owner has done the [one-time setup](#one-time-setup-the-owner) and switched it on.**
+- **The switch:** pushes to `main` are released only while the repository variable **`AUTO_DEPLOY`** is `on`. Otherwise their `deploy` job is skipped, but the checks still run.
+- **Manual runs** always release. Until the setup is done, a manual run fails at "Check the settings" and changes nothing.
 
 ```mermaid
 flowchart LR
@@ -343,7 +345,7 @@ During a release the app restarts: for a few seconds (longer while migrations ru
 
 In this order:
 
-1. **Merge** the pull request that adds this (its deploy job fails at "Check the settings": expected).
+1. **Merge** the pull request that adds this. With `AUTO_DEPLOY` not set, its push runs the checks only: the deploy job is skipped.
 2. **Install that release by hand once**, so the script exists on the server. As root: `cd /opt/school-of-purpose && git pull && ./deploy/install.sh`
 3. **The `deploy` user**, whose key can run one command, through one sudo rule. As root on the server:
    ```bash
@@ -379,10 +381,11 @@ In this order:
    - **Environment variables:** `DEPLOY_HOST` = the Droplet's IP address, or a name that points straight at it (the same one you gave `ssh-keyscan`; not a name behind a proxy or CDN); `DEPLOY_USER` = `deploy`; `SITE_URL` = `https://nyayasop.org`.
 
    Then delete the private key and `sop-known-hosts` from your computer. If the key is ever needed again, make a new pair (step 4) and replace the secret.
-7. **Try it:** Actions → CI → Run workflow, branch `main`, `sha` empty. It should end green, with a summary naming the release. From then on every push to `main` is released.
-8. **Protect `main`** ([next](#protecting-main)).
+7. **Try it:** Actions → CI → Run workflow, branch `main`, `sha` empty. It should end green, with a summary naming the release.
+8. **Switch it on:** Settings → Secrets and variables → Actions → Variables → New repository variable `AUTO_DEPLOY` = `on`. From then on every push to `main` is released. It must be a repository variable, not an environment one: the deploy job reads it before it enters the environment.
+9. **Protect `main`** ([next](#protecting-main)).
 
-To replace the key: a new pair (step 4), the new line in `authorized_keys`, the new `DEPLOY_SSH_KEY`. To switch automatic releases off: delete `/home/deploy/.ssh/authorized_keys` on the server (releases then fail at the SSH step), or add required reviewers and don't approve.
+To replace the key: a new pair (step 4), the new line in `authorized_keys`, the new `DEPLOY_SSH_KEY`. To pause automatic releases, set `AUTO_DEPLOY` to `off`: pushes then run the checks only, and a manual run still releases. To stop every release, including manual ones, delete `/home/deploy/.ssh/authorized_keys` on the server: releases then fail at the SSH step.
 
 #### Protecting main
 
