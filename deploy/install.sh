@@ -6,6 +6,7 @@
 #
 #   --domain  The site's address. Its DNS A record must point at this server. Defaults to this
 #             server's hostname (a Hostinger VPS hostname such as srv123456.hstgr.cloud works).
+#             When www.DOMAIN points here too, it redirects to DOMAIN (WWW_REDIRECT in .env).
 #   --email   Your email: becomes the first owner of the admin area and the Web Push contact.
 #   --name    Your name for the admin area (default "Site owner").
 #   --skip-backup  Update even if the backup taken first fails (not recommended).
@@ -103,6 +104,18 @@ matched=""
 for ip in $resolved; do case "$local_ips" in *" $ip "*) matched="yes" ;; esac; done
 [ -n "$matched" ] || warn "$DOMAIN doesn't resolve to this server yet (${resolved:-no DNS record}). Point its A record here; HTTPS starts working once it does."
 
+# www.DOMAIN redirects to DOMAIN (deploy/Caddyfile) once its DNS points here too. While
+# WWW_REDIRECT isn't in .env, each run looks for that record and switches it on; on/off are kept.
+www_resolved="$(getent ahostsv4 "www.$DOMAIN" 2> /dev/null | awk '{print $1}' | sort -u || true)"
+www_here=""
+for ip in $www_resolved; do case "$local_ips" in *" $ip "*) www_here="yes" ;; esac; done
+case "$(get_env WWW_REDIRECT | tr -d "\"'")" in
+  "") if [ -n "$www_here" ]; then set_env WWW_REDIRECT on; fi ;;
+  on) [ -n "$www_here" ] || warn "WWW_REDIRECT is on, but www.$DOMAIN doesn't resolve to this server (${www_resolved:-no DNS record}), so it can't get a certificate. Point it here, or set WWW_REDIRECT=off in .env." ;;
+  off) ;;
+  *) die "WWW_REDIRECT in .env must be on or off." ;;
+esac
+
 # ── Build and start ───────────────────────────────────────────────────────────
 if [ -n "$(docker compose ps -q db 2> /dev/null)" ]; then
   log "Backing up the database before updating"
@@ -165,6 +178,7 @@ done
 log "Done"
 echo "Site:     https://$DOMAIN"
 echo "Admin:    https://$DOMAIN/admin"
+if [ "$(get_env WWW_REDIRECT | tr -d "\"'")" = on ]; then echo "www:      https://www.$DOMAIN redirects to https://$DOMAIN"; fi
 echo "Health:   ${health:-not reachable over HTTPS yet (check DNS, then re-check in a few minutes)}"
 if [ -z "$(get_env SMTP_URL)" ]; then
   echo "Email:    not configured, so applicant sign-in by email is off. Add SMTP_URL and EMAIL_FROM to .env, then run this script again."

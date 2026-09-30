@@ -1,6 +1,6 @@
 # Agent notes: School of Purpose
 
-Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed. It runs on one VPS, or with the website on Vercel and `/api` forwarded to the VPS (`docs/DEPLOYMENT.md` §C).
+Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed. It runs on one VPS, or with the website on Vercel and `/api` forwarded to the VPS (`docs/DEPLOYMENT.md` §C). Production is https://nyayasop.org: the whole site on one DigitalOcean Droplet, installed and updated with `deploy/install.sh` (06 D-49); `www` redirects there through `WWW_REDIRECT` in `deploy/Caddyfile`.
 
 ## Before you change things
 

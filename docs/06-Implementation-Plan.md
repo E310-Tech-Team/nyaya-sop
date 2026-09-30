@@ -1,9 +1,9 @@
 # 06 — Implementation Plan
 
 **Last updated:** 2026-09-30
-**Overall status:** Phases 0–6, 8, 9, **10 (supporting imagery, AI-generated)**, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)**, **14 (homepage hero entrance)**, **17 (admin component system, Reports and analytics)** and **18 (reports drill-down from continents to a parish's applications)** are **done**; 7 (launch), **15 (website on Vercel, API on the VPS)** and **16 (parish directory: everything but the rollout on the VPS and the RCCG API is built)** are in progress. The website is live on Vercel at https://school-of-purpose-two.vercel.app (its `/api` answers 503 until the VPS is connected). 488 automated tests pass (after the 2026-09-30 security audit, 7.12, and the drill-down, 18), plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** set up the VPS (API, worker, database) and connect it to the Vercel website ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)), choose an email provider and generate VAPID keys, deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, domain, contact email; see "Content needed").
+**Overall status:** Phases 0–6, 8, 9, **10 (supporting imagery, AI-generated)**, 11, **12 (installable app, notifications, applicant accounts, admin platform)**, **13 (brand identity)**, **14 (homepage hero entrance)**, **17 (admin component system, Reports and analytics)** and **18 (reports drill-down from continents to a parish's applications)** are **done**; 7 (launch) and **16 (parish directory: everything but the rollout on the server and the RCCG API is built)** are in progress, and **15 (website on Vercel)** is on hold (D-49). **The whole site is live at https://nyayasop.org** (2026-09-30): website, API, worker and database on one DigitalOcean Droplet, installed with `deploy/install.sh` (7.10). The earlier Vercel copy (https://school-of-purpose-two.vercel.app, whose `/api` answers 503) is no longer needed. 488 automated tests pass (after the 2026-09-30 security audit, 7.12, and the drill-down, 18), plus browser checks in real Chrome (service worker, offline, updates, a real push through Firebase Cloud Messaging) and a production-mode Docker run on real PostgreSQL. **Next:** finish production (the owner's account and two-step verification, an email provider through port 2525, a firewall, off-server backups: [next steps](#next-steps-in-order)), roll out the parish list (16.7), deploy a staging origin, test on real iPhones and Android phones, and settle the launch content (privacy notice, retention, contact email; see "Content needed").
 
-Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **TBD** (scope not confirmed)
+Status labels: **Done** · **In progress** · **Not started** · **Blocked** (waiting on a decision) · **On hold** (not needed for now) · **TBD** (scope not confirmed)
 
 Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow.md) · [04-UI-UX-Design-Brief](04-UI-UX-Design-Brief.md) · [05-Backend-Schema](05-Backend-Schema.md) · [DEPLOYMENT](DEPLOYMENT.md)
 
@@ -20,8 +20,8 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | Applicants after applying | ✅ Optional account (email link): published status, messages, notification settings, devices, sessions, delete · ⏳ needs an email provider to switch on |
 | Installable app + offline | ✅ Manifest, icons, service worker (offline public pages, private pages never cached), update prompt, install guidance per device · ⏳ real-device checks |
 | Notifications | ✅ Web Push by topic with consent history, campaigns via a Postgres job queue and worker, neutral application-update alerts, in-app inbox · ⏳ needs VAPID keys; real-device checks |
-| Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ✅ website on Vercel (`vercel.json` + `/api` middleware, Phase 15) · ⏳ the VPS isn't deployed yet, so the Vercel site's `/api` answers 503 |
-| Launch content | ⏳ Privacy notice, domain, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)) |
+| Deployment | ✅ Dockerfile, Compose (Caddy HTTPS, app, **worker**, Postgres), backups, bare-metal alternative, CI, verified locally with Docker · ✅ **live at https://nyayasop.org** on a DigitalOcean Droplet, `www` redirected (7.10) · ✅ website-on-Vercel option (`vercel.json` + `/api` middleware, Phase 15; on hold, D-49) · ⏳ email, firewall, off-server backups |
+| Launch content | ⏳ Privacy notice, contact email, cohort dates (see [01-PRD §8](01-PRD.md#8-open-questions)); domain settled: nyayasop.org (Q13) |
 | Brand | ✅ Official lockup in every header, menu, footer and the admin area; brand palette; favicons, app icons and social card from the brand mark ([04 §2](04-UI-UX-Design-Brief.md#brand-identity)) |
 | Parish directory | ✅ Import command (16.1, dry-run tested on the RCCG list), parish search and application links (16.2), the parish question in the form (16.3, off until switched on), admin screens: Parish review, Parish directory, Reports, parish filters and panels (16.4–16.6) · ⏳ rollout with the current list on the VPS (16.7); the RCCG API later (16.8) |
 | Admin interface | ✅ shadcn/ui primitives adapted to the brand under the account/admin kit; card-first **Reports and analytics** (six reports, shared filters, Recharts charts, drill-down, comparison table), kept out of public bundles (Phase 17) |
@@ -110,7 +110,7 @@ Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow
 | 7.7 | SEO | Done: indexable, OG image, favicons (set `SITE_URL`) |
 | 7.8 | Deployment artifacts | Done: Dockerfile, Compose + Caddy, backups, systemd/Nginx alternative, runbook |
 | 7.9 | Verify the Docker image and stack | Done (2026-09-26): built and run locally against real PostgreSQL 17 through Caddy HTTPS; submissions, CSV export, backup/restore and graceful shutdown verified; re-verified the same day with the worker service, migrations 0003–0005 over existing data, owner bootstrap in the container and staff sign-in with two-step verification |
-| 7.10 | Deploy to the VPS | **Ready**: one-command installer `deploy/install.sh` (2026-09-28; Hostinger VPS planned). Waiting on the VPS and domain (Q13) |
+| 7.10 | Deploy to the VPS | **Done** (2026-09-30): https://nyayasop.org on a DigitalOcean Droplet (Frankfurt; Ubuntu 24.04, 1 vCPU, 1 GB RAM plus the installer's 2 GB swap), installed from `main` with `deploy/install.sh`: Caddy HTTPS, app, worker, Postgres 17, VAPID keys, the first owner invited (setup link handed over privately), nightly backups at 02:30 UTC (one taken and checked); unattended security updates on, SSH by key only. Checked live: `/api/health` ok, security headers, HTTP → HTTPS, pages, release id. `www.nyayasop.org` redirects to it (`WWW_REDIRECT`, added the same day: Caddy only serves `www` when its DNS points at the server). Still to do: email (port 2525), a Cloud Firewall, off-server backup copies, an uptime monitor |
 | 7.11 | Real-device QA (low-end Android, iOS Safari, VoiceOver/TalkBack), including install and push on iPhone/iPad 16.4+ and Android | Not started: needs the staging origin ([DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing)) |
 | 7.12 | Security audit and fixes (2026-09-30) | Done, locally (the detailed report stays with the maintainers, outside the repository and deployments). Hardened: sign-in attempt limits counted before each check (password, two-step and reset codes), a new session after two-step verification, keyed recovery-code hashes, link tokens voided on security events and taken out of the address bar, an owner "unlock" action, the last-owner rule in one locked statement, background "forgot password" emails; removed devices unlinked from accounts and not re-linked by rotation; the applicant-accounts switch closes sessions; the Vercel middleware pinned to `API_ORIGIN`; development servers refuse to run on a network; text cleaned of unstorable characters; single-valued query strings; CSV fields all quoted; a bounded, linear XLSX reader; database errors logged without their values and data errors answered with 400; `Permissions-Policy`; dotfiles never served; push subscriptions refused as malformed switched off; device identifiers erased on account deletion; install script (fresh base images, stop on a failed backup, secrets off the command line), bare-metal backups, least-privilege CI. Migration 0009. 38 regression tests; `pnpm check`, `pnpm audit` (no known vulnerabilities) and a headless-Chrome pass of the changed screens |
 | 7.13 | Database roles: migrations with an owner role, the app and worker with a data-only role (and no rights to rewrite the audit history) | Not started ([DEPLOYMENT](DEPLOYMENT.md#database-roles)) |
@@ -213,9 +213,9 @@ The first step of the animation work (branch `feat/animation`). The rest of the 
 | 14.3 | Extras | Done: the glow breathes after the entrance (CSS, paused off-screen); on desktop the participants drift and recede as the page scrolls away (CSS scroll-driven, attached only once scrolled, feet always inside the frame) |
 | 14.4 | Verification | Done: `pnpm check` (269 tests); settled hero equals the page without motion pixel for pixel at 390–1920 px and every other page matches the previous build; entrance 0 dropped frames; LCP 676 ms (390 px, 4× CPU) and 64 ms (1440 px); first-load JS +28.8 KB gzipped. **Not yet:** real phones, Safari (automation not enabled), Firefox (no scroll-driven animations: no drift there, by design) |
 
-### Phase 15: Website on Vercel, API on the VPS (**In progress**, 2026-09-29)
+### Phase 15: Website on Vercel, API on the VPS (**On hold** since 2026-09-30, D-49)
 
-Vercel (the owner's personal team "Zacchaeus' projects", project `school-of-purpose`) serves the website; the VPS keeps the API, worker and database ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps), D-26).
+Vercel (the owner's personal team "Zacchaeus' projects", project `school-of-purpose`) serves the website; the VPS keeps the API, worker and database ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps), D-26). Since 2026-09-30 the whole site runs on the DigitalOcean Droplet instead (D-49), so the split isn't used; its code stays, tested, in case the website moves to Vercel later.
 
 | # | Task | Status |
 |---|---|---|
@@ -224,8 +224,8 @@ Vercel (the owner's personal team "Zacchaeus' projects", project `school-of-purp
 | 15.3 | Per-visitor rate limits and logs behind Vercel | Done: `server/edge-proxy.ts` checks the secret (constant time) before Fastify logs the request or works out its address, and always removes both headers; `EDGE_PROXY_SECRET` config checks; `SITE_URL` can differ from `DOMAIN` in Compose |
 | 15.4 | Release ids | Done: Vercel builds are named after the commit; API responses through Vercel carry Vercel's release (the VPS leaves its own out), so update offers follow website deploys; Settings shows both ids when they differ |
 | 15.5 | Deploy | Done: production at https://school-of-purpose-two.vercel.app (`school-of-purpose.vercel.app` was taken), deployed with the CLI from a clean export of this branch. Checked live: headers and caching for every kind of path equal the server's, deep links, 404s, `/api` 503; headless Chrome shows no CSP violations or errors and the service worker installs |
-| 15.6 | Connect the VPS | Not started: needs the VPS (7.10). Then `API_ORIGIN` in Vercel, `SITE_URL` + `EDGE_PROXY_SECRET` on the VPS (the secret is in the gitignored `.env.edge-proxy` on the machine that set up Vercel), and DEPLOYMENT §C3's checks |
-| 15.7 | Git deploys | Not started: connect the GitHub repository in Vercel once this work is merged (so `main` has `vercel.json` and the middleware); until then deploys are made with the CLI |
+| 15.6 | Connect the VPS | On hold (D-49): only if the website moves to Vercel. Then `API_ORIGIN` in Vercel, `SITE_URL` + `EDGE_PROXY_SECRET` on the VPS (the secret is in the gitignored `.env.edge-proxy` on the machine that set up Vercel), and DEPLOYMENT §C3's checks |
+| 15.7 | Git deploys | On hold (D-49): `main` has `vercel.json` and the middleware, so the repository can be connected in Vercel whenever the split is wanted; until then deploys are made with the CLI |
 
 ### Phase 16: Parish directory (**In progress**, 2026-09-30)
 
@@ -239,7 +239,7 @@ Applicants will choose their RCCG parish from the RCCG list instead of typing it
 | 16.4 | Admin: Applicants list and detail, Parish review, Settings | Done: migration 0008 (staff links on applications, earlier answers reviewed); the Applicants list's Parish column and filters (parish answer, directory parish, dates, any unit), the export's province, region and continent; the applicant's parish panel with "change parish"; Parish review (link, add, fixed, close; exact matches confirmed together, each re-checked); Settings switch with the directory's readiness; permissions reports.view, directory.view, directory.manage (owners and programme admins) and `staffGuard` `allOf` |
 | 16.5 | Parish directory screen: the tree, the Imports tab, splitting a same-name group | Done: staff corrections ([`edits.ts`](../server/directory/edits.ts)): add, rename, move, state, deactivate/reactivate, merge (parishes and units; applications follow), split; each recorded, cache-checked and audited. Imports keep them (`staff_fields`, `source_unit_id`) and list where the source differs; an import can't be reverted once staff have corrected the directory since. The screen: tree with counts and markers, entry panel with history, Imports and 2026 changes tabs |
 | 16.6 | Reports by continent, region, province and parish; dashboard card; totals export | Done: drill-down with a "No province" row and the answers with no parish, review and published status views, parishes represented, a weekly/daily trend, CSV of the totals (audited, directory version on each row), dashboard card; filters shared with the Applicants list so every count opens those applicants (tested); "fewer than 5" for roles without applicant details. 41 new tests (421 in all); checked in Chromium on a local build with made-up parishes, at 1280 and 375 px |
-| 16.7 | Rollout with the current list: back up, dry run, apply, switch the question on | Not started: needs the VPS (15.6) |
+| 16.7 | Rollout with the current list: back up, dry run, apply, switch the question on | Not started: possible now the site is live (7.10). The RCCG file never goes in the repository, so it's copied to the server privately for the import ([DEPLOYMENT](DEPLOYMENT.md#parish-directory)) |
 | 16.8 | Connect the RCCG API: an API source, a one-time link of existing entries to its IDs, a scheduled sync with staff review of large changes; zone, area and the 2026 structure if it has them | Blocked: needs the API's documentation and access |
 
 ### Phase 17: Admin component system and Reports and analytics (**Done**, 2026-09-30)
@@ -295,9 +295,9 @@ The UX pass only uses facts already in the site copy. These need an owner's answ
 
 1. **Content decisions:** privacy notice wording (Q9), retention periods (Q11, C17), contact email (Q12), email provider (C14), staff roles (C16), confirm "SOP"/org naming (Q8) and the state list (Q4), plus C3–C6.
 2. **Deploy a staging origin** (e.g. `staging.<domain>` with its own database and VAPID keys) and run the device tests in [DEPLOYMENT](DEPLOYMENT.md#staging-and-device-testing): iPhone/iPad (Home Screen install + push), Android (Chrome, Samsung Internet), Safari on Mac, Firefox, Edge.
-3. **Deploy production:** create the VPS, point DNS, then run `deploy/install.sh` ([DEPLOYMENT: Quick install](DEPLOYMENT.md#quick-install-one-command): it generates `APP_SECRET` and the VAPID keys on the server and creates the first owner) or follow [DEPLOYMENT §A](DEPLOYMENT.md#a-docker-compose-recommended); add `SMTP_URL`/`EMAIL_FROM`, back up `.env`, run the production checklist. With the website on Vercel (Phase 15), give the VPS its own API name and connect the two ([DEPLOYMENT §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)).
+3. **Finish production** (live at https://nyayasop.org since 2026-09-30, 7.10): the owner opens the setup link (valid 72 hours) and sets up two-step verification; add `SMTP_URL`/`EMAIL_FROM` (port 2525 on DigitalOcean) and run `deploy/install.sh` again; back up the server's `.env` privately; add a DigitalOcean Cloud Firewall (TCP 22, 80, 443; UDP 443); arrange encrypted off-server backup copies; run the [production checklist](DEPLOYMENT.md#production-checklist).
 4. **Before announcing:** submit and delete a test application, set up nightly backups + off-site copies, add an uptime monitor, invite staff.
-5. **Parish directory (Phase 16):** roll out with the current list once the VPS is up (16.7: back up, dry run, apply, switch the question on in Settings, then work through Parish review); ask RCCG for the API's details and to confirm the 1,521 same-name groups (`pnpm directory import … --report` lists them).
+5. **Parish directory (Phase 16):** roll out with the current list on the live site (16.7: back up, dry run, apply, switch the question on in Settings, then work through Parish review); ask RCCG for the API's details and to confirm the 1,521 same-name groups (`pnpm directory import … --report` lists them).
 6. **Later:** confirmation email (5.1), committed Playwright E2E, Lighthouse CI, axe-core on the new screens, CAPTCHA if spam appears, identity-provider sign-in for staff if wanted.
 
 ## Dependency graph
@@ -313,7 +313,7 @@ flowchart LR
     P9 --> P10[Phase 10 ✓<br/>supporting imagery · AI-generated]
     P9 --> P11[Phase 11 ✓<br/>sticky navigation]
     P4 --> P7[Phase 7<br/>deploy]
-    Q[Launch decisions<br/>Q9 Q11 Q12 Q13] --> P7
+    Q[Launch decisions<br/>Q9 Q11 Q12] --> P7
     P4 --> P12[Phase 12 ✓<br/>PWA · push · accounts · admin]
     P12 --> P5[Phase 5 ✓ push<br/>email confirmation TBD]
     P12 --> P6[Phase 6 ✓]
@@ -321,7 +321,7 @@ flowchart LR
     P9 --> P13[Phase 13 ✓<br/>brand identity]
     P12 --> P13
     P13 --> P14[Phase 14 ✓<br/>hero entrance]
-    P12 --> P15[Phase 15<br/>website on Vercel · API on the VPS]
+    P12 --> P15[Phase 15 on hold<br/>website on Vercel · API on the VPS]
     P15 -.-> P7
     P12 --> P16[Phase 16<br/>parish directory]
     P16 -.-> P7
@@ -383,6 +383,7 @@ flowchart LR
 | D-46 | 2026-09-30 | Deleting an applicant account erases its devices' push addresses, keys and recognising hashes at once instead of after the 180-day clean-up; the revoked row (push service only) stays for campaign counts | Decided (security audit) |
 | D-47 | 2026-09-30 | The reports drill-down counts by today's directory (D-32), puts applications with no directory parish in an explicit "Unassigned" group at the top and parishes a level skips in "directly under …" groups, so every level adds up to its parent under the same filters. Units and parishes with no applications are listed by default | Decided (brief) |
 | D-48 | 2026-09-30 | A parish's view shows its figures to anyone with reports.view, but its applications only to staff with applications.view_all (and the CSV only with applications.export): seeing a count never opens applicant records | Decided (brief) |
+| D-49 | 2026-09-30 | **Hosting: the whole site on one DigitalOcean Droplet** at https://nyayasop.org (DEPLOYMENT option A: Caddy, app, worker and Postgres in Docker Compose), instead of the website on Vercel (D-26) or a Hostinger VPS. The Vercel option stays in the code, tested but unused; keeping or removing the Vercel copy is the owner's call. `www.nyayasop.org` redirects to the bare domain | Decided (user) |
 
 ## Doc maintenance
 

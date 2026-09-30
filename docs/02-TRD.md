@@ -1,6 +1,6 @@
 # 02 — Technical Requirements Document (TRD)
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-09-30
 **Architecture:** React single-page app (installable PWA with a service worker) + Fastify API, backed by **PostgreSQL**, with a **background worker** for notifications and clean-up, deployed on a **single VPS** behind Caddy (HTTPS).
 **Origin:** Figma Make export (2026-09-25), rebuilt as a standalone project on 2026-09-26. The Figma Make tooling has been removed.
 
@@ -187,11 +187,11 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 
 | Aspect | Decision |
 |---|---|
-| Host | **Single VPS** (Linode or similar), Ubuntu 24.04 |
+| Host | **Single VPS**, Ubuntu 24.04. Production: a DigitalOcean Droplet (1 vCPU, 1 GB RAM + 2 GB swap) serving https://nyayasop.org (06 D-49) |
 | Recommended | **Docker Compose** ([`docker-compose.yml`](../docker-compose.yml)): `caddy:2-alpine` → app → `postgres:17-alpine` (volume), plus a **worker** container from the same image. App and worker containers are read-only, non-root, `no-new-privileges`; the app is health-checked and the worker waits for it (migrations) |
 | Alternative | Bare metal: Node 22 + apt Postgres 17 + Nginx + certbot + systemd, with the worker inline ([`deploy/`](../deploy/)) |
-| Website on Vercel | Optional split: Vercel serves the website and forwards `/api/*` to the VPS, which keeps the API, worker and database. `SITE_URL` on the VPS is then the Vercel address ([DEPLOYMENT.md §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)) |
-| HTTPS | Required for the service worker, push, secure cookies and install prompts. Caddy automatic certificates (or certbot); HTTP → HTTPS redirect |
+| Website on Vercel | Optional split: Vercel serves the website and forwards `/api/*` to the VPS, which keeps the API, worker and database. `SITE_URL` on the VPS is then the Vercel address ([DEPLOYMENT.md §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)). Not used in production for now (06 D-49) |
+| HTTPS | Required for the service worker, push, secure cookies and install prompts. Caddy automatic certificates (or certbot); HTTP → HTTPS redirect; `www.DOMAIN` → `https://DOMAIN` when its DNS points at the server (`WWW_REDIRECT`) |
 | Backups | [`deploy/backup.sh`](../deploy/backup.sh) nightly `pg_dump` + off-site copies. Back up `.env` separately (it holds `APP_SECRET` and the VAPID private key) |
 | CI | GitHub Actions: typecheck, tests, build, Docker image build |
 | Runbook | [DEPLOYMENT.md](DEPLOYMENT.md) |
