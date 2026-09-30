@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { isPushCardSnoozed, snoozePushCard } from '../../lib/push';
-import { Button } from '../ui';
+import { Button } from '../ui/basic';
 import { usePushDevice } from './usePushDevice';
 
 /**

@@ -14,6 +14,14 @@ import CampaignPage, { NewCampaignPage } from './pages/Campaign';
 import CampaignsPage from './pages/Campaigns';
 import CohortsPage from './pages/Cohorts';
 import DashboardPage from './pages/Dashboard';
+import DirectoryPage from './pages/Directory';
+import ParishReviewPage from './pages/ParishReview';
+import CohortsReportPage from './reports/Cohorts';
+import DecisionsReportPage from './reports/Decisions';
+import OrganisationReportPage from './reports/Organisation';
+import ReportsOverviewPage from './reports/Overview';
+import OverTimeReportPage from './reports/OverTime';
+import ParishAnswersReportPage from './reports/ParishAnswers';
 import SecurityPage from './pages/Security';
 import SettingsPage from './pages/Settings';
 import StaffPage from './pages/Staff';
@@ -42,6 +50,14 @@ export default function AdminApp() {
           <Route path="staff" element={<Allowed any={['staff.manage']}><StaffPage /></Allowed>} />
           <Route path="settings" element={<Allowed any={['settings.manage']}><SettingsPage /></Allowed>} />
           <Route path="audit" element={<Allowed any={['audit.view']}><AuditPage /></Allowed>} />
+          <Route path="reports" element={<Allowed any={['reports.view']}><ReportsOverviewPage /></Allowed>} />
+          <Route path="reports/organisation" element={<Allowed any={['reports.view']}><OrganisationReportPage /></Allowed>} />
+          <Route path="reports/over-time" element={<Allowed any={['reports.view']}><OverTimeReportPage /></Allowed>} />
+          <Route path="reports/decisions" element={<Allowed any={['reports.view']}><DecisionsReportPage /></Allowed>} />
+          <Route path="reports/parish-answers" element={<Allowed any={['reports.view']}><ParishAnswersReportPage /></Allowed>} />
+          <Route path="reports/cohorts" element={<Allowed any={['reports.view']}><CohortsReportPage /></Allowed>} />
+          <Route path="directory" element={<Allowed any={['directory.view']}><DirectoryPage /></Allowed>} />
+          <Route path="parish-review" element={<Allowed any={PARISH_REVIEW} all><ParishReviewPage /></Allowed>} />
           <Route path="security" element={<SecurityPage />} />
           <Route path="*" element={<PageHeader title="Page not found" documentTitle="Admin" description="There’s no admin page at this address." />} />
         </Route>
@@ -72,10 +88,15 @@ function RequireStaff() {
   return <Navigate to="/admin/login" replace state={{ from: location.pathname + location.search }} />;
 }
 
-function Allowed({ any, children }: { any: Permission[]; children: ReactNode }) {
+// Parish review shows applicants and changes the directory: it needs all three (server/admin/parish-review.ts).
+const PARISH_REVIEW: Permission[] = ['applications.view_all', 'applications.edit', 'directory.manage'];
+
+/** With `all`, every listed permission is needed; otherwise any one. */
+function Allowed({ any, all = false, children }: { any: Permission[]; all?: boolean; children: ReactNode }) {
   const staff = useStaff();
   if (staff.step !== 'signed-in') return null;
-  if (any.some((permission) => can(staff.session.staff.role, permission))) return <>{children}</>;
+  const has = (permission: Permission) => can(staff.session.staff.role, permission);
+  if (all ? any.every(has) : any.some(has)) return <>{children}</>;
   return (
     <PageHeader
       title="You don’t have access to this page"
@@ -85,10 +106,13 @@ function Allowed({ any, children }: { any: Permission[]; children: ReactNode }) 
   );
 }
 
-const NAV: { to: string; label: string; any: Permission[] }[] = [
+const NAV: { to: string; label: string; any: Permission[]; all?: boolean }[] = [
   { to: '/admin', label: 'Dashboard', any: ['dashboard.view'] },
   { to: '/admin/applicants', label: 'Applicants', any: ['applications.view_all', 'applications.view_assigned'] },
   { to: '/admin/accounts', label: 'Accounts', any: ['accounts.view'] },
+  { to: '/admin/reports', label: 'Reports and analytics', any: ['reports.view'] },
+  { to: '/admin/parish-review', label: 'Parish review', any: PARISH_REVIEW, all: true },
+  { to: '/admin/directory', label: 'Parish directory', any: ['directory.view'] },
   { to: '/admin/cohorts', label: 'Cohorts', any: ['cohorts.manage', 'applications.view_all'] },
   { to: '/admin/campaigns', label: 'Notifications', any: ['campaigns.manage'] },
   { to: '/admin/announcements', label: 'Announcements', any: ['announcements.manage'] },
@@ -105,7 +129,9 @@ function AdminLayout() {
   useEffect(() => setMenuOpen(false), [pathname]);
   if (staff.step !== 'signed-in') return null;
   const { role, displayName } = staff.session.staff;
-  const items = NAV.filter((item) => item.any.length === 0 || item.any.some((permission) => can(role, permission)));
+  const items = NAV.filter(
+    (item) => item.any.length === 0 || (item.all ? item.any.every((permission) => can(role, permission)) : item.any.some((permission) => can(role, permission))),
+  );
 
   const signOut = async () => {
     await adminApi.logout().catch(() => undefined);

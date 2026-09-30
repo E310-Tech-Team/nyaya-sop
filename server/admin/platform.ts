@@ -12,6 +12,7 @@ import { iso, isUuid, paging, sendError, str } from '../http';
 import { queueStats } from '../jobs/queue';
 import type { Services } from '../services';
 import { getSettings, putSetting, SETTING_DEFAULTS } from '../settings';
+import { directoryReadiness } from './directory';
 
 async function activeOwners(db: Queryable, excluding?: string): Promise<number> {
   const { rows } = await db.query<{ n: number }>(
@@ -215,6 +216,8 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
   app.get('/settings', { preHandler: staffGuard(services, { permission: 'settings.manage' }) }, async () => ({
     settings: await getSettings(db, 0),
     health: await integrationHealth(services),
+    // Whether the parish question can be switched on: what's loaded, from where, and what waits for review.
+    directory: await directoryReadiness(db),
   }));
 
   app.patch('/settings', { preHandler: staffGuard(services, { permission: 'settings.manage' }) }, async (request, reply) => {

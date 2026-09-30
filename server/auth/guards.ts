@@ -47,6 +47,8 @@ export function checkOrigin(services: Services, request: FastifyRequest, reply: 
 type StaffGuardOptions = {
   /** Any one of these is enough. */
   permission?: Permission | Permission[];
+  /** Every one of these is needed (Parish review shows applicants and changes the directory). */
+  allOf?: Permission[];
   /** Signed in with a password, second factor not yet checked (the MFA step itself). */
   allowPendingMfa?: boolean;
   /** Allowed before a required second factor is set up (enrolment, own session, sign-out). */
@@ -83,6 +85,9 @@ export function staffGuard(services: Services, options: StaffGuardOptions = {}):
     }
     const permissions = options.permission === undefined ? [] : [options.permission].flat();
     if (permissions.length && !permissions.some((permission) => can(session.role as StaffRole, permission))) {
+      return sendError(reply, 403, 'FORBIDDEN', 'Your role does not allow this.');
+    }
+    if (options.allOf && !options.allOf.every((permission) => can(session.role as StaffRole, permission))) {
       return sendError(reply, 403, 'FORBIDDEN', 'Your role does not allow this.');
     }
     request.staff = {

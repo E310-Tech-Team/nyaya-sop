@@ -17,13 +17,15 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md) · [05-Backend-Sch
 | UI | React + React DOM | 19.3 | `<StrictMode>`. The account (`/account/*`) and admin (`/admin/*`) areas are lazy-loaded chunks |
 | Routing | React Router | 8.4 (declarative mode) | Real URLs per screen ([03](03-App-Flow.md)) |
 | Styling | Tailwind CSS v4 (`@tailwindcss/vite`) | 4.2 | Design tokens in `src/index.css` `@theme` ([04](04-UI-UX-Design-Brief.md)) |
+| Account and admin components | [shadcn/ui](https://ui.shadcn.com) primitives (copied into `src/components/ui/`, `components.json`), on `radix-ui` (Select, Popover, Tabs, Dialog/Sheet, Slot), `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react` icons | radix-ui 1.6, cva 0.7, tailwind-merge 3.7, lucide 1.48 | Adapted to the brand tokens (no theme variables, no global base styles). **Admin and account chunks only**: public pages use the plain `ui/basic.tsx`, and `src/components/ui/bundles.test.ts` fails if public code imports a primitive or these libraries |
+| Charts and data tables | shadcn/ui Chart on **Recharts**; the Calendar on **react-day-picker** (+ date-fns); **TanStack Table** for the comparison table | recharts 3.10, react-day-picker 10.0, @tanstack/react-table 9.2 | Reports and analytics only, each downloaded when first shown (`src/admin/reports/lazy.tsx`): Recharts ≈ 104 KB gzipped, the date picker ≈ 21 KB, the table ≈ 13 KB. Considered and not added: Tremor (its BarList/CategoryBar patterns are built in-house, `reports/visuals.tsx`; the package would bring a second chart system and Tailwind v3 styles), React Aria (the existing finders already meet the combobox/search patterns), TanStack Virtual (every list is server-paged, ≤ 48 rows), Mantine |
 | Fonts | `@fontsource/anton`, `@fontsource-variable/inter`, `@fontsource-variable/cormorant-garamond` | 5.3 | Self-hosted, bundled by Vite |
 | Animation | `gsap` (core only) | 3.15 | The homepage hero's entrance timeline (`src/lib/heroMotion.ts`), in the first-load bundle so nothing waits on the network (+28.8 KB gzipped). Everything else animates with CSS ([04 §6](04-UI-UX-Design-Brief.md#6-motion)) |
 | Web build | Vite | 8.0 | Output `dist/` with content-hashed assets. `scripts/vite-pwa.ts` builds the service worker after the site |
 | Service worker | Hand-written (`src/sw/sw.ts`), bundled with esbuild | — | Caching policy in `src/sw/routing.ts` (pure, unit-tested). No Workbox |
 | API server | Fastify | 5.12 | `@fastify/static`, `@fastify/helmet` (headers/CSP), `@fastify/rate-limit`, `@fastify/cookie` |
 | Database driver | node-postgres (`pg`) | 8.23 | Pool, 15 s statement timeout |
-| Database | PostgreSQL | 17 | Production. Migrations in `server/migrations/*.sql` (0001–0005) |
+| Database | PostgreSQL | 17 | Production. Migrations in `server/migrations/*.sql` (0001–0008) |
 | Dev/test database | PGlite | 0.5 | PostgreSQL compiled to WASM, in-process: no install needed; loads the `pg_trgm` extension for parish search. **Single process only** (see §10) |
 | Web Push | `web-push` | 3.6 | Only for VAPID signing and aes128gcm encryption; requests go through our own SSRF-safe transport |
 | Email | `nodemailer` | 10.0 | SMTP; plus an in-memory test outbox for development and tests |
@@ -99,21 +101,21 @@ flowchart TB
 src/            React app
   pages/        public pages, the form, Install, Notifications, Updates
   account/      applicant account area (lazy chunk)
-  admin/        admin platform (lazy chunk): AdminApp, AuthPages, pages/*
-  components/   layout, fields, ui.tsx kit, BrandLockup, InstallGuide, notifications/*, AppStatus (offline notice, update prompt)
+  admin/        admin platform (lazy chunk): AdminApp, AuthPages, pages/* (incl. ParishReview, Directory), reports/* (Reports and analytics), directory-parts (parish and unit finders)
+  components/   layout, fields, ui/ (the account/admin kit: index.tsx, shadcn/ui primitives, basic.tsx for public pages), BrandLockup, InstallGuide, notifications/*, AppStatus (offline notice, update prompt)
   assets/       landing and success artwork, brand/ (logo lockups built by scripts/brand-assets.py)
-  lib/          api (CSRF-aware client), pwa (registration/updates), install, push, account, config, events
+  lib/          api (CSRF-aware client), pwa (registration/updates), install, push, account, config, events, utils (`cn`, for the primitives)
   sw/           sw.ts (service worker), routing.ts (+ tests)
   shared/       application, validation, permissions, platform (topics, statuses, link allowlist), time
 server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts, settings.ts, analytics.ts, public.ts, index.ts, worker-cli.ts, admin-cli.ts, vapid-cli.ts, directory-cli.ts
-  directory/    the RCCG parish directory: source.ts (spreadsheet now, API later), xlsx.ts (built-in .xlsx reader), plan.ts (pure import planner), store.ts (apply/revert), report.ts
+  directory/    the RCCG parish directory: source.ts (spreadsheet now, API later), xlsx.ts (built-in .xlsx reader), plan.ts (pure import planner), store.ts (apply/revert), edits.ts (staff corrections), report.ts
   auth/         sessions, guards (session → CSRF/origin → MFA → permission), tokens, staff-routes
   account/      applicant routes, account deletion
-  admin/        applicants, accounts + cohorts, communications (campaigns, announcements, test devices), platform (staff, settings, audit, dashboard)
+  admin/        applicants, accounts + cohorts, communications (campaigns, announcements, test devices), platform (staff, settings, audit, dashboard), directory, parish-review, reports, application-filters (shared by the list, export and reports), parish-links
   push/         endpoint allowlist + public-address check, transport, VAPID service, subscriptions, routes
   jobs/         queue, worker
   notifications/  audience, dispatch
-  migrations/   0001_init … 0005_notifications_jobs
+  migrations/   0001_init … 0008_parish_admin
 scripts/        build-server.mjs, vite-pwa.ts, brand-assets.py
 deploy/         install.sh (one-command VPS install), Caddyfile, backup.sh, school-of-purpose.service (systemd), nginx.conf.example
 design/         brand/ (logo masters, palette, usage rules), landing-reference.webp

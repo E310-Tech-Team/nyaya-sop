@@ -112,6 +112,14 @@ export function displayName(name: string): string {
   });
 }
 
+/** How an applicant answered the parish question (applications.parish_status), for staff. */
+export const PARISH_ANSWER_LABELS: Record<'listed' | 'reported' | 'legacy_text' | 'not_provided', string> = {
+  listed: 'Chosen from the directory',
+  reported: 'Not listed (typed by the applicant)',
+  legacy_text: 'Typed (earlier form)',
+  not_provided: 'Not provided',
+};
+
 // ── Parish search and lookup (GET /api/parishes/…) ─────────────────────────────
 
 export const PARISH_SEARCH = { minLength: 2, maxLength: 60, maxResults: 10, maxTerms: 8 } as const;

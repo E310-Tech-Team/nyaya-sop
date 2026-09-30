@@ -92,6 +92,7 @@ Payments · delivering training, grading, mentorship or community management · 
 | F23 | Admin platform with individual staff accounts, two-step verification, five roles, audit history | **Built** |
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
+| F26 | Parish directory: applicants choose their parish from the RCCG list; staff correct the directory, review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish | **Built** (Phase 16; off until the list is imported on the VPS and switched on; the RCCG API later) |
 
 ## 5. Form content
 
@@ -151,6 +152,8 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | US18 | As the Programme team, nobody sees a decision until we publish it | Internal status separate; explicit, previewed publication; neutral lock-screen text | **Built** |
 | US19 | As communications, I can send a notification without surprises | Preview, live counts (devices and people), test to my own device, time zone, final confirmation, truthful results | **Built** |
 | US20 | As an owner, I can control who has access and see what they did | Invitations, roles, suspension, two-step verification, audit history | **Built** |
+| US21 | As the Programme team, I can see how many applications come from each part of the church | Counts by continent, region, province and parish, with drill-down, status views and a trend; each count opens those applicants; small counts hidden from roles without applicant details | **Built** |
+| US22 | As the Programme team, every application ends up with the right parish | Parish review for parishes applicants couldn't find, flagged details and earlier typed answers; link, add or correct; the applicant's own answer is kept | **Built** |
 
 ## 7. Success metrics
 

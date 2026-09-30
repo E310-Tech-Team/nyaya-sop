@@ -3,6 +3,7 @@
  * token; a 401 means the session ended, so the admin area returns to sign-in.
  */
 import { ApiError, apiRequest, type RequestOptions } from '../lib/api';
+import type { ChainUnit, ChurchLevel, ParishChain, ParishDetailsResponse, ParishSuggestion } from '../shared/directory';
 import type { StaffRole } from '../shared/permissions';
 import type { ApplicationStatus, NotificationTopic, SessionSummary } from '../shared/platform';
 import { staffSessionEnded, type StaffSession } from './session';
@@ -43,6 +44,31 @@ export type ApplicantRow = {
   reviewer: { id: string; name: string | null } | null;
   claimed: boolean;
   notes: number;
+  parish: { status: ParishAnswerStatus; answer: string | null; linked: { id: string; name: string; place: string | null } | null };
+};
+
+/** How the applicant answered the parish question (applications.parish_status). */
+export type ParishAnswerStatus = 'listed' | 'reported' | 'legacy_text' | 'not_provided';
+
+export type ParishReport = {
+  id: string;
+  kind: 'not_listed' | 'details_wrong';
+  status: 'pending' | 'linked' | 'added' | 'fixed' | 'rejected';
+  reportedName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolvedParish: string | null;
+};
+
+export type ApplicantParish = {
+  status: ParishAnswerStatus;
+  answer: string | null;
+  current: ParishDetailsResponse | null;
+  submitted: { parish: ChainUnit; chain: ParishChain } | null;
+  linkedBy: { name: string; at: string } | null;
+  textReviewedAt: string | null;
+  reports: ParishReport[];
 };
 
 export type ApplicantDetail = {
@@ -62,6 +88,190 @@ export type ApplicantDetail = {
   account: { email: string; status: string; claimedAt: string } | null;
   notes: { id: string; body: string; createdAt: string; author: string }[];
   history: { kind: 'review' | 'publication'; from_status: ApplicationStatus | null; to_status: ApplicationStatus; created_at: string; actor: string | null }[];
+  parish: ApplicantParish;
+};
+
+// ── Parish directory (server/admin/directory.ts) ─────────────────────────────
+
+export type DirectoryStatus = 'active' | 'inactive' | 'merged';
+export type UnitBrief = { id: string; name: string; level: ChurchLevel };
+
+export type DirectoryReadiness = {
+  levels: Record<ChurchLevel, { active: number; total: number }>;
+  parishes: { active: number; inactive: number; merged: number; staffAdded: number };
+  latestImport: { id: string; source: string; label: string; structureAsAt: string | null; via: string; finishedAt: string | null } | null;
+  corrections: number;
+  lineageWaiting: number;
+  pendingReviews: number;
+};
+
+export type BrowseChild = UnitBrief & { status: DirectoryStatus; state: string | null; origin: string; corrected: boolean; units: number; parishes: number; changed2026: boolean };
+export type BrowseParish = { id: string; name: string; status: DirectoryStatus; listedRows: number; origin: string; corrected: boolean; applications: number };
+export type Browse = {
+  unit: (UnitBrief & { status: DirectoryStatus; state: string | null; origin: string; corrected: string[] }) | null;
+  ancestors: UnitBrief[];
+  children: BrowseChild[];
+  parishes: Paged<BrowseParish>;
+};
+
+export type UnitMatch = UnitBrief & { parent: string | null };
+
+export type HistoryItem = { id: string; at: string; via: 'import' | 'staff'; change: string; before: Record<string, unknown> | null; after: Record<string, unknown>; by: string };
+export type History = { items: HistoryItem[]; names: Record<string, string> };
+
+export type UnitDetail = {
+  unit: UnitBrief & { officialName: string; state: string | null; status: DirectoryStatus; origin: string; corrected: string[]; mergedInto: { id: string; name: string | null } | null };
+  ancestors: UnitBrief[];
+  counts: { units: number; activeParishes: number; parishesDirectly: number; applications: number };
+  lineage: { createdFrom: { name: string; level: ChurchLevel; approvedOn: string | null }[]; sourceOf: { name: string; level: ChurchLevel; approvedOn: string | null }[] };
+  history: History;
+};
+
+export type ParishEntry = {
+  parish: ParishDetailsResponse & {
+    officialName: string;
+    origin: string;
+    listedRows: number;
+    corrected: string[];
+    unit: UnitBrief;
+    listedUnder: { id: string; name: string | null } | null;
+  };
+  aliases: string[];
+  applications: number;
+  history: History;
+};
+
+export type ImportRow = {
+  id: string;
+  source: string;
+  label: string;
+  structureAsAt: string | null;
+  status: string;
+  via: string;
+  by: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  revertedAt: string | null;
+  counts: Record<string, unknown>;
+  error: string | null;
+  issues: { error: number; warning: number; info: number };
+};
+export type ImportIssue = { line: number | null; severity: 'info' | 'warning' | 'error'; code: string; message: string; details: Record<string, unknown> };
+export type ImportDetail = {
+  import: { id: string; label: string; structureAsAt: string | null; status: string; startedAt: string; counts: Record<string, unknown> };
+  codes: { code: string; severity: string; n: number }[];
+  issues: Paged<ImportIssue>;
+};
+export type LineageGroup = { level: ChurchLevel; name: string; approvedOn: string | null; unit: { id: string; name: string } | null; sources: { name: string; unit: { id: string; name: string; status: string } | null }[] };
+
+// ── Parish review (server/admin/parish-review.ts) ────────────────────────────
+
+export type ReviewKind = 'not_listed' | 'details_wrong' | 'earlier_text';
+export type ReviewItem = {
+  id: string;
+  kind: ReviewKind;
+  createdAt: string;
+  application: { id: string; reference: string; fullName: string; state: string; cohort: string };
+  name: string | null;
+  parish: ParishDetailsResponse | null;
+  submitted: ParishChain | null;
+  suggestions: ParishSuggestion[];
+  exactMatch: string | null;
+};
+export type ReviewQueue = Paged<ReviewItem> & { counts: Record<ReviewKind, number>; kind: ReviewKind };
+export type EarlierMatch = { application: ReviewItem['application']; name: string; parish: { id: string; name: string; place: string | null } };
+export type ResolveAction = { action: 'link'; parishId: string } | { action: 'add'; unitId: string; name: string } | { action: 'fixed' } | { action: 'reject' };
+
+// ── Reports (server/admin/reports.ts) ─────────────────────────────────────────
+
+/** Null: between 1 and 4, hidden from roles that can't see applicants' details. */
+export type Count = number | null;
+export type StatusCounts = Record<ApplicationStatus, Count>;
+type Split = { linked: Count; unlinked: Count };
+
+export type ReportSummary = {
+  period: { from: string | null; to: string | null };
+  unit: UnitBrief | null;
+  masked: boolean;
+  applications: Count;
+  uniqueApplicants: Count;
+  byStatus: StatusCounts;
+  byPublished: StatusCounts;
+  withParish: Count;
+  linkedByStaff: Count;
+  withoutParish: Count;
+  answers: { listed: Count; reported: Split; legacyText: Split; notProvided: Split };
+  noRegion: Count;
+  noProvince: Count;
+  parishesRepresented: Count;
+  activeParishes: number;
+  waiting: { notListed: Count; detailsWrong: Count; earlierText: Count };
+  comparison: { from: string; to: string; days: number; applications: Count; uniqueApplicants: Count } | null;
+  directory: { importId: string; label: string; structureAsAt: string | null } | null;
+};
+
+export type ReportCard = {
+  key: string;
+  kind: 'unit' | 'parish' | 'direct' | 'without';
+  id: string | null;
+  name: string;
+  level: ChurchLevel | null;
+  status: string | null;
+  changed2026: boolean;
+  parent: UnitBrief | null;
+  chain: { province: string | null; region: string | null; continent: string | null } | null;
+  applications: Count;
+  byStatus: StatusCounts;
+  byPublished: StatusCounts;
+  parishesWithApplications: Count;
+  activeParishes: number | null;
+  children: { level: ChurchLevel; count: number } | null;
+  filter: Record<string, string>;
+  drill: Record<string, string> | null;
+};
+
+export type ReportListLevel = ChurchLevel | 'parish';
+/** How a listing is ordered (server/admin/reports.ts LISTING_SORTS); status and parish orders only for roles that see exact counts. */
+export type ReportSort = 'applications' | 'name' | 'parishes' | ApplicationStatus;
+export type ReportListing = {
+  mode: 'level' | 'children' | 'parishes';
+  level: ReportListLevel | null;
+  within: (UnitBrief & { status: string; childLevel: ChurchLevel | null }) | null;
+  ancestors: UnitBrief[];
+  direct: boolean;
+  without: 'region' | 'province' | null;
+  search: string | null;
+  sort: ReportSort;
+  dir: 'asc' | 'desc';
+  includeAll: boolean;
+  masked: boolean;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: ReportCard[];
+  extras: ReportCard[];
+  totals: { applications: Count; parishesWithApplications: Count };
+};
+
+export type ReportCohort = {
+  id: string;
+  name: string;
+  edition: number;
+  opensAt: string | null;
+  closesAt: string | null;
+  openNow: boolean;
+  applications: Count;
+  byStatus: StatusCounts;
+  withParish: Count;
+};
+
+export type Trend = { interval: 'day' | 'week'; from: string; to: string; explicit: boolean; masked: boolean; points: { period: string; applications: Count }[] };
+export type ReportsOverview = {
+  masked: boolean;
+  total: Count;
+  unmatched: Count;
+  continents: { id: string; name: string; applications: Count }[];
+  topRegions: { id: string; name: string; applications: Count }[];
 };
 
 export type AccountRow = { id: string; email: string; status: 'active' | 'suspended'; createdAt: string; lastLoginAt: string | null; applications: number; devices: number };
@@ -234,6 +444,8 @@ export const adminApi = {
     post<{ ok: true; notified: boolean }>(`/applicants/${id(applicantId)}/publish`, { expectedStatus, message }),
   correct: (applicantId: string, changes: Record<string, string>) => post<{ ok: true; changed: string[] }>(`/applicants/${id(applicantId)}/correct`, changes),
   deleteApplicant: (applicantId: string, confirm: string) => post<{ ok: true }>(`/applicants/${id(applicantId)}/delete`, { confirm }),
+  changeApplicantParish: (applicantId: string, parishId: string | null) =>
+    post<{ ok: true; from: string | null; to: string | null; reportsResolved: number }>(`/applicants/${id(applicantId)}/parish`, { parishId }),
   reviewers: (signal?: AbortSignal) => call<{ items: { id: string; name: string; role: StaffRole }[] }>('/reviewers', { signal }),
 
   // Accounts
@@ -284,7 +496,43 @@ export const adminApi = {
   revokeStaffSessions: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/revoke-sessions`),
 
   // Settings and audit
-  settings: (signal?: AbortSignal) => call<{ settings: Settings; health: Health }>('/settings', { signal }),
+  settings: (signal?: AbortSignal) => call<{ settings: Settings; health: Health; directory: DirectoryReadiness }>('/settings', { signal }),
   saveSettings: (changes: Partial<Settings>) => patch<{ ok: true; settings: Settings }>('/settings', changes),
   audit: (params: Record<string, string | number | undefined>, signal?: AbortSignal) => call<Paged<AuditRow>>(`/audit${query(params)}`, { signal }),
+
+  // Parish directory
+  directoryOverview: (signal?: AbortSignal) => call<DirectoryReadiness>('/directory/overview', { signal }),
+  browseDirectory: (params: { unit?: string; q?: string; page?: number; show?: string }, signal?: AbortSignal) => call<Browse>(`/directory/browse${query(params)}`, { signal }),
+  searchUnits: (q: string, level?: ChurchLevel, signal?: AbortSignal) => call<{ units: UnitMatch[] }>(`/directory/search${query({ q, kind: 'unit', level })}`, { signal }),
+  searchDirectoryParishes: (q: string, signal?: AbortSignal) => call<{ parishes: ParishSuggestion[] }>(`/directory/search${query({ q, kind: 'parish' })}`, { signal }),
+  unitDetail: (unitId: string, signal?: AbortSignal) => call<UnitDetail>(`/directory/units/${id(unitId)}`, { signal }),
+  parishEntry: (parishId: string, signal?: AbortSignal) => call<ParishEntry>(`/directory/parishes/${id(parishId)}`, { signal }),
+  createUnit: (input: { level: 'continent' | 'region' | 'province'; name: string; parentId: string | null }) => post<{ id: string }>('/directory/units', input),
+  updateUnit: (unitId: string, changes: { displayName?: string; parentId?: string; state?: string | null }) => patch<{ ok: true; changed: string[] }>(`/directory/units/${id(unitId)}`, changes),
+  mergeUnit: (unitId: string, intoId: string) =>
+    post<{ ok: true; unitsMoved: number; parishesMoved: number; parishesMerged: number; applicationsMoved: number }>(`/directory/units/${id(unitId)}/merge`, { intoId }),
+  createParish: (input: { unitId: string; name: string }) => post<{ id: string }>('/directory/parishes', input),
+  updateParish: (parishId: string, changes: { displayName?: string; unitId?: string; status?: 'active' | 'inactive' }) =>
+    patch<{ ok: true; changed: string[] }>(`/directory/parishes/${id(parishId)}`, changes),
+  mergeParish: (parishId: string, intoId: string) => post<{ ok: true; applicationsMoved: number }>(`/directory/parishes/${id(parishId)}/merge`, { intoId }),
+  splitParish: (parishId: string, name: string) => post<{ id: string }>(`/directory/parishes/${id(parishId)}/split`, { name }),
+  directoryImports: (page: number, signal?: AbortSignal) => call<Paged<ImportRow>>(`/directory/imports${query({ page })}`, { signal }),
+  directoryImport: (importId: string, params: { code?: string; page?: number }, signal?: AbortSignal) => call<ImportDetail>(`/directory/imports/${id(importId)}${query(params)}`, { signal }),
+  directoryLineage: (signal?: AbortSignal) => call<{ items: LineageGroup[] }>('/directory/lineage', { signal }),
+
+  // Parish review
+  parishReview: (kind: ReviewKind, page: number, signal?: AbortSignal) => call<ReviewQueue>(`/parish-review${query({ kind, page, pageSize: 20 })}`, { signal }),
+  resolveReport: (reportId: string, action: ResolveAction) => post<{ ok: true; parishId: string | null }>(`/parish-review/reports/${id(reportId)}/resolve`, action),
+  linkEarlierAnswer: (applicantId: string, parishId: string) => post<{ ok: true }>(`/parish-review/earlier/${id(applicantId)}/link`, { parishId }),
+  dismissEarlierAnswer: (applicantId: string) => post<{ ok: true }>(`/parish-review/earlier/${id(applicantId)}/dismiss`),
+  earlierMatches: (signal?: AbortSignal) => call<{ total: number; items: EarlierMatch[] }>('/parish-review/earlier/matches', { signal }),
+  confirmEarlierMatches: (items: { applicationId: string; parishId: string }[]) => post<{ ok: true; linked: number; skipped: number }>('/parish-review/earlier/confirm', { items }),
+
+  // Reports and analytics
+  reportSummary: (params: Record<string, string | undefined>, signal?: AbortSignal) => call<ReportSummary>(`/reports/summary${query(params)}`, { signal }),
+  reportUnits: (params: Record<string, string | undefined>, signal?: AbortSignal) => call<ReportListing>(`/reports/units${query(params)}`, { signal }),
+  reportUnitsCsvUrl: (params: Record<string, string | undefined>) => `/api/admin/reports/units.csv${query(params)}`,
+  reportTrend: (params: Record<string, string | undefined>, signal?: AbortSignal) => call<Trend>(`/reports/trend${query(params)}`, { signal }),
+  reportCohorts: (params: Record<string, string | undefined>, signal?: AbortSignal) => call<{ masked: boolean; items: ReportCohort[] }>(`/reports/cohorts${query(params)}`, { signal }),
+  reportsOverview: (signal?: AbortSignal) => call<ReportsOverview>('/reports/overview', { signal }),
 };

@@ -15,7 +15,10 @@ import { accountRoutes } from './account/routes';
 import { accountAdminRoutes, cohortRoutes } from './admin/accounts';
 import { applicantRoutes } from './admin/applicants';
 import { communicationRoutes } from './admin/communications';
+import { directoryRoutes } from './admin/directory';
+import { parishReviewRoutes } from './admin/parish-review';
 import { platformRoutes } from './admin/platform';
+import { reportRoutes } from './admin/reports';
 import { recordEvent } from './analytics';
 import { staffGuard } from './auth/guards';
 import { staffAuthRoutes } from './auth/staff-routes';
@@ -268,6 +271,9 @@ export async function buildApp({
   await app.register((instance) => cohortRoutes(instance, services), { prefix: '/api/admin/cohorts' });
   await app.register((instance) => communicationRoutes(instance, services), { prefix: '/api/admin' });
   await app.register((instance) => platformRoutes(instance, services), { prefix: '/api/admin' });
+  await app.register((instance) => directoryRoutes(instance, services), { prefix: '/api/admin/directory' });
+  await app.register((instance) => parishReviewRoutes(instance, services), { prefix: '/api/admin/parish-review' });
+  await app.register((instance) => reportRoutes(instance, services), { prefix: '/api/admin/reports' });
 
   // The old Basic-auth CSV URL: now only for signed-in staff with export permission, via the audited export.
   app.get(

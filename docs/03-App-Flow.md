@@ -1,6 +1,6 @@
 # 03 — App Flow
 
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-30
 **Status:** Built. Every screen has its own URL (React Router 8): the homepage, the marketing pages (About, Programme, Journey, FAQ), the application, the install/notification/updates pages, the optional applicant account area and the admin platform. Answers persist across refresh and Back, and submissions go to the API. The site is an installable web app with a service worker ([§6](#6-offline-and-updates)).
 
 Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [04-UI-UX-Design-Brief](04-UI-UX-Design-Brief.md) · [05-Backend-Schema](05-Backend-Schema.md)
@@ -33,7 +33,7 @@ Defined in [`src/App.tsx`](../src/App.tsx).
 | `/account/notifications` | Inbox, this device's notifications, the account's devices | [NotificationsPage](../src/account/NotificationsPage.tsx) | signed-in applicant |
 | `/account/settings` | Details, sessions, sign out everywhere, delete account | [SettingsPage](../src/account/SettingsPage.tsx) | signed-in applicant |
 | `/admin/login`, `/admin/setup?token=…`, `/admin/forgot`, `/admin/reset?token=…` | Staff sign-in (password + two-step verification), invitation set-up, password reset | [AuthPages](../src/admin/AuthPages.tsx) | — |
-| `/admin` … | Dashboard, Applicants (`/admin/applicants`, `/admin/applicants/:id`), Accounts (`/admin/accounts`, `/:id`), Cohorts, Notifications (`/admin/campaigns`, `/new`, `/:id`), Announcements, Staff, Settings, Audit history, Your security | [AdminApp](../src/admin/AdminApp.tsx) and [`src/admin/pages/`](../src/admin/pages/) | signed-in staff with two-step verification; each page checks the role's permissions (the server enforces them) |
+| `/admin` … | Dashboard, Applicants (`/admin/applicants`, `/admin/applicants/:id`), Accounts (`/admin/accounts`, `/:id`), Reports and analytics (`/admin/reports`, `/organisation?unit=…&level=…&view=table&sort=…&dir=…`, `/over-time?interval=day`, `/decisions`, `/parish-answers`, `/cohorts`, each with the shared filters `cohort`, `from`, `to`, `status`, `published`, `unit`, `direct`, `without`), Parish review (`/admin/parish-review?kind=…`), Parish directory (`/admin/directory?unit=…&parish=…`, `?tab=imports`, `?tab=changes`), Cohorts, Notifications (`/admin/campaigns`, `/new`, `/:id`), Announcements, Staff, Settings, Audit history, Your security | [AdminApp](../src/admin/AdminApp.tsx) and [`src/admin/pages/`](../src/admin/pages/) | signed-in staff with two-step verification; each page checks the role's permissions (the server enforces them) |
 | `*` | 404 | [NotFoundPage](../src/pages/NotFoundPage.tsx) | — |
 
 The account and admin areas are separate lazy-loaded bundles: people who only read the site or apply never download them.
@@ -369,15 +369,18 @@ The account shows **only published information**: the published status and its d
 
 | Area | What it's for | Needs |
 |---|---|---|
-| Dashboard | Applications by cohort and status; verified accounts; active subscriptions (devices, not people); notifications accepted/failed/expired/skipped; observed installs, launches from the installed app, opt-ins/outs, recorded clicks; queue health; recent admin actions | dashboard.view |
-| Applicants | Server-side search (name, email, town, parish, reference), filters (cohort, review status, published status, reviewer, account), sort, pages; CSV download of the current filter | applications.view_all / view_assigned (reviewers see only their assignments); export for CSV |
-| Applicant | Details; internal notes; history; review status (allowed transitions only); **publishing** as a separate step with a preview of exactly what the applicant sees; reviewer assignment; corrections; deletion (type the reference) | note / review / publish / assign / edit |
+| Dashboard | Applications by cohort and status; verified accounts; active subscriptions (devices, not people); notifications accepted/failed/expired/skipped; observed installs, launches from the installed app, opt-ins/outs, recorded clicks; queue health; recent admin actions; **applications by parish** (by continent, the busiest regions, those without a directory parish) | dashboard.view (the parish card: reports.view) |
+| Applicants | Server-side search (name, email, town, parish, reference), filters (cohort, review status, published status, reviewer, account, parish answer, directory parish, submission dates, a province, region or continent), sort, pages; a Parish column with its province; CSV download of the current filter, with province, region and continent | applications.view_all / view_assigned (reviewers see only their assignments); export for CSV |
+| Applicant | Details; the **parish panel** (the answer, the parish in today's directory with its chain, the chain as the applicant confirmed it, who linked it, reports; change or link the parish by searching the directory); internal notes; history; review status (allowed transitions only); **publishing** as a separate step with a preview of exactly what the applicant sees; reviewer assignment; corrections; deletion (type the reference) | note / review / publish / assign / edit |
+| Reports and analytics | Six reports under one set of filters (period with quick choices or a date range in Lagos days, cohort, review status, published status, a continent/region/province; a sheet on phones), shown in words with removable chips and carried between reports and into Applicants. **Overview**: key figures (applications, with a comparison only when a start date gives an equal earlier period; unique applicants by email; with a directory parish; parishes represented), then a card per report (weekly trend chart, review status chart, busiest regions, parish answers with the Parish review backlog, cohorts) and the downloads (totals by place; applications with details for staff who may export). **Regions and parishes**: level tabs, breadcrumb drill-down continent → region → province → parish → applications (focus moves to the breadcrumb), search, sort (status orders only for roles that see exact counts), a comparison chart and place cards, or a sortable table (TanStack); "outside any region/province" groups so totals add up; CSV. **Over time** (weekly/daily tabs, chart with a table of every number), **Review and decisions** (charts and tables of review and published status), **Parish answers**, **Cohorts** (applications vs unique applicants). Every count opens the applicants behind it. Counts follow today's directory; 1–4 show as "fewer than 5" to roles without applicant details | reports.view (applicant links: applications.view_all; the details download: applications.export) |
+| Parish review | Three lists: parishes applicants couldn't find, "details look wrong" flags, answers typed before the directory. Each shows the applicant and suggested parishes; staff link one, search the directory, add the parish (not listed), mark the directory fixed or close it. Earlier answers matching exactly one parish in the applicant's state can be ticked and linked together | applications.view_all + applications.edit + directory.manage |
+| Parish directory | The tree from continents to parishes, with counts and markers (inactive, changed in 2026, corrected, added by staff); a side panel for a unit or parish with its details and history, and corrections: rename, move, set a province's state, deactivate/reactivate, merge, split, add a unit or parish. Tabs for the imports (counts and issues by type) and the 2026 changes (new units, in the directory or waiting for data) | directory.view · directory.manage (corrections) |
 | Accounts | Search, status; detail with applications, devices, sessions; suspend, reactivate, sign out everywhere, delete (type the email) | accounts.view / manage |
 | Cohorts | List with totals; create and edit (dates in a chosen zone, default Lagos); open/close | cohorts.manage |
 | Notifications | Campaign list with truthful counts; editor with preview and live audience counts; test sends to your own test devices; schedule now or later with a time zone; final confirmation; cancel; your test devices | campaigns.manage / send |
 | Announcements | Public (on `/updates`) and applicant notices (in account inboxes), draft → publish → archive | announcements.manage |
 | Staff | Invite (email, or a link to share when email is off), roles, suspend, reset two-step verification, sign out everywhere | staff.manage (owners) |
-| Settings | Support email, applicant accounts on/off, public notification sign-ups on/off; integration health without secrets | settings.manage (owners) |
+| Settings | Support email, applicant accounts on/off, public notification sign-ups on/off, **the parish question from the directory on/off** (only once a list is imported) with the directory's readiness (active parishes, units, where the list came from, reviews waiting, corrections); integration health without secrets | settings.manage (owners) |
 | Audit history | Who did what, when, filterable | audit.view |
 | Your security | Password, recovery codes, sessions | everyone |
 
@@ -395,4 +398,22 @@ sequenceDiagram
     A->>S: POST publish (expectedStatus: stale → 409)
     S->>S: published status + message, history, audit
     S-->>U: inbox entry + neutral push to devices with "Application updates"
+```
+
+**Parish review** turns every parish answer into a directory parish where one exists. The applicant's own answer (what they typed, or the chain they confirmed) never changes; the link is recorded with who made it.
+
+```mermaid
+flowchart TD
+    Q[The parish question] -->|chose a listed parish| L[Linked: counted in Reports]
+    Q -->|"Details look wrong?"| F[Flag in Parish review]
+    Q -->|"I can't find my parish"| N[Not listed, in Parish review]
+    Q -->|older form: typed text| T[Earlier answer, in Parish review]
+    N -->|link a listed parish, or add it in the right unit| L
+    N -->|close: keeps the typed name| U[No parish: counted apart in Reports]
+    F -->|correct the directory, then mark fixed| L
+    F -->|they chose the wrong one: link another| L
+    F -->|the details are right| L
+    T -->|one exact match in their state: tick and confirm together| L
+    T -->|link by hand| L
+    T -->|no matching parish| U
 ```

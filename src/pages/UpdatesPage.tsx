@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { PageIntro } from '../components/marketing/PageParts';
 import { usePageTitle } from '../components/RouteEffects';
-import { LoadError, Loading, when } from '../components/ui';
+import { LoadError, Loading, when } from '../components/ui/basic';
 import { apiRequest } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import type { Announcement } from '../shared/platform';

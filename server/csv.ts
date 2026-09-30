@@ -8,6 +8,7 @@ import {
   labelFor,
   referenceFromId,
 } from '../src/shared/application';
+import { PARISH_ANSWER_LABELS } from '../src/shared/directory';
 import type { ApplicationExportRow } from './repository';
 
 type Cell = string | number | null | undefined;
@@ -93,6 +94,11 @@ const HEADER = [
   'State of residence',
   'City/Town',
   'RCCG parish',
+  'Parish answer',
+  'Parish (directory)',
+  'Province',
+  'Region',
+  'Continent',
   'Highest education',
   'Current status',
   'Purpose clarity (1-5)',
@@ -120,6 +126,11 @@ export function applicationsToCsv(rows: ApplicationExportRow[]): string {
       row.state_of_residence,
       row.city,
       row.parish_name,
+      row.parish_status ? (PARISH_ANSWER_LABELS[row.parish_status as keyof typeof PARISH_ANSWER_LABELS] ?? row.parish_status) : '',
+      row.directory_parish,
+      row.province,
+      row.region,
+      row.continent,
       labelFor(EDUCATION_LEVELS, row.education_level),
       labelFor(CURRENT_STATUSES, row.current_status),
       `${row.purpose_clarity} - ${labelFor(PURPOSE_SCALE, row.purpose_clarity)}`,

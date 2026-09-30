@@ -13,6 +13,9 @@
  *    created from it (unit_lineage) has moved: it keeps its ID and its history.
  *  - Anything the source no longer lists is deactivated, never deleted. Entries staff added
  *    themselves (origin 'staff') are left alone, and so are merges staff made.
+ *  - Corrections staff made to an entry (its `staff_fields`: a new name, unit, parent, state or
+ *    status) are kept, and each place the source differs is listed (`staff_override`). A parish
+ *    staff moved is still recognised where the source lists it (`source_unit_id`).
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -41,6 +44,8 @@ export type UnitRecord = {
   status: DirectoryStatus;
   merged_into_id: string | null;
   origin: DirectoryOrigin;
+  /** Corrected by staff, so imports keep them: 'display_name', 'parent', 'state'. */
+  staff_fields?: string[];
 };
 
 export type ParishRecord = {
@@ -53,6 +58,10 @@ export type ParishRecord = {
   status: DirectoryStatus;
   merged_into_id: string | null;
   origin: DirectoryOrigin;
+  /** Corrected by staff, so imports keep them: 'display_name', 'unit_id', 'status'. */
+  staff_fields?: string[];
+  /** Where the source lists a parish that staff moved to `unit_id`. */
+  source_unit_id?: string | null;
 };
 
 export type LineageRecord = { level: ChurchLevel; new_key: string; source_level: ChurchLevel; source_key: string };
@@ -84,7 +93,8 @@ export type IssueCode =
   | 'ambiguous_move'
   | 'merged_entry'
   | 'kept_unit'
-  | 'large_drop';
+  | 'large_drop'
+  | 'staff_override';
 
 export type Issue = {
   severity: 'info' | 'warning' | 'error';
@@ -183,10 +193,62 @@ function unitChangeKind(before: UnitFields, after: UnitFields): ChangeKind | nul
 }
 
 function parishChangeKind(before: ParishFields, after: ParishFields): ChangeKind | null {
-  if (before.status !== after.status) return 'reactivate';
+  if (before.status !== after.status) return after.status === 'active' ? 'reactivate' : 'deactivate';
   if (before.unit_id !== after.unit_id) return 'move';
   if (before.official_name !== after.official_name || before.display_name !== after.display_name || before.listed_rows !== after.listed_rows) return 'update';
   return null;
+}
+
+/** What staff corrected stays as they set it. Returns the fields where the source differs. */
+function keepUnitCorrections(existing: UnitRecord, after: UnitFields): { after: UnitFields; kept: string[] } {
+  const corrected = new Set(existing.staff_fields ?? []);
+  const next = { ...after };
+  const kept: string[] = [];
+  if (corrected.has('display_name')) {
+    if (next.display_name !== existing.display_name) kept.push('name');
+    next.display_name = existing.display_name;
+  }
+  if (corrected.has('parent')) {
+    if (next.parent_id !== existing.parent_id) kept.push('parent');
+    next.parent_id = existing.parent_id;
+    next.parent_level = existing.parent_level;
+  }
+  if (corrected.has('state')) {
+    if (next.state !== existing.state) kept.push('state');
+    next.state = existing.state;
+  }
+  return { after: next, kept };
+}
+
+function keepParishCorrections(existing: ParishRecord, after: ParishFields): { after: ParishFields; kept: string[] } {
+  const corrected = new Set(existing.staff_fields ?? []);
+  const next = { ...after };
+  const kept: string[] = [];
+  if (corrected.has('display_name')) {
+    if (next.display_name !== existing.display_name) kept.push('name');
+    next.display_name = existing.display_name;
+  }
+  if (corrected.has('unit_id')) {
+    if (next.unit_id !== existing.unit_id) kept.push('place');
+    next.unit_id = existing.unit_id;
+  }
+  if (corrected.has('status')) {
+    if (next.status !== existing.status) kept.push('status');
+    next.status = existing.status;
+  }
+  return { after: next, kept };
+}
+
+const listWords = (words: string[]) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+function overrideIssue(name: string, kept: string[], line: number | null, where: string | null): Issue {
+  return {
+    severity: 'info',
+    code: 'staff_override',
+    line,
+    message: `${name}${where ? ` (${where})` : ''}: staff corrected its ${listWords(kept)} and the source still differs, so staff’s version was kept.`,
+    details: { name, fields: kept, ...(where ? { unit: where } : {}) },
+  };
 }
 
 type UsedUnit = { level: ChurchLevel; key: string; names: Map<string, number>; parents: Map<string | null, number>; firstLine: number };
@@ -281,7 +343,7 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
         },
       });
     }
-    const after: UnitFields = {
+    let after: UnitFields = {
       official_name: official,
       display_name: displayName(official),
       parent_id: parentRef ? unitIds.get(parentRef)! : null,
@@ -289,6 +351,12 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
       state: unit.level === 'province' ? stateFromProvince(official) : null,
       status: 'active',
     };
+    const existing = existingUnits.get(ref);
+    if (existing && survivor(existing, unitsById) === existing) {
+      const corrected = keepUnitCorrections(existing, after);
+      after = corrected.after;
+      if (corrected.kept.length) issues.push(overrideIssue(existing.display_name, corrected.kept, unit.firstLine, null));
+    }
     if (unit.level === 'province' && !after.state) {
       provincesWithoutState++;
       issues.push({
@@ -300,7 +368,6 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
       });
     }
 
-    const existing = existingUnits.get(ref);
     if (!existing) {
       const id = newId();
       unitIds.set(ref, id);
@@ -331,9 +398,26 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
     } else unitTally.unchanged++;
   }
 
-  // 3. Parish entries: match within the unit, then look for moves, then create.
-  const existingParishes = new Map(current.parishes.map((parish) => [`${parish.unit_id}|${parish.name_key}`, parish]));
+  // 3. Parish entries: match within the unit, then look for moves, then create. A parish is
+  // recognised where the source lists it: its unit (or the unit that one was merged into), or
+  // for a parish staff moved, the unit it came from. Where staff put it counts too, in case the
+  // source catches up with the correction.
+  const unitSurvivorId = (id: string) => {
+    const unit = unitsById.get(id);
+    return unit ? survivor(unit, unitsById).id : id;
+  };
+  const sourceUnitOf = (parish: ParishRecord) => unitSurvivorId(parish.source_unit_id ?? parish.unit_id);
+  const existingParishes = new Map<string, ParishRecord>();
+  const placedParishes = new Map<string, ParishRecord>();
+  for (const parish of current.parishes) {
+    const key = `${sourceUnitOf(parish)}|${parish.name_key}`;
+    const other = existingParishes.get(key);
+    // A merged entry and the one it was merged into can share a key: the survivor answers for both.
+    if (!other || (other.status === 'merged' && parish.status !== 'merged')) existingParishes.set(key, parish);
+    if (parish.source_unit_id && parish.source_unit_id !== parish.unit_id) placedParishes.set(`${parish.unit_id}|${parish.name_key}`, parish);
+  }
   const parishesById = new Map(current.parishes.map((parish) => [parish.id, parish]));
+  const matched = new Map<string, 'source' | 'placed'>(); // how each entry was recognised
   const knownAliases = new Map<string, Set<string>>();
   for (const { parish_id, alias } of current.aliases) {
     let set = knownAliases.get(parish_id);
@@ -356,6 +440,18 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
       known.add(name);
       aliases.push({ parish_id: parishId, alias: name, alias_key: parishKey(name) });
     }
+  };
+
+  /** Records what the source changes on an existing entry, keeping staff corrections. */
+  const changeParish = (existing: ParishRecord, source: ParishFields, line: number) => {
+    const { after, kept } = keepParishCorrections(existing, source);
+    if (kept.length) issues.push(overrideIssue(existing.display_name, kept, line, unitNames.get(source.unit_id) ?? null));
+    const before = parishFields(existing);
+    const kind = parishChangeKind(before, after);
+    if (kind) {
+      parishChanges.push({ kind, id: existing.id, name_key: existing.name_key, before, after });
+      parishTally[kind]++;
+    } else parishTally.unchanged++;
   };
 
   const pending: { group: Group; after: ParishFields }[] = [];
@@ -386,7 +482,8 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
       });
     }
 
-    const existing = existingParishes.get(`${unitId}|${group.key}`);
+    const bySource = existingParishes.get(`${unitId}|${group.key}`);
+    const existing = bySource ?? placedParishes.get(`${unitId}|${group.key}`);
     if (!existing) {
       pending.push({ group, after });
       continue;
@@ -404,13 +501,25 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
       });
       continue;
     }
-    const before = parishFields(existing);
-    const kind = parishChangeKind(before, after);
-    if (kind) {
-      parishChanges.push({ kind, id: existing.id, name_key: existing.name_key, before, after });
-      parishTally[kind]++;
-    } else parishTally.unchanged++;
-    addAliases(existing.id, [...group.names.keys(), before.official_name], after.official_name);
+    // A second listing for an entry already matched: two units staff merged both list the name
+    // (its rows count there), or the source lists it both where it was and where staff moved it.
+    const earlier = matched.get(existing.id);
+    if (earlier) {
+      const moved = earlier === 'placed' || !bySource;
+      issues.push({
+        severity: moved ? 'warning' : 'info',
+        code: moved ? 'staff_override' : 'merged_entry',
+        line: group.lines[0]!,
+        message: moved
+          ? `${after.display_name} is listed under ${where} and also where staff moved it; it stays one entry. Check it in the directory.`
+          : `${after.display_name} is listed again under a unit merged into ${where}, so its rows count there.`,
+        details: { name: after.display_name, unit: where },
+      });
+      continue;
+    }
+    matched.set(existing.id, bySource ? 'source' : 'placed');
+    changeParish(existing, after, group.lines[0]!);
+    addAliases(existing.id, [...group.names.keys(), existing.official_name], after.official_name);
   }
 
   // Moves: a parish still active in a unit that the new unit was created from, under the same
@@ -434,7 +543,7 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
   }
   const candidates = pending.map(({ group }) => {
     const sources = sourcesOf.get(group.unitRef);
-    return sources ? (unseenByKey.get(group.key) ?? []).filter((parish) => sources.has(parish.unit_id)) : [];
+    return sources ? (unseenByKey.get(group.key) ?? []).filter((parish) => sources.has(sourceUnitOf(parish))) : [];
   });
   const claims = new Map<string, number>();
   for (const list of candidates) for (const parish of list) bump(claims, parish.id);
@@ -444,8 +553,8 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
     const only = options.length === 1 && claims.get(options[0]!.id) === 1 ? options[0]! : null;
     if (only) {
       seen.add(only.id);
-      parishChanges.push({ kind: 'move', id: only.id, name_key: only.name_key, before: parishFields(only), after });
-      parishTally.move++;
+      matched.set(only.id, 'source');
+      changeParish(only, after, group.lines[0]!);
       addAliases(only.id, [...group.names.keys(), only.official_name], after.official_name);
       return;
     }
@@ -468,6 +577,8 @@ export function planImport(rows: SourceRow[], current: Snapshot, newId: () => st
   const activeBefore = current.parishes.filter((parish) => parish.status === 'active').length;
   for (const parish of current.parishes) {
     if (parish.status !== 'active' || seen.has(parish.id) || parish.origin === 'staff') continue;
+    // Staff set its status themselves (reactivated it), so it stays until they change it.
+    if (parish.staff_fields?.includes('status')) continue;
     const before = parishFields(parish);
     parishChanges.push({ kind: 'deactivate', id: parish.id, name_key: parish.name_key, before, after: { ...before, status: 'inactive' } });
     parishTally.deactivate++;
