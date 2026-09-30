@@ -185,7 +185,7 @@ Same sticky header on all four (burgundy, lockup links home, nav with the curren
 
 Consent uses a native checkbox styled as the original custom box; it is never pre-ticked. The review screen uses a `<dl>` summary with per-section **Edit** links.
 
-**Guidance next to questions:** email ("The Programme team will use this to contact you about your application."), phone (country code), age range ("The programme is for ages 18–30."), parish (optional free text; with the directory: "Type your parish's name and choose it from the list. Many parishes share a name, so you can add your province number, for example “Jesus House 12”.") and the purpose scale.
+**Guidance next to questions:** email ("The Programme team will use this to contact you about your application."), phone (country code), age range ("The programme is for ages 18–30."), parish (required; with the directory: "Type your parish's name and choose it from the list. Many parishes share a name, so you can add your province number, for example “Jesus House 12”."; without it: "Type your parish's name as you know it. The Programme team will match it to the RCCG parish list.") and the purpose scale.
 
 ## 6. Motion
 

@@ -129,6 +129,13 @@ export type ChainUnit = { id: string; name: string };
 /** Null where the directory has no such level for this parish (zone and area, for now, everywhere). */
 export type ParishChain = Record<ChurchLevel, ChainUnit | null>;
 
+/**
+ * Whether the directory places this parish in full: every parish belongs to a continent. A
+ * parish may sit directly under a region or a continent (no province, or no region), which is
+ * complete; one that reaches no continent is a gap in the list, reported to staff, never filled in.
+ */
+export const isChainComplete = (chain: ParishChain): boolean => chain.continent !== null;
+
 export type ParishSuggestion = {
   id: string;
   name: string;

@@ -5,7 +5,8 @@ import { FormActions, FormCard, StepHeader } from '../components/FormLayout';
 import { usePageTitle } from '../components/RouteEffects';
 import { site } from '../config/site';
 import { ApiError, submitApplication } from '../lib/api';
-import { chainLine, type ParishDraft } from '../lib/parish';
+import { chainRows, type ParishDraft } from '../lib/parish';
+import { isChainComplete } from '../shared/directory';
 import {
   AGE_RANGES,
   CONSENT_STATEMENT,
@@ -63,14 +64,22 @@ function SummarySection({ title, editTo, rows }: { title: string; editTo: string
   );
 }
 
-/** The parish as the review shows it when the question used the directory. */
+/** The parish as the review shows it when the question used the directory: its units, level by level. */
 function parishSummary(parish: ParishDraft | null): ReactNode {
   if (parish?.kind === 'listed') {
     return (
       <>
         <span className="block">{parish.name}</span>
-        <span className="block text-[13px] text-muted">{chainLine(parish.chain)}</span>
-        {parish.detailsWrong && <span className="block text-[13px] text-muted">You told us these details look wrong.</span>}
+        {chainRows(parish.chain).map(([level, unit]) => (
+          <span key={level} className="block text-[13px] text-muted">
+            {level}: {unit}
+          </span>
+        ))}
+        {!isChainComplete(parish.chain) ? (
+          <span className="block text-[13px] text-muted">We’ve asked the Programme team to complete this parish’s details.</span>
+        ) : (
+          parish.detailsWrong && <span className="block text-[13px] text-muted">You told us these details look wrong.</span>
+        )}
       </>
     );
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ParishChain, ParishDetailsResponse } from '../shared/directory';
+import { isChainComplete, type ParishChain, type ParishDetailsResponse } from '../shared/directory';
 import { chainLine, chainRows, highlightParts, parishAnswer, recheck, resultsAnnouncement, type ListedParish } from './parish';
 
 const unit = (id: string, name: string) => ({ id, name });
@@ -49,6 +49,18 @@ describe('showing the chain', () => {
       ['Province', 'None (directly under Continent 1)'],
       ['Region', 'None (directly under Continent 1)'],
       ['Continent', 'Continent 1'],
+    ]);
+  });
+
+  it('treats skipped levels as complete, and only a parish with no continent as a gap in the list', () => {
+    expect(isChainComplete(LAGOS_3)).toBe(true);
+    expect(isChainComplete({ ...LAGOS_3, province: null })).toBe(true); // directly under a region
+    expect(isChainComplete({ ...LAGOS_3, province: null, region: null })).toBe(true); // directly under a continent
+    expect(isChainComplete({ ...LAGOS_3, continent: null })).toBe(false);
+    // Nothing is made up for the missing level: the card lists what the directory has.
+    expect(chainRows({ ...LAGOS_3, continent: null })).toEqual([
+      ['Province', 'Lagos Province 3'],
+      ['Region', 'Region 54'],
     ]);
   });
 

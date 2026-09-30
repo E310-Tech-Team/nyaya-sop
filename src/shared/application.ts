@@ -110,7 +110,10 @@ export type ParishAnswer =
 export type ParishChoice =
   | { kind: 'listed'; parishId: string; detailsWrong: boolean }
   | { kind: 'not_listed'; name: string }
-  /** The free-text question: the directory is off, or an older copy of the form sent it. */
+  /**
+   * The free-text question, used only while the directory is off (then the name is required).
+   * `null` exists only on applications stored before the parish became compulsory.
+   */
   | { kind: 'typed'; name: string | null };
 
 /** JSON body of `POST /api/applications`. */

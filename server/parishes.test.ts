@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { referenceFromId } from '../src/shared/application';
 import type { ParishDetailsResponse, ParishSearchResponse } from '../src/shared/directory';
 import { validPayload } from '../src/shared/test-fixtures';
 import { MESSAGES } from '../src/shared/validation';
@@ -290,20 +291,87 @@ describe('POST /api/applications with the parish directory', () => {
     expect((await submit({ parish: { kind: 'listed', id, confirmed: false } })).json().fieldErrors).toEqual({ parishName: MESSAGES.parishConfirm });
   });
 
-  it('still accepts an older copy of the form, with its free text', async () => {
+  it('refuses a request that skips the parish question, whatever name it types (security)', async () => {
+    for (const body of [{}, { parishName: '  St  Mark ' }, { parishName: 'RCCG Jesus House, Lagos Province 3' }, { parish: 'Jesus House' }, { parish: { kind: 'typed', name: 'St Mark' } }]) {
+      const response = await submit(body);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().fieldErrors).toEqual({ parishName: MESSAGES.parishRequired });
+    }
+    expect((await ctx.db.query('select count(*)::int as n from applications')).rows[0]).toEqual({ n: 0 });
+  });
+
+  it('takes the parish’s units from the directory, never from the request', async () => {
+    const id = await parishId('Jesus House', 'Lagos Province 3');
+    const elsewhere = await parishId('Rehoboth', 'Oyo Province 6');
+    const forged = { kind: 'listed', id, confirmed: true, name: 'Made Up', chain: { continent: { id: elsewhere, name: 'Continent 99' }, province: { id: elsewhere, name: 'Nowhere Province 1' } } };
+    const response = await submit({ parish: forged, parishName: 'Made Up' });
+    expect(response.statusCode).toBe(201);
+    expect(await stored(response.json().id)).toMatchObject({
+      parish_status: 'listed',
+      parish_id: id,
+      parish_name: 'Jesus House',
+      parish_snapshot: { province: { name: 'Lagos Province 3' }, region: { name: 'Region 54' }, continent: { name: 'Continent 3' } },
+    });
+  });
+
+  it('keeps a parish the list doesn’t place under a continent as it is, and reports it to staff', async () => {
+    const id = await parishId('Grace Chapel', 'Lagos Province 3');
+    // A gap in the list, as a unit whose parent was never recorded would leave: nothing is filled in.
+    await ctx.db.query(`update parishes set continent_id = null where id = $1`, [id]);
+    const lookup = await ctx.app.inject({ url: `/api/parishes/${id}`, remoteAddress: nextVisitor() });
+    expect((lookup.json() as ParishDetailsResponse).chain).toMatchObject({ continent: null, region: { name: 'Region 54' }, province: { name: 'Lagos Province 3' } });
+
+    const response = await submit({ parish: { kind: 'listed', id, confirmed: true } });
+    expect(response.statusCode).toBe(201);
+    expect(await stored(response.json().id)).toMatchObject({ parish_status: 'listed', parish_id: id, parish_snapshot: { continent: null, region: { name: 'Region 54' } } });
+    const reports = await ctx.db.query(`select kind::text as kind, parish_id, reported_name from parish_reports`);
+    expect(reports.rows).toEqual([{ kind: 'details_wrong', parish_id: id, reported_name: null }]);
+  });
+});
+
+describe('POST /api/applications while the parish directory is off', () => {
+  it('requires the parish’s name, and keeps it as typed for staff to link', async () => {
+    for (const parishName of ['', '   ']) {
+      const response = await submit({ parishName });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().fieldErrors).toEqual({ parishName: MESSAGES.parishTextRequired });
+    }
+    expect((await submit({ parishName: '42' })).json().fieldErrors).toEqual({ parishName: MESSAGES.parishNameInvalid });
     const typed = await submit({ parishName: '  St  Mark ' });
-    const blank = await submit({});
-    expect(await stored(typed.json().id)).toMatchObject({ parish_status: 'legacy_text', parish_name: 'St Mark', parish_id: null });
-    expect(await stored(blank.json().id)).toMatchObject({ parish_status: 'not_provided', parish_name: null });
+    expect(typed.statusCode).toBe(201);
+    expect(await stored(typed.json().id)).toMatchObject({ parish_status: 'legacy_text', parish_name: 'St Mark', parish_id: null, parish_snapshot: null });
+  });
+});
+
+describe('applications stored before the parish question was compulsory', () => {
+  it('stay as they were, and keep showing in lists and exports', async () => {
+    // As an application without a parish was stored before: no ID, no name.
+    const earlier = (await submit({ parishName: 'Earlier answer' })).json().id as string;
+    await ctx.db.query(`update applications set parish_status = 'not_provided', parish_name = null where id = $1`, [earlier]);
+    const before = await stored(earlier);
+
+    await importList(LIST);
+    await switchDirectory(true);
+    expect((await submit({ parish: { kind: 'listed', id: await parishId('Rehoboth', 'Oyo Province 6'), confirmed: true } })).statusCode).toBe(201);
+
+    expect(await stored(earlier)).toEqual(before);
+    expect(before).toMatchObject({ parish_status: 'not_provided', parish_name: null, parish_id: null });
+    const owner = asUser(ctx.app, await staffSignIn(ctx, await createStaff(ctx, { role: 'owner' })));
+    const listedEarlier = await owner({ url: '/api/admin/applicants?parishStatus=not_provided' });
+    expect((listedEarlier.json().items as { id: string }[]).map((item) => item.id)).toEqual([earlier]);
+    const csv = await owner({ url: '/api/admin/applicants/export.csv' });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.body).toContain(referenceFromId(earlier));
   });
 });
 
 describe('after applications link to parishes', () => {
   it('keeps directory parishes out of text corrections, and tracks free-text ones', async () => {
     const importId = await importList(LIST);
+    // Typed while the directory was still off (the question asked for the name then).
+    const typed = (await submit({ parishName: 'St Mark' })).json().id;
     await switchDirectory(true);
     const listed = (await submit({ parish: { kind: 'listed', id: await parishId('Rehoboth', 'Oyo Province 6'), confirmed: true } })).json().id;
-    const typed = (await submit({ parishName: 'St Mark' })).json().id;
     const owner = await createStaff(ctx, { role: 'owner' });
     const as = asUser(ctx.app, await staffSignIn(ctx, owner));
     const correct = (id: string, parishName: string) => as({ method: 'POST', url: `/api/admin/applicants/${id}/correct`, payload: { parishName } });

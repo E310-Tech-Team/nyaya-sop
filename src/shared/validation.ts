@@ -46,9 +46,10 @@ export const MESSAGES = {
   cityRequired: 'Enter your city or town',
   cityInvalid: `Enter your city or town (${LIMITS.city.min}–${LIMITS.city.max} characters)`,
   parishTooLong: `Parish name must be ${LIMITS.parishName.max} characters or fewer`,
-  parishRequired: 'Choose your parish, or tell us it isn’t listed',
-  parishConfirm: 'Confirm that this is your parish',
+  parishRequired: 'Please search for and select your parish to continue.',
+  parishConfirm: 'Check your parish’s details, then choose “Yes, this is my parish” to continue.',
   parishNameRequired: 'Enter the name of your parish',
+  parishTextRequired: 'Enter the name of your RCCG parish to continue.',
   parishNameInvalid: `Enter your parish’s name (${LIMITS.parishName.min}–${LIMITS.parishName.max} characters)`,
   educationRequired: 'Choose your highest level of education',
   statusRequired: 'Choose your current status',
@@ -187,6 +188,19 @@ export function validateParish(answer: unknown, required: boolean): { ok: true; 
   return { ok: false, error: MESSAGES.parishRequired };
 }
 
+/**
+ * The parish question while the directory is off: there is no list to choose from, so the name
+ * as the applicant knows it is required (stored as free text for staff to link to the list).
+ */
+export function validateParishText(text: string): { ok: true; value: ParishChoice } | { ok: false; error: string } {
+  const name = cleanText(text);
+  if (!name) return { ok: false, error: MESSAGES.parishTextRequired };
+  if (characters(name) < LIMITS.parishName.min || characters(name) > LIMITS.parishName.max || !HAS_LETTER.test(name)) {
+    return { ok: false, error: MESSAGES.parishNameInvalid };
+  }
+  return { ok: true, value: { kind: 'typed', name } };
+}
+
 export const hasErrors = (errors: FieldErrors): boolean => Object.keys(errors).length > 0;
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
@@ -213,11 +227,12 @@ export type ValidationResult =
   | { ok: false; fieldErrors: FieldErrors };
 
 /**
- * Full check of an untrusted request body (the server's entry point). `parishRequired` is set
- * while the parish directory is on: a form using the directory must then answer the parish
- * question. An older copy of the form (no `parish` field) is still accepted, with its free text.
+ * Full check of an untrusted request body (the server's entry point). The parish question is
+ * compulsory. While the parish directory is on (`directory`), the answer must be the `parish`
+ * field (a confirmed parish from the list, or a report that it isn't listed): a body without it
+ * has no answer, whatever `parishName` says. While it's off, the typed name is required.
  */
-export function validateApplication(input: unknown, options: { parishRequired?: boolean } = {}): ValidationResult {
+export function validateApplication(input: unknown, options: { directory?: boolean } = {}): ValidationResult {
   const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
 
   const personal: PersonalAnswers = {
@@ -245,13 +260,15 @@ export function validateApplication(input: unknown, options: { parishRequired?: 
   if (!consentVersion || consentVersion.length > LIMITS.consentVersion.max) {
     fieldErrors.consentVersion = MESSAGES.consentRequired;
   }
-  let parish: ParishChoice = { kind: 'typed', name: cleanText(personal.parishName) || null };
-  if ('parish' in body && (body.parish != null || options.parishRequired)) {
-    const checked = validateParish(body.parish, options.parishRequired ?? false);
-    if (checked.ok) parish = checked.value;
-    else fieldErrors.parishName = checked.error;
-  }
-  if (hasErrors(fieldErrors)) return { ok: false, fieldErrors };
+  // A directory answer is still honoured while the directory is off (a draft made while it was on).
+  const answer = options.directory
+    ? validateParish(body.parish, true)
+    : body.parish != null
+      ? validateParish(body.parish, false)
+      : validateParishText(personal.parishName);
+  if (!answer.ok) fieldErrors.parishName = answer.error;
+  if (hasErrors(fieldErrors) || !answer.ok) return { ok: false, fieldErrors };
+  const parish = answer.value;
 
   return {
     ok: true,

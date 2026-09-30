@@ -249,8 +249,8 @@ export async function buildApp({
         return reply.code(201).send({ id, reference: referenceFromId(id), submittedAt: new Date().toISOString() });
       }
 
-      // While the parish directory is on, a form that uses it must answer the parish question.
-      const result = validateApplication(request.body, { parishRequired: await parishDirectoryEnabled(db) });
+      // The parish question is compulsory: a parish from the list while the directory is on, else its name.
+      const result = validateApplication(request.body, { directory: await parishDirectoryEnabled(db) });
       if (!result.ok) {
         return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', {
           fieldErrors: result.fieldErrors,

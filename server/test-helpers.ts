@@ -17,6 +17,7 @@ import { createEmailTransport, OutboxTransport } from './email';
 import { migrate } from './migrate';
 import { FakePushTransport } from './push/transport';
 import type { Services } from './services';
+import { clearSettingsCache } from './settings';
 
 export const ORIGIN = 'http://localhost';
 
@@ -42,6 +43,8 @@ export async function createTestContext(env: Record<string, string> = {}): Promi
   await writeFile(join(staticDir, 'index.html'), '<!doctype html><title>SOP</title><div id="root"></div>');
   const db = await createPgliteDb('memory://');
   await migrate(db);
+  // Settings are cached for a few seconds per process: a new database mustn't see the last test's.
+  clearSettingsCache();
   const config = loadConfig({
     NODE_ENV: 'test',
     STATIC_DIR: staticDir,

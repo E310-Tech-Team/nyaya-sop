@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ApiError, searchParishes } from '../lib/api';
 import { chainLine, chainRows, highlightParts, resultsAnnouncement, type ParishDraft } from '../lib/parish';
 import { NIGERIAN_STATES, OUTSIDE_NIGERIA } from '../shared/application';
-import { PARISH_SEARCH, type ParishSearchResponse, type ParishSuggestion } from '../shared/directory';
+import { isChainComplete, PARISH_SEARCH, type ParishSearchResponse, type ParishSuggestion } from '../shared/directory';
 import { LIMITS } from '../shared/validation';
 import type { ParishCheck } from '../state/application';
 import { FieldError, QuestionNumber, RequiredMark, controlClass, describedBy } from './Fields';
@@ -39,6 +39,53 @@ const textButton =
   'cursor-pointer self-start rounded-[4px] font-sans text-[14px] font-semibold text-brand underline underline-offset-[3px] ' +
   'hover:text-brand-hover focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-brand';
 const note = 'font-sans text-[13px] leading-[1.5] text-muted';
+
+/**
+ * Question 08 before the server's settings say which parish question to ask, or when they couldn't
+ * be loaded: the step can't be completed yet, and says why (never a question that doesn't count).
+ */
+export function ParishQuestionPending({ id, number, status, error, onRetry }: { id: string; number: string; status: 'loading' | 'failed'; error?: string; onRetry: () => void }) {
+  const errorId = `${id}-error`;
+  // Focus stays on the message while trying again (the button goes away until it fails again).
+  const statusRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="flex w-full flex-col gap-[13px]">
+      <div className="flex w-full items-start gap-[11px]">
+        <QuestionNumber n={number} />
+        <p className="flex-1 pt-[4px] font-sans text-[15px] leading-[1.4] text-ink">
+          Your RCCG parish
+          <RequiredMark required />
+        </p>
+      </div>
+      <div
+        ref={statusRef}
+        tabIndex={-1}
+        data-focus-invalid={error && status === 'loading' ? 'true' : undefined}
+        aria-describedby={error ? errorId : undefined}
+        className="rounded-[4px] outline-none focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-brand"
+      >
+        <p role="status" className={note}>
+          {status === 'loading' ? 'Loading the parish question…' : 'We couldn’t load the parish question. Check your connection, then try again.'}
+        </p>
+      </div>
+      {status === 'failed' && (
+        <button
+          type="button"
+          onClick={() => {
+            statusRef.current?.focus();
+            onRetry();
+          }}
+          data-focus-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={textButton}
+        >
+          Try again
+        </button>
+      )}
+      <FieldError id={errorId} message={error} />
+    </div>
+  );
+}
 
 /**
  * Question 08 while the parish directory is on (docs/03, Personal step): an accessible combobox
@@ -96,6 +143,8 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
       }, TIMEOUT_MS);
       searchParishes(text, rankState, controller.signal)
         .then((response) => {
+          // Answers to an earlier search (typed over, or a parish chosen meanwhile) never replace newer state.
+          if (controller.signal.aborted) return;
           setSearch({ status: 'done', query: text, response });
           setActive(-1);
           setOpen(true);
@@ -220,6 +269,8 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
   function listedCard() {
     if (value?.kind !== 'listed') return null;
     const { confirmed } = value;
+    // A gap in the list (no continent): shown as it is, and confirming it reports it to staff.
+    const incomplete = !isChainComplete(value.chain);
     return (
       <>
         <div
@@ -259,6 +310,13 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
               These details have changed since you chose this parish. Check them, then confirm again.
             </p>
           )}
+          {incomplete && (
+            <p className="font-sans text-[13px] font-semibold leading-[1.5] text-brand">
+              {confirmed
+                ? 'Our list doesn’t show this parish’s continent yet. We’ve asked the Programme team to complete its details.'
+                : 'Our list doesn’t show this parish’s continent yet. If it’s your parish, confirm it and we’ll ask the Programme team to complete its details.'}
+            </p>
+          )}
           {check === 'offline' && <p className={note}>Chosen earlier. We’ll check it against the list again when you’re back online.</p>}
           <div className="flex flex-wrap gap-[10px]">
             {!confirmed && (
@@ -270,7 +328,7 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
                 onClick={() => {
                   focusNext.current = 'card';
                   setAnnouncement(`${value.name} confirmed as your parish.`);
-                  onChange({ ...value, confirmed: true, changed: false });
+                  onChange({ ...value, confirmed: true, changed: false, detailsWrong: value.detailsWrong || incomplete });
                 }}
                 className={`${pill} bg-brand text-white hover:bg-brand-hover`}
               >
@@ -289,15 +347,23 @@ export function ParishPicker({ id, number, state, value, onChange, check, error,
               Change parish
             </button>
           </div>
-          <button
-            type="button"
-            aria-pressed={value.detailsWrong}
-            onClick={() => onChange({ ...value, detailsWrong: !value.detailsWrong })}
-            className={textButton}
-          >
-            Details look wrong? Tell us
-          </button>
-          {value.detailsWrong && <p className={note}>Thanks: the Programme team will check this parish’s details. You can still continue.</p>}
+          {!incomplete && (
+            <button
+              type="button"
+              aria-pressed={value.detailsWrong}
+              onClick={() => onChange({ ...value, detailsWrong: !value.detailsWrong })}
+              className={textButton}
+            >
+              Details look wrong? Tell us
+            </button>
+          )}
+          {value.detailsWrong && !incomplete && (
+            <p className={note}>
+              {confirmed
+                ? 'Thanks: the Programme team will check this parish’s details. You can continue.'
+                : 'Thanks: the Programme team will check this parish’s details. Confirm it’s your parish to continue.'}
+            </p>
+          )}
         </div>
         <FieldError id={errorId} message={error} />
       </>

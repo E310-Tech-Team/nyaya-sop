@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { NIGERIAN_STATES, type ParishChoice } from '../src/shared/application';
 import {
   CHURCH_LEVELS,
+  isChainComplete,
   PARISH_SEARCH,
   searchTerms,
   type ChainUnit,
@@ -137,7 +138,11 @@ export const PARISH_ERRORS = {
   merged: 'That parish’s details have changed. Search for it again and confirm it.',
 } as const;
 
-/** Checks a listed parish is still on the list (a draft may be days old) and builds the link. */
+/**
+ * Checks a listed parish is still on the list (a draft may be days old) and builds the link. The
+ * chain always comes from the directory, never from the browser. A parish the directory doesn't
+ * place under a continent is kept as it is (nothing is filled in) and reported for staff to complete.
+ */
 export async function resolveParish(db: Queryable, choice: ParishChoice): Promise<{ ok: true; link: ParishLink } | { ok: false; error: string }> {
   if (choice.kind === 'typed') {
     return { ok: true, link: { status: choice.name ? 'legacy_text' : 'not_provided', parishId: null, name: choice.name, snapshot: null, report: null } };
@@ -156,7 +161,7 @@ export async function resolveParish(db: Queryable, choice: ParishChoice): Promis
       parishId: parish.id,
       name: parish.name,
       snapshot: { parish: { id: parish.id, name: parish.name }, importId: rows[0]?.id ?? null, ...parish.chain },
-      report: choice.detailsWrong ? { kind: 'details_wrong', parishId: parish.id } : null,
+      report: choice.detailsWrong || !isChainComplete(parish.chain) ? { kind: 'details_wrong', parishId: parish.id } : null,
     },
   };
 }
