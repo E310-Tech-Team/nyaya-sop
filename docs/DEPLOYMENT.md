@@ -1,6 +1,6 @@
 # Deployment and operations runbook: VPS (DigitalOcean, Linode or similar)
 
-**Last updated:** 2026-09-30 · Production: https://nyayasop.org, the whole site on one DigitalOcean Droplet installed with the [quick install](#quick-install-one-command) ([06 D-49](06-Implementation-Plan.md#decisions-log))
+**Last updated:** 2026-09-30 · Production: https://nyayasop.org, the whole site on one DigitalOcean Droplet installed with the [quick install](#quick-install-one-command) ([06 D-49](06-Implementation-Plan.md#decisions-log)); every push to `main` released by GitHub Actions once [set up](#automatic-deployment-github-actions) (D-51)
 
 This deploys the whole site (website + installable app + API + background worker + PostgreSQL) to **one Linux VPS**. There are two options:
 
@@ -57,7 +57,7 @@ cd /opt/school-of-purpose && git config core.sshCommand "ssh -i ~/.ssh/sop_deplo
 - **Hostinger firewall:** if the VPS firewall in hPanel is on, allow TCP 22, 80 and 443 (and UDP 443).
 - **DigitalOcean:** an Ubuntu 24.04 Droplet created with your SSH key is enough (1 GB works: the script adds swap). Add a Cloud Firewall (Networking → Firewalls) allowing inbound TCP 22, 80 and 443 and UDP 443. DigitalOcean blocks outbound email ports 25, 465 and 587 on new accounts: use your email provider's alternative port (Resend: 2465; many others: 2525; see [Email](#email)), or ask DigitalOcean support to lift the block.
 - **Email** stays off until you add `SMTP_URL` and `EMAIL_FROM` to `.env` and run the script again ([Email](#email)).
-- **Updating:** `cd /opt/school-of-purpose && git pull && ./deploy/install.sh` (it backs up the database first and keeps `.env`).
+- **Updating:** `cd /opt/school-of-purpose && git pull && ./deploy/install.sh` (it backs up the database first and keeps `.env`). Production is instead released by GitHub Actions on every push to `main` ([Automatic deployment](#automatic-deployment-github-actions)).
 - **Back up `.env` privately** (password manager or sealed offline copy): see [A7](#a7-backups-do-this-on-day-one).
 
 The sections below are the same steps done by hand, and how to run the site.
@@ -148,6 +148,8 @@ crontab -e                  # add:
 
 ### A8. Updating the site
 
+Production does this through GitHub Actions on every push to `main` ([Automatic deployment](#automatic-deployment-github-actions): `deploy/ci-deploy.sh` runs `deploy/install.sh`). By hand, on a server without that setup:
+
 ```bash
 cd /opt/school-of-purpose
 git pull
@@ -158,7 +160,7 @@ docker compose up -d --remove-orphans                         # app applies migr
 docker image prune -f
 ```
 
-`sudo ./deploy/install.sh` does the same (and stops if the backup fails). A change to `deploy/Caddyfile` alone also needs `docker compose restart caddy`: Compose mounts that one file, and a running container keeps the copy it started with. Run it at least monthly even without code changes, so security fixes in the base images reach the server, and keep the host's own packages patched (`sudo apt-get install unattended-upgrades`).
+`sudo ./deploy/install.sh` does the same (and stops if the backup fails; it waits for a release that is already running). A change to `deploy/Caddyfile` alone also needs `docker compose restart caddy`: Compose mounts that one file, and a running container keeps the copy it started with. Run it at least monthly even without code changes, so security fixes in the base images reach the server, and keep the host's own packages patched (`sudo apt-get install unattended-upgrades`).
 
 What people see: pages open in a browser tab pick up the new release when reloaded; the installed app and open tabs show **"An update is ready · Update now"** and never reload by themselves (so nobody loses a form or an admin edit). Old files stay available to tabs still on the previous version.
 
@@ -296,7 +298,7 @@ Then A6's browser checks on the Vercel address: a test application, `/admin` sig
 
 ### C4. Updating
 
-- **Website:** Vercel builds every push (production from `main`, previews from other branches). **API:** A8 on the VPS, as before (migrations run there).
+- **Website:** Vercel builds every push once the repository is connected (production from `main`, previews from other branches). **API:** A8 on the VPS, as before (migrations run there). Production doesn't use this split (06 D-49): its Vercel project stays unconnected, and releases go only through [automatic deployment](#automatic-deployment-github-actions).
 - A website change that needs a new API (a new endpoint or field): update the VPS first, then merge the website.
 - Service worker rollback: set `SW_KILL_SWITCH=1` in Vercel's environment variables and redeploy; remove it and redeploy after a few days ([below](#service-worker-rollback)).
 
@@ -309,6 +311,134 @@ Then A6's browser checks on the Vercel address: a test application, `/admin` sig
 ---
 
 ## Operating the site
+
+### Automatic deployment (GitHub Actions)
+
+Production is released by one workflow, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): every push to `main` (a merged pull request) is checked, released and then checked live ([06 D-51](06-Implementation-Plan.md#decisions-log)). It is the only way releases reach production: the Vercel project's Git integration stays disconnected (Phase 15 is on hold), and `deploy/install.sh` by hand is for emergencies ([below](#releasing-by-hand)).
+
+**Status (2026-09-30): built and tested locally; it runs once the owner has done the [one-time setup](#one-time-setup-the-owner).** Until then the deploy job of each push to `main` fails at "Check the settings" and changes nothing.
+
+```mermaid
+flowchart LR
+    PR["Pull request"] --> C1["check + docker"]
+    Push["Push to main"] --> C2["check + docker<br/>(that commit)"] --> D["deploy<br/>(environment: production)"]
+    Manual["Run workflow<br/>(a commit on main)"] --> C2
+    D -->|"ssh deploy@server 'deploy SHA'"| S["deploy/ci-deploy.sh<br/>(root, one sudo rule)"]
+    S --> I["deploy/install.sh<br/>backup → build → restart"]
+    S --> V1["app healthy, same release,<br/>worker heartbeat"]
+    D --> V2["from GitHub: /api/health,<br/>/api/config, /, /sw.js"]
+```
+
+1. **Pull request:** `check` (`pnpm check`: types, tests, build) and `docker` (the production image builds). Nothing is deployed.
+2. **Push to `main`:** the same two jobs on the pushed commit, then `deploy`. If `main` has moved on by the time `deploy` starts, it releases nothing: the newer commit's own run releases it, with everything before it, so an older commit never replaces a newer one.
+3. **Run by hand** (Actions → CI → Run workflow, branch `main`, optional `sha`): the same checks on that commit, which must already be on `main` (empty: the head of `main`), then the same release. For recovery and [rollback](#rollback).
+4. **On the server:** `deploy` connects as the `deploy` user with its own key, pinned to the server's host key. The key can only run `sudo -n /opt/school-of-purpose/deploy/ci-deploy.sh "deploy <commit>"`, which waits for any release already running, refuses a commit that isn't on GitHub's `main`, local changes to tracked files and local commits, notes the release that was running (the rollback target), checks the commit out on branch `main`, runs `deploy/install.sh` (database backup first, and it stops if the backup fails; fresh base images; build; `docker compose up -d`), then confirms that the app is healthy and serves this release, and that the worker runs it and has written a heartbeat since. Its whole output is kept in `logs/deploy/` on the server (90 days).
+5. **From GitHub:** `/api/health` answers ok with the database ok, `/api/config` reports this release (an abbreviation of the commit), `/` answers 200 with the page, and `/sw.js` contains the release id. Any failure fails the deployment.
+
+One release at a time: the `production-deploy` concurrency group never cancels a running release. GitHub keeps only the newest waiting run and cancels older waiting ones, which is fine: it releases the newest `main`. A cancelled or timed-out job doesn't stop a release that has started on the server (the release writes to its log, not to the connection): it finishes there, and the next one waits for it.
+
+During a release the app restarts: for a few seconds (longer while migrations run) Caddy answers with an error. Open pages keep their loaded files; the installed app and open tabs offer **"An update is ready · Update now"** and never reload by themselves; `/api`, `/admin*` and `/account*` are never cached, as before ([03 §6](03-App-Flow.md#6-offline-and-updates)).
+
+#### One-time setup (the owner)
+
+In this order:
+
+1. **Merge** the pull request that adds this (its deploy job fails at "Check the settings": expected).
+2. **Install that release by hand once**, so the script exists on the server. As root: `cd /opt/school-of-purpose && git pull && ./deploy/install.sh`
+3. **The `deploy` user**, whose key can run one command, through one sudo rule. As root on the server:
+   ```bash
+   adduser --disabled-password --comment "GitHub Actions deploy" deploy
+   install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+   f="$(mktemp)" && echo 'deploy ALL=(root) NOPASSWD: /opt/school-of-purpose/deploy/ci-deploy.sh' > "$f" \
+     && visudo -cf "$f" && install -m 440 -o root -g root "$f" /etc/sudoers.d/sop-deploy; rm -f "$f"
+   ```
+   If `/etc/ssh/sshd_config` limits logins (`AllowUsers`, `AllowGroups`), add `deploy` there and `systemctl reload ssh`.
+4. **The key pair**, on your own computer (not the server), without a passphrase (GitHub uses it unattended):
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C github-actions-deploy -f ~/.ssh/sop-github-deploy
+   cat ~/.ssh/sop-github-deploy.pub
+   ```
+   On the server, as root, the one line that key may use (put the contents of `sop-github-deploy.pub` in place of `ssh-ed25519 AAAA… github-actions-deploy`):
+   ```bash
+   cat > /home/deploy/.ssh/authorized_keys <<'EOF'
+   restrict,command="sudo -n /opt/school-of-purpose/deploy/ci-deploy.sh \"$SSH_ORIGINAL_COMMAND\"" ssh-ed25519 AAAA… github-actions-deploy
+   EOF
+   chown deploy:deploy /home/deploy/.ssh/authorized_keys && chmod 600 /home/deploy/.ssh/authorized_keys
+   ```
+   `restrict` leaves the key no shell, forwarding or terminal; `command=` runs only the release script, which accepts only `deploy <full commit on main>`. Check it from your computer: `ssh -i ~/.ssh/sop-github-deploy deploy@DEPLOY_HOST "deploy nothing"` answers `Expected one argument: "deploy <full 40-character commit on main>". Nothing was changed.` (the key, the forced command and sudo work, and nothing was released).
+5. **The server's host key**, for `DEPLOY_KNOWN_HOSTS`. On your computer:
+   ```bash
+   ssh-keyscan -t ed25519 DEPLOY_HOST > sop-known-hosts
+   ssh-keygen -lf sop-known-hosts
+   ```
+   Compare that `SHA256:…` fingerprint with the one the server gives in the DigitalOcean web console (Droplet → Access → Launch Droplet Console): `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Use the line only if they match (otherwise something is between you and the server).
+6. **GitHub → Settings → Environments → New environment `production`:**
+   - Deployment branches and tags: **Selected branches and tags** → `main`, **before** adding the secrets: a workflow edited on any other branch could otherwise ask for this environment and read them.
+   - Optional: **Required reviewers** (the owner). Each release then waits for approval (Review deployments); that is also the way to pause releases.
+   - **Environment secrets:** `DEPLOY_SSH_KEY` = the whole private key file `~/.ssh/sop-github-deploy` (from `-----BEGIN` to `-----END`); `DEPLOY_KNOWN_HOSTS` = the line in `sop-known-hosts`. Environment secrets, not repository secrets: only the deploy job can read them, and it runs no third-party actions.
+   - **Environment variables:** `DEPLOY_HOST` = the Droplet's IP address, or a name that points straight at it (the same one you gave `ssh-keyscan`; not a name behind a proxy or CDN); `DEPLOY_USER` = `deploy`; `SITE_URL` = `https://nyayasop.org`.
+
+   Then delete the private key and `sop-known-hosts` from your computer. If the key is ever needed again, make a new pair (step 4) and replace the secret.
+7. **Try it:** Actions → CI → Run workflow, branch `main`, `sha` empty. It should end green, with a summary naming the release. From then on every push to `main` is released.
+8. **Protect `main`** ([next](#protecting-main)).
+
+To replace the key: a new pair (step 4), the new line in `authorized_keys`, the new `DEPLOY_SSH_KEY`. To switch automatic releases off: delete `/home/deploy/.ssh/authorized_keys` on the server (releases then fail at the SSH step), or add required reviewers and don't approve.
+
+#### Protecting main
+
+Every commit that reaches `main` is released, and its `deploy/install.sh` and `deploy/ci-deploy.sh` run as root on the server. A direct push to `main` is released too (after its checks) without anyone reviewing it, so `main` must only take reviewed, checked pull requests. **Settings → Branches → Add branch protection rule** for `main`:
+
+- **Require a pull request before merging**; optionally 1 approving review (the owner reviews what techsupport-alt opens, and the other way round).
+- **Require status checks to pass:** `check` and `docker`, with **Require branches to be up to date before merging**.
+- **Do not allow bypassing the above settings** (administrators included).
+- Force pushes and deletions stay blocked (a protection rule's default).
+
+The same with the GitHub CLI (`0` instead of `1` keeps pull requests required without approvals):
+
+```bash
+gh api -X PUT repos/E310-Tech-Team/nyaya-sop/branches/main/protection --input - <<'EOF'
+{ "required_status_checks": { "strict": true, "checks": [ { "context": "check" }, { "context": "docker" } ] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": { "required_approving_review_count": 1 },
+  "restrictions": null, "allow_force_pushes": false, "allow_deletions": false }
+EOF
+```
+
+#### Release safety
+
+- **Migrations must work with the release before them.** The previous worker keeps running against the migrated database until the new app is healthy, and a rollback runs the previous code on it. So: additive first (new tables, new columns that are nullable or have a default); destructive changes (dropping or renaming a column, table or enum value, `NOT NULL` on existing data) in a later release, once no running code, including the release before, uses the old shape. A rename is add, copy, switch the code, drop later. A new enum value is safe only once the release before can read rows that use it.
+- The app applies pending migrations once per release, when it starts and before it serves (under a lock); the worker (`RUN_MIGRATIONS=false`) starts only once the app is healthy. An older release doesn't trip over newer migrations: the runner applies only the files it has.
+- Never reset or drop the database in a release, and there are no automatic down-migrations. The backup `install.sh` takes before every release (`backups/sop-<time>.dump`) is the recovery point: a failed backup stops the release, and releases never use `--skip-backup`.
+- One release at a time: `ci-deploy.sh` and `install.sh` share the lock `/run/lock/sop-deploy.lock`. `git pull` isn't covered by it: on this server, release by hand with `ci-deploy.sh`.
+
+#### Releasing by hand
+
+When GitHub Actions can't run, or in an emergency, as root on the server:
+
+```bash
+cd /opt/school-of-purpose && git fetch origin main && ./deploy/ci-deploy.sh "deploy $(git rev-parse origin/main)"
+```
+
+It runs the same checks, lock, backup and summary as the workflow (any commit on `main` works in place of `origin/main`). If GitHub itself is unreachable, `./deploy/install.sh` rebuilds what is checked out (it waits for a running release too).
+
+#### Rollback
+
+1. Find the last good release: the failed run's summary (**Release before**), the server's `logs/deploy/`, or Settings → Environments → production (each deployment names its commit).
+2. Actions → CI → Run workflow, branch `main`, `sha` = that commit. It runs the checks on it, then releases it like any other (backup first). Re-running an old push run doesn't roll back: a push run whose commit is no longer the head of `main` releases nothing.
+3. The database stays as the newer release left it (migrations only go forward), so the older code must work with it ([release safety](#release-safety)). If it doesn't (the rollback fails its checks), restoring the backup `install.sh` took just before the bad release is a human decision: everything written since then is lost. Take a fresh backup first, and restore into an empty database (the restore in [`deploy/backup.sh`](../deploy/backup.sh) with `--clean` keeps tables that newer migrations created):
+   ```bash
+   cd /opt/school-of-purpose && ./deploy/backup.sh
+   docker compose stop app worker
+   docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+   docker compose exec -T db sh -c 'pg_restore --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backups/sop-YYYY-MM-DD_HHMMSS.dump
+   ```
+   Then run the workflow with the old `sha` again: it starts the app and worker.
+
+#### What a release leaves behind
+
+- **The run's summary** (Actions → the run → Summary): the outcome, the commit and its subject, what started it, the release before (the rollback target), which services were recreated (the app and worker whenever the commit changes; Postgres and Caddy only when a newer image was pulled) and the live checks.
+- **Settings → Environments → production** (and the repository's Deployments): each release with its commit, time and run.
+- **On the server:** `logs/deploy/<UTC time>-<commit>.log`, the whole release. The Actions log shows the same output and is public, so the scripts print no secrets, no `.env` and no container logs (they can hold visitors' addresses).
 
 ### The admin area
 
@@ -358,7 +488,7 @@ A job whose worker crashed is picked up again automatically when its lease (2 mi
 
 ### Migrations
 
-They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, each in a transaction, under a lock. To run them without starting the site: `docker compose run --rm app node server-dist/migrate.js`. **Back up first**; never edit an applied migration file.
+They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, each in a transaction, under a lock. To run them without starting the site: `docker compose run --rm app node server-dist/migrate.js`. **Back up first**; never edit an applied migration file. Each must work with the release before it ([release safety](#release-safety)).
 
 ### Parish directory
 
@@ -526,7 +656,8 @@ Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrom
 - [ ] A test application submitted, found in **Applicants**, and deleted
 - [ ] Nightly backup cron installed, a restore tested, **and** encrypted off-server copies arranged
 - [ ] The server runs with `NODE_ENV=production` (Compose, the Dockerfile and the systemd unit set it)
-- [ ] Base images and host packages updated regularly (§A8)
+- [ ] Base images and host packages updated regularly (§A8; each automatic release pulls fresh base images)
+- [ ] [Automatic deployment](#automatic-deployment-github-actions) set up and tried with a manual run, and `main` [protected](#protecting-main)
 - [ ] Firewall allows only 22/80/443
 - [ ] Privacy notice, consent wording and retention periods agreed by the Programme team ([01-PRD §8](01-PRD.md#8-open-questions))
 - [ ] Device checks done on staging (above)

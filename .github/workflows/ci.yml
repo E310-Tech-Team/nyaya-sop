@@ -1,38 +1,98 @@
 name: CI
 
+# Pull requests: checks only. A push to main: the same checks on the pushed commit, then the deploy
+# job releases it to production. By hand (Actions > CI > Run workflow, from main): the same checks
+# on a commit already on main (default: its head), then a release of it, to recover or roll back.
+# docs/DEPLOYMENT.md, "Automatic deployment", has the whole sequence and the one-time setup.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit on main to release (empty: the head of main). To roll back: the last good release."
+        required: false
+        type: string
+        default: ""
 
-# Read-only token: CI only checks and builds. Nothing here pushes, comments or publishes.
+# Read-only token: nothing here pushes, comments or publishes. The deploy job reaches the server with
+# its own SSH key, a secret of the "production" environment that only that job can read.
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      subject: ${{ steps.subject.outputs.subject }}
     steps:
+      # A pull request checks its merge result, a push the commit pushed, a manual run the commit it
+      # will release: a full commit that must already be on main.
+      - name: Choose the commit
+        id: commit
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          REQUESTED: ${{ inputs.sha }}
+        run: |
+          case "$EVENT" in
+            push) echo "sha=$EVENT_SHA" >> "$GITHUB_OUTPUT" ;;
+            workflow_dispatch)
+              if [ "$REF" != refs/heads/main ]; then
+                echo "::error::Start manual runs from main: they release to production."
+                exit 1
+              fi
+              sha="$(printf '%s' "${REQUESTED:-$EVENT_SHA}" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
+              if ! [[ $sha =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::sha must be a full 40-character commit (git rev-parse <commit> prints one)."
+                exit 1
+              fi
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
       - uses: actions/checkout@v4
         with:
           persist-credentials: false # dependency scripts can't reuse the token
+          ref: ${{ steps.commit.outputs.sha }} # empty for a pull request: its merge result
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '1' }} # a manual run needs main's history
+      - name: Check the commit is on main
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$SHA" refs/remotes/origin/main; then
+            echo "::error::$SHA is not on main. Only commits already on main are released."
+            exit 1
+          fi
+      - name: Note the commit's subject
+        id: subject
+        if: github.event_name != 'pull_request'
+        run: printf 'subject=%s\n' "$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v4 # version comes from "packageManager" in package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      - run: pnpm check # typecheck, tests, build
 
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: check
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false # dependency scripts can't reuse the token
+          ref: ${{ needs.check.outputs.sha }} # the commit check tested (empty for a pull request)
       - uses: docker/setup-buildx-action@v3
       - name: Build the production image
         uses: docker/build-push-action@v6
@@ -41,3 +101,221 @@ jobs:
           push: false
           build-args: SITE_URL=https://apply.example.org
           tags: school-of-purpose:ci
+
+  # Releases the checked commit to production: over SSH, deploy/ci-deploy.sh on the server (the only
+  # thing the key can run), then checks of the live site from here. No third-party actions: this is
+  # the one job that can read the production secrets.
+  deploy:
+    needs: [check, docker]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: ${{ steps.settings.outputs.site }}
+    # One release at a time, and a running one is never cancelled. GitHub keeps only the newest
+    # waiting run (it cancels older waiting ones), which releases the newest commit on main.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      SHA: ${{ needs.check.outputs.sha }}
+    steps:
+      - name: Check the settings
+        id: settings
+        env:
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS != '' }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          missing=""
+          [ "$HAS_KEY" = true ] || missing="$missing secret DEPLOY_SSH_KEY,"
+          [ "$HAS_KNOWN_HOSTS" = true ] || missing="$missing secret DEPLOY_KNOWN_HOSTS,"
+          [ -n "$DEPLOY_HOST" ] || missing="$missing variable DEPLOY_HOST,"
+          [ -n "$DEPLOY_USER" ] || missing="$missing variable DEPLOY_USER,"
+          [ -n "$SITE_URL" ] || missing="$missing variable SITE_URL,"
+          if [ -n "$missing" ]; then
+            echo "::error::Automatic deployment isn't set up: the production environment needs${missing%,} (docs/DEPLOYMENT.md, Automatic deployment). Nothing was deployed."
+            exit 1
+          fi
+          [[ $DEPLOY_HOST =~ ^[A-Za-z0-9][A-Za-z0-9.:-]*$ ]] || { echo "::error::DEPLOY_HOST must be a host name or IP address."; exit 1; }
+          [[ $DEPLOY_USER =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "::error::DEPLOY_USER must be a user name, e.g. deploy."; exit 1; }
+          site="${SITE_URL%/}"
+          [[ $site =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo "::error::SITE_URL must be the site's https:// address with no path, e.g. https://nyayasop.org."; exit 1; }
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+
+      # A push releases its commit only while that is still the head of main. When merges land close
+      # together, an older run's checks can finish last: releasing it then would put an older commit
+      # over a newer one. The newer commit's own run releases it, with everything before it.
+      - name: Still the head of main?
+        id: newest
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if ! [[ $head =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Couldn't read the head of main from GitHub. Nothing was deployed: run the job again."
+            exit 1
+          fi
+          if [ "$head" != "$SHA" ]; then
+            echo "superseded=$head" >> "$GITHUB_OUTPUT"
+            echo "::notice::main has moved on to ${head:0:7}: that commit's own run releases it. Nothing was deployed by this run."
+          fi
+
+      - name: Prepare the SSH key
+        if: steps.newest.outputs.superseded == ''
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          umask 077
+          dir="$RUNNER_TEMP/deploy-ssh"
+          mkdir -p "$dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$dir/known_hosts"
+          chmod 600 "$dir/key" "$dir/known_hosts"
+          if ! grep -q -- '-----BEGIN .*PRIVATE KEY-----' "$dir/key"; then
+            echo "::error::DEPLOY_SSH_KEY isn't a private key: paste the whole key file, from -----BEGIN to -----END."
+            exit 1
+          fi
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f "$dir/known_hosts" > /dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no key for $DEPLOY_HOST: run ssh-keyscan with the same name as DEPLOY_HOST."
+            exit 1
+          fi
+
+      # Plain ssh, pinned to the known host key. The key can only run deploy/ci-deploy.sh, which
+      # streams its log here; if this connection drops, the release still finishes on the server.
+      - name: Release on the server
+        id: release
+        if: steps.newest.outputs.superseded == ''
+        timeout-minutes: 50
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          dir="$RUNNER_TEMP/deploy-ssh"
+          ssh -n -T -i "$dir/key" \
+            -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $SHA" 2>&1 | tee "$RUNNER_TEMP/release.log"
+
+      - name: Check the live site
+        id: verify
+        if: steps.release.outcome == 'success'
+        env:
+          SITE: ${{ steps.settings.outputs.site }}
+        run: |
+          # fetch URL FILE: the body into FILE; prints "<status> <content type>". A request that
+          # doesn't answer 200 is tried again for about four minutes while the site settles.
+          fetch() {
+            local attempt out=""
+            for attempt in 1 2 3 4 5 6 7 8; do
+              out="$(curl -sS --connect-timeout 10 --max-time 20 -o "$2" -w '%{http_code} %{content_type}' "$1" || true)"
+              case "$out" in "200 "*) printf '%s' "$out"; return 0 ;; esac
+              [ "$attempt" = 8 ] || sleep 15
+            done
+            printf '%s' "${out:-no answer}"
+            return 1
+          }
+          safe() { printf '%s' "$1" | tr -cd 'A-Za-z0-9._/;= -' | cut -c 1-80; } # for messages
+          cd "$RUNNER_TEMP"
+
+          if ! out="$(fetch "$SITE/api/health" health.json)" || ! jq -e '.status == "ok" and .database == "ok"' health.json > /dev/null; then
+            echo "::error::$SITE/api/health isn't ok with the database ok ($(safe "$out"))."
+            exit 1
+          fi
+          echo "/api/health: ok, database ok"
+
+          out="$(fetch "$SITE/api/config" config.json)" || { echo "::error::$SITE/api/config answered $(safe "$out")."; exit 1; }
+          build="$(jq -r '.buildId // empty' config.json)"
+          if [ "${#build}" -lt 7 ] || [[ $SHA != "$build"* ]]; then
+            echo "::error::$SITE/api/config reports release $(safe "$build"), not $SHA."
+            exit 1
+          fi
+          echo "/api/config: release $build"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+          if ! out="$(fetch "$SITE/" home.html)" || [[ $out != "200 text/html"* ]] || ! grep -qi '<html' home.html; then
+            echo "::error::$SITE/ didn't answer with the page ($(safe "$out"))."
+            exit 1
+          fi
+          echo "/: the page ($out)"
+
+          if ! out="$(fetch "$SITE/sw.js" sw.js)" || ! grep -qF "$build" sw.js; then
+            echo "::error::$SITE/sw.js isn't this release's service worker ($(safe "$out"))."
+            exit 1
+          fi
+          echo "/sw.js: release $build"
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/deploy-ssh"
+
+      - name: Summary
+        if: always()
+        env:
+          SUBJECT: ${{ needs.check.outputs.subject }}
+          SUPERSEDED: ${{ steps.newest.outputs.superseded }}
+          SETTINGS: ${{ steps.settings.outcome }}
+          RELEASE: ${{ steps.release.outcome }}
+          VERIFY: ${{ steps.verify.outcome }}
+          BUILD: ${{ steps.verify.outputs.build }}
+          SITE: ${{ steps.settings.outputs.site }}
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # Text for Markdown, from the commit subject or the server's output.
+          md() { printf '%s' "$1" | tr -d '`\r' | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          log="$RUNNER_TEMP/release.log"
+          field() { if [ -f "$log" ]; then sed -n "s/^$1: *//p" "$log" | tail -n 1; fi; }
+          commit="https://github.com/$GITHUB_REPOSITORY/commit"
+          # The release that ran before: from the final summary, or from the start of a release that failed.
+          previous="$(field Previous | grep -Ex '[0-9a-f]{40}' || true)"
+          if [ -z "$previous" ] && [ -f "$log" ]; then
+            previous="$(sed -n 's/^Running now: release .*, commit \([0-9a-f]\{40\}\)$/\1/p' "$log" | tail -n 1)"
+          fi
+
+          if [ -n "$SUPERSEDED" ]; then
+            result="Not deployed: main has moved on to \`${SUPERSEDED:0:7}\`, whose own run releases it."
+          elif [ "$SETTINGS" != success ]; then
+            result="Not deployed: the production environment isn't set up (see \"Check the settings\")."
+          elif [ "$RELEASE" = success ] && [ "$VERIFY" = success ]; then
+            result="Deployed, and the live site checks passed."
+          elif [ "$RELEASE" = success ]; then
+            result="Released on the server, but the checks of the live site failed (see \"Check the live site\")."
+          elif [ "$RELEASE" = cancelled ]; then
+            result="Cancelled while releasing: a release that had started finishes on the server (its log is in logs/deploy/ there)."
+          elif [ "$RELEASE" = failure ]; then
+            reason="$(grep '^Error: ' "$log" 2> /dev/null | tail -n 1 || true)"
+            [ -n "$reason" ] || reason="$(tail -n 1 "$log" 2> /dev/null || true)"
+            reason="${reason#Error: }"
+            result="Failed: $(md "${reason:-see \"Release on the server\"}") If the connection dropped or timed out, a release that had started still finishes on the server (its log is in logs/deploy/ there)."
+          else
+            result="Not deployed (an earlier step failed)."
+          fi
+
+          {
+            echo "### Production release"
+            echo
+            echo "$result"
+            echo
+            echo "- **Commit:** [\`${SHA:0:7}\`]($commit/$SHA) $(md "$SUBJECT")"
+            if [ "$EVENT" = push ]; then echo "- **Trigger:** push to main by @$ACTOR"; else echo "- **Trigger:** manual run by @$ACTOR"; fi
+            [ -z "$previous" ] || echo "- **Release before:** [\`${previous:0:7}\`]($commit/$previous)"
+            for service in App Worker Postgres Caddy; do
+              value="$(field "$service")"
+              [ -z "$value" ] || echo "- **$service:** $(md "$value")"
+            done
+            [ "$VERIFY" != success ] || echo "- **Live site:** $SITE: /api/health ok, /api/config release \`$BUILD\`, / and /sw.js served"
+            if [ -n "$previous" ] && [ "$previous" != "$SHA" ]; then
+              echo
+              echo "To roll back: Actions > CI > Run workflow (branch main), sha \`$previous\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

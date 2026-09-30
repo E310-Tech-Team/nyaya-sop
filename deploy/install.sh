@@ -13,6 +13,7 @@
 #
 # Safe to run again (e.g. after `git pull`): it keeps .env and its secrets, backs up the database,
 # pulls fresh base images, rebuilds, restarts, and applies database migrations automatically.
+# It waits for a release that is already running (deploy/ci-deploy.sh takes the same lock).
 # It never prints secrets, or puts them on a command line.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -28,13 +29,25 @@ while [ $# -gt 0 ]; do
     --email) EMAIL="${2:-}"; shift 2 ;;
     --name) NAME="${2:-}"; shift 2 ;;
     --skip-backup) SKIP_BACKUP="yes"; shift ;;
-    -h | --help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
 done
 [ "$(id -u)" -eq 0 ] || die "Run as root: sudo ./deploy/install.sh …"
 [ -f docker-compose.yml ] && [ -f .env.example ] || die "Run this from inside the project folder."
 if [ -n "$EMAIL" ] && ! printf '%s' "$EMAIL" | grep -Eq '^[^@ ]+@[^@ ]+\.[^@ ]+$'; then die "--email doesn't look like an email address."; fi
+
+# One release at a time. deploy/ci-deploy.sh (GitHub Actions) holds this lock while it runs this
+# script; run by hand, the script waits here for a release that is already running.
+if [ -z "${SOP_RELEASE_LOCK_HELD:-}" ] && command -v flock > /dev/null 2>&1; then
+  release_lock="${SOP_DEPLOY_LOCK:-/run/lock/sop-deploy.lock}"
+  mkdir -p "$(dirname "$release_lock")"
+  exec 9>> "$release_lock"
+  if ! flock -n 9; then
+    log "Waiting for the release that is already running to finish"
+    flock -w 1800 9 || die "Another release is still running. Try again once it has finished."
+  fi
+fi
 
 # Replaces KEY=… (or a commented "# KEY=…") in .env, or appends it. Values are never printed, and
 # reach awk through its environment: a command-line argument would show in `ps` to every user,
@@ -140,8 +153,10 @@ wait_healthy() {
     [ "$status" = healthy ] && return 0
     sleep 5
   done
-  docker compose logs --tail 40 app
-  die "The app did not become healthy (see the log above)."
+  # The app's log can hold visitors' addresses: shown at a terminal, but kept out of the release
+  # log that deploy/ci-deploy.sh streams to GitHub Actions, whose logs are public.
+  if [ -t 1 ]; then docker compose logs --tail 40 app; fi
+  die "The app did not become healthy (docker compose logs --tail 40 app shows why)."
 }
 wait_healthy
 

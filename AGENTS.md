@@ -1,6 +1,6 @@
 # Agent notes: School of Purpose
 
-Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed. It runs on one VPS, or with the website on Vercel and `/api` forwarded to the VPS (`docs/DEPLOYMENT.md` §C). Production is https://nyayasop.org: the whole site on one DigitalOcean Droplet, installed and updated with `deploy/install.sh` (06 D-49); `www` redirects there through `WWW_REDIRECT` in `deploy/Caddyfile`.
+Expression-of-interest site: React SPA (Vite, installable PWA with a service worker) + Fastify API + PostgreSQL + a background worker (Postgres job queue). Optional applicant accounts, Web Push notifications, and an admin platform at `/admin`. It started as a Figma Make export and is now a standalone project. The Figma tooling has been removed. It runs on one VPS, or with the website on Vercel and `/api` forwarded to the VPS (`docs/DEPLOYMENT.md` §C). Production is https://nyayasop.org: the whole site on one DigitalOcean Droplet, installed with `deploy/install.sh` (06 D-49) and released from `main` by GitHub Actions once the owner's one-time setup is done (D-51, "Releases" below); `www` redirects there through `WWW_REDIRECT` in `deploy/Caddyfile`.
 
 ## Before you change things
 
@@ -58,6 +58,13 @@ Expression-of-interest site: React SPA (Vite, installable PWA with a service wor
 - **SQL:** a `$n` parameter used in two places needs an explicit cast in both (`$2::delivery_status`); Postgres deduces one type per parameter. `ON DELETE SET NULL` re-checks table constraints on the child row (see `server/account/delete.ts`).
 - **Time:** store UTC; show and enter times in a named zone (default `Africa/Lagos`, "WAT") with `src/shared/time.ts`.
 - Install/notification copy must stay honest: feature detection decides what's possible, the user agent only picks instructions; never claim to detect installs universally or to force another browser.
+
+### Releases
+
+- Production is released only by `.github/workflows/ci.yml` (`docs/DEPLOYMENT.md` "Automatic deployment"): a push to `main` runs `check` and `docker` on that commit, then `deploy` (environment `production`) runs `deploy/ci-deploy.sh` on the Droplet over SSH and checks the live site; a manual run releases a given commit on `main` (rollback). Keep the job ids `check` and `docker` (required status checks), the read-only token, `persist-credentials: false`, and `${{ }}` out of `run:` scripts (pass values through `env:`). The deploy job uses no third-party actions: it is the only one that can read the SSH key.
+- Everything merged to `main` is released, and that commit's `deploy/*.sh` run as root on the server: `main` takes only reviewed, checked pull requests.
+- Migrations must work with the release before them (the previous worker runs on the migrated database until the new app is healthy, and a rollback runs older code on it): additive first, destructive in a later release. No down-migrations, no database resets.
+- `deploy/ci-deploy.sh` runs as root from the checkout it updates: keep everything in functions, with `main "$@"; exit $?` as the last line. It accepts only `deploy <40 lowercase hex>` and writes only to its log (streamed to the caller, so a dropped connection can't stop a release). Neither it nor `install.sh` may print secrets, `.env` or container logs: Actions logs are public, and the app's log holds visitors' addresses. Both take the release lock; `install.sh` keeps its backup-first stop. `server/ci-deploy.test.ts` runs the script against throwaway repositories: extend it with the script.
 
 ### Website on Vercel
 
