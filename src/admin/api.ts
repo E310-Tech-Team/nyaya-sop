@@ -52,7 +52,7 @@ export type ParishAnswerStatus = 'listed' | 'reported' | 'legacy_text' | 'not_pr
 
 export type ParishReport = {
   id: string;
-  kind: 'not_listed' | 'details_wrong';
+  kind: 'not_listed' | 'details_wrong' | 'lookalike';
   status: 'pending' | 'linked' | 'added' | 'fixed' | 'rejected';
   reportedName: string | null;
   createdAt: string;
@@ -65,7 +65,8 @@ export type ApplicantParish = {
   status: ParishAnswerStatus;
   answer: string | null;
   current: ParishDetailsResponse | null;
-  submitted: { parish: ChainUnit; chain: ParishChain } | null;
+  /** `lookalikes`: the applicant chose one of this many same-named parishes (D-55), or null. */
+  submitted: { parish: ChainUnit; chain: ParishChain; lookalikes: number | null } | null;
   linkedBy: { name: string; at: string } | null;
   textReviewedAt: string | null;
   reports: ParishReport[];
@@ -202,7 +203,9 @@ export type LineageGroup = { level: ChurchLevel; name: string; approvedOn: strin
 
 // ── Parish review (server/admin/parish-review.ts) ────────────────────────────
 
-export type ReviewKind = 'not_listed' | 'details_wrong' | 'earlier_text';
+export type ReviewKind = 'not_listed' | 'details_wrong' | 'lookalike' | 'earlier_text';
+/** A parish a look-alike choice could mean (server/admin/parish-review.ts `candidatesOf`). */
+export type LookalikeCandidate = { id: string; name: string; code: string | null; applications: number; linked: boolean };
 export type ReviewItem = {
   id: string;
   kind: ReviewKind;
@@ -213,6 +216,8 @@ export type ReviewItem = {
   submitted: ParishChain | null;
   suggestions: ParishSuggestion[];
   exactMatch: string | null;
+  /** "Which parish?" items only: the look-alike group, first parish first. */
+  candidates: LookalikeCandidate[] | null;
 };
 export type ReviewQueue = Paged<ReviewItem> & { counts: Record<ReviewKind, number>; kind: ReviewKind };
 export type EarlierMatch = { application: ReviewItem['application']; name: string; parish: { id: string; name: string; place: string | null } };
@@ -252,7 +257,7 @@ export type ReportSummary = {
   noProvince: Count;
   parishesRepresented: Count;
   activeParishes: number;
-  waiting: { notListed: Count; detailsWrong: Count; earlierText: Count };
+  waiting: { notListed: Count; detailsWrong: Count; lookalike: Count; earlierText: Count };
   comparison: { from: string; to: string; days: number; applications: Count; uniqueApplicants: Count } | null;
   directory: { importId: string; label: string; structureAsAt: string | null } | null;
 };

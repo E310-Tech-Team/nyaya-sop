@@ -149,6 +149,11 @@ export type ParishSuggestion = {
   chain: ParishChain;
   /** The parish's province is in the state the applicant gave. */
   inState: boolean;
+  /**
+   * How many active parishes share this name in this unit, when more than one ("look-alikes":
+   * nothing tells them apart, so they are offered once and staff settle which is meant).
+   */
+  lookalikes?: number;
 };
 
 export type ParishSearchResponse = {
@@ -169,6 +174,8 @@ export type ParishDetailsResponse = {
   /** For a merged parish, the one it was merged into. */
   mergedInto: ChainUnit | null;
   chain: ParishChain;
+  /** As in a suggestion: the active parishes sharing its name in its unit, when more than one. */
+  lookalikes?: number;
 };
 
 /**

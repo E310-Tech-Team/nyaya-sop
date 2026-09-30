@@ -46,7 +46,7 @@ function Overview({ summary }: { summary: ReportSummary }) {
       </EmptyReport>
     );
   }
-  const waiting = [summary.waiting.notListed, summary.waiting.detailsWrong, summary.waiting.earlierText];
+  const waiting = [summary.waiting.notListed, summary.waiting.detailsWrong, summary.waiting.lookalike, summary.waiting.earlierText];
   const waitingTotal = waiting.some((count) => count === null) ? null : waiting.reduce<number>((sum, count) => sum + (count ?? 0), 0);
   const noDirectory = summary.activeParishes === 0;
   const drillHref = (card: Card_) => (card.drill ? link('/admin/reports/organisation', { ...PLACE_PARAMS, ...card.drill }) : null);
@@ -223,6 +223,8 @@ function Overview({ summary }: { summary: ReportSummary }) {
                   <dd className="text-right font-semibold tabular-nums text-ink">{formatCount(summary.waiting.notListed)}</dd>
                   <dt>Details flagged</dt>
                   <dd className="text-right font-semibold tabular-nums text-ink">{formatCount(summary.waiting.detailsWrong)}</dd>
+                  <dt>Which parish?</dt>
+                  <dd className="text-right font-semibold tabular-nums text-ink">{formatCount(summary.waiting.lookalike)}</dd>
                   <dt>Earlier answers</dt>
                   <dd className="text-right font-semibold tabular-nums text-ink">{formatCount(summary.waiting.earlierText)}</dd>
                 </dl>

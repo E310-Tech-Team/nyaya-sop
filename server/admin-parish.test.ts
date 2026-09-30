@@ -189,7 +189,7 @@ describe('Parish review', () => {
   it('queues parishes that aren’t listed, details flags and earlier answers, with suggestions', async () => {
     const { apps, parishes, owner } = await seed();
     const queue = (await owner({ url: '/api/admin/parish-review' })).json();
-    expect(queue.counts).toEqual({ not_listed: 1, details_wrong: 1, earlier_text: 3 });
+    expect(queue.counts).toEqual({ not_listed: 1, details_wrong: 1, lookalike: 0, earlier_text: 3 });
     expect(queue.items).toEqual([expect.objectContaining({ kind: 'not_listed', name: 'Glory Tabernacle', application: expect.objectContaining({ id: apps.notListed, state: 'Lagos' }) })]);
 
     const flags = (await owner({ url: '/api/admin/parish-review?kind=details_wrong' })).json();

@@ -41,7 +41,7 @@ const CHAIN_COLUMNS = CHURCH_LEVELS.map((level) => `u_${level}.id as ${level}_id
 const CHAIN_JOINS = CHURCH_LEVELS.map((level) => `left join church_units u_${level} on u_${level}.id = p.${level}_id`).join(' ');
 
 type ChainRow = Record<`${ChurchLevel}_id` | `${ChurchLevel}_name`, string | null>;
-type SuggestionRow = ChainRow & { id: string; name: string; in_state: boolean; total: number };
+type SuggestionRow = ChainRow & { id: string; name: string; in_state: boolean; lookalikes: number; total: number };
 
 function chainOf(row: ChainRow): ParishChain {
   const unit = (level: ChurchLevel): ChainUnit | null => {
@@ -51,7 +51,46 @@ function chainOf(row: ChainRow): ParishChain {
   return { continent: unit('continent'), region: unit('region'), province: unit('province'), zone: unit('zone'), area: unit('area') };
 }
 
-const suggestion = (row: SuggestionRow): ParishSuggestion => ({ id: row.id, name: row.name, chain: chainOf(row), inState: row.in_state });
+const suggestion = (row: SuggestionRow): ParishSuggestion => ({
+  id: row.id,
+  name: row.name,
+  chain: chainOf(row),
+  inState: row.in_state,
+  ...(row.lookalikes > 1 ? { lookalikes: row.lookalikes } : {}),
+});
+
+/**
+ * Look-alikes (D-55): active parishes of one list that share a name key in one unit. Nothing tells
+ * them apart (the RCCG directory API lists 1,500 such groups, each parish with its own code), so
+ * the form offers each group once, as its first parish by code: always the same one.
+ */
+const GROUP_ORDER = 'p.external_id nulls last, p.id';
+
+/**
+ * One row per group (`unit_id`, `name_key`) that `matched` found, with the group's first parish as
+ * `id` and its size. The whole group counts, not only the parishes the search matched.
+ * `$ns` is the namespace parameter (cast in each use: Postgres infers one type per parameter).
+ */
+const groupsOf = (matched: string, ns: string) => `
+  matched as (${matched}),
+  grouped as (
+    select (array_agg(p.id order by ${GROUP_ORDER}))[1] as id, count(*)::int as lookalikes
+      from (select distinct unit_id, name_key from matched) m
+      join parishes p on p.unit_id = m.unit_id and p.name_key = m.name_key
+                     and p.status = 'active' and p.external_namespace is not distinct from ${ns}::text
+     group by m.unit_id, m.name_key)`;
+
+/** The active parishes that look like this one (itself included), first parish first. */
+export async function lookalikeGroup(db: Queryable, parishId: string): Promise<string[]> {
+  const { rows } = await db.query<{ id: string }>(
+    `select p.id from parishes p join parishes chosen on chosen.id = $1
+      where p.status = 'active' and p.unit_id = chosen.unit_id and p.name_key = chosen.name_key
+        and p.external_namespace is not distinct from chosen.external_namespace
+      order by ${GROUP_ORDER}`,
+    [parishId],
+  );
+  return rows.map((row) => row.id);
+}
 
 /**
  * Active parishes matching every search term at the start of a word, in the name or in the
@@ -79,11 +118,13 @@ export async function searchParishes(
     return `and p.search_text like $${params.length - 1} and p.search_text ~ $${params.length}`;
   });
   const { rows } = await db.query<SuggestionRow>(
-    `select p.id, p.display_name as name, ${CHAIN_COLUMNS},
+    `with ${groupsOf(`select p.unit_id, p.name_key from parishes p
+                        where p.status = 'active' and p.external_namespace is not distinct from $4::text ${conditions.join(' ')}`, '$4')}
+     select p.id, p.display_name as name, ${CHAIN_COLUMNS},
             coalesce(u_province.state = $1::text, false) as in_state,
+            g.lookalikes,
             (count(*) over ())::int as total
-       from parishes p ${CHAIN_JOINS}
-      where p.status = 'active' and p.external_namespace is not distinct from $4::text ${conditions.join(' ')}
+       from grouped g join parishes p on p.id = g.id ${CHAIN_JOINS}
       order by (select count(*) from unnest($2::text[]) as t(term) where t.term ~ '^[A-Z]' and p.name_key ~ ('\\m' || t.term)) desc,
                p.name_key like (($2::text[])[1] || '%') desc,
                (select count(*) from unnest($2::text[]) as t(term) where p.search_text ~ ('\\m' || t.term || '\\M')) desc,
@@ -99,11 +140,13 @@ export async function searchParishes(
   const phrase = terms.join(' ');
   if (phrase.length < 3) return { results: [], total: 0, fuzzy: false };
   const close = await db.query<SuggestionRow>(
-    `select p.id, p.display_name as name, ${CHAIN_COLUMNS},
+    `with ${groupsOf(`select p.unit_id, p.name_key from parishes p
+                        where p.status = 'active' and p.external_namespace is not distinct from $4::text and $2::text <% p.name_key`, '$4')}
+     select p.id, p.display_name as name, ${CHAIN_COLUMNS},
             coalesce(u_province.state = $1::text, false) as in_state,
+            g.lookalikes,
             (count(*) over ())::int as total
-       from parishes p ${CHAIN_JOINS}
-      where p.status = 'active' and p.external_namespace is not distinct from $4::text and $2::text <% p.name_key
+       from grouped g join parishes p on p.id = g.id ${CHAIN_JOINS}
       -- word_similarity finds candidates but ignores word order ("House Jesus 684" scores above
       -- "Jesus House" for "jesuss house"); whole-name plus strict word similarity ranks them.
       order by similarity($2::text, p.name_key) + strict_word_similarity($2::text, p.name_key) desc, in_state desc, p.name_key, p.display_name
@@ -116,8 +159,11 @@ export async function searchParishes(
 /** One parish as it stands now, or null. A merged parish names the one it was merged into. */
 export async function parishDetails(db: Queryable, id: string): Promise<ParishDetailsResponse | null> {
   if (!UUID_RE.test(id)) return null;
-  const { rows } = await db.query<ChainRow & { id: string; name: string; status: ParishDetailsResponse['status']; merged_into_id: string | null }>(
-    `select p.id, p.display_name as name, p.status::text as status, p.merged_into_id, ${CHAIN_COLUMNS}
+  const { rows } = await db.query<ChainRow & { id: string; name: string; status: ParishDetailsResponse['status']; merged_into_id: string | null; lookalikes: number }>(
+    `select p.id, p.display_name as name, p.status::text as status, p.merged_into_id, ${CHAIN_COLUMNS},
+            (select count(*)::int from parishes q
+              where p.status = 'active' and q.status = 'active' and q.unit_id = p.unit_id and q.name_key = p.name_key
+                and q.external_namespace is not distinct from p.external_namespace) as lookalikes
        from parishes p ${CHAIN_JOINS}
       where p.id = $1`,
     [id],
@@ -134,7 +180,7 @@ export async function parishDetails(db: Queryable, id: string): Promise<ParishDe
     mergedInto = { id: target.id, name: target.name };
     next = target.merged_into_id;
   }
-  return { id: row.id, name: row.name, status: row.status, mergedInto, chain: chainOf(row) };
+  return { id: row.id, name: row.name, status: row.status, mergedInto, chain: chainOf(row), ...(row.lookalikes > 1 ? { lookalikes: row.lookalikes } : {}) };
 }
 
 /** What the application stores about the parish (docs/05 §2). */
@@ -147,9 +193,16 @@ export type ParishLink = {
    * The parish and its chain as the applicant confirmed them, the import they came from and, for a
    * parish from the RCCG directory API, its canonical code in the environment's namespace.
    */
-  snapshot: ({ parish: ChainUnit; importId: string | null; externalId: string | null } & ParishChain) | null;
-  report: { kind: 'not_listed'; name: string } | { kind: 'details_wrong'; parishId: string } | null;
+  snapshot: ({ parish: ChainUnit; importId: string | null; externalId: string | null; lookalikes?: string[] } & ParishChain) | null;
+  /** For staff in Parish review: at most one of each kind. */
+  reports: ParishReport[];
 };
+
+export type ParishReport =
+  | { kind: 'not_listed'; name: string }
+  | { kind: 'details_wrong'; parishId: string }
+  /** The applicant chose a look-alike group: which of its parishes is theirs is for staff to settle. */
+  | { kind: 'lookalike'; parishId: string };
 
 export const PARISH_ERRORS = {
   unknown: 'We couldn’t find that parish. Search for it again.',
@@ -175,10 +228,10 @@ export type ParishResolution = { ok: true; link: ParishLink } | { ok: false; err
 export async function resolveParish(services: Pick<Services, 'db' | 'directory' | 'config'>, choice: ParishChoice): Promise<ParishResolution> {
   const { db } = services;
   if (choice.kind === 'typed') {
-    return { ok: true, link: { status: choice.name ? 'legacy_text' : 'not_provided', parishId: null, name: choice.name, snapshot: null, report: null } };
+    return { ok: true, link: { status: choice.name ? 'legacy_text' : 'not_provided', parishId: null, name: choice.name, snapshot: null, reports: [] } };
   }
   if (choice.kind === 'not_listed') {
-    return { ok: true, link: { status: 'reported', parishId: null, name: choice.name, snapshot: null, report: { kind: 'not_listed', name: choice.name } } };
+    return { ok: true, link: { status: 'reported', parishId: null, name: choice.name, snapshot: null, reports: [{ kind: 'not_listed', name: choice.name }] } };
   }
   const parish = await parishDetails(db, choice.parishId);
   if (!parish) return { ok: false, error: PARISH_ERRORS.unknown };
@@ -211,15 +264,32 @@ export async function resolveParish(services: Pick<Services, 'db' | 'directory' 
       }
     }
   }
+  // A look-alike group was offered as one choice: link its first parish (the same unit, so every
+  // count above the parish is right), keep the whole group, and let staff settle which is meant.
+  const group = await lookalikeGroup(db, parish.id);
+  const chosen = group.length > 1 && group[0] !== parish.id ? ((await parishDetails(db, group[0]!)) ?? parish) : parish;
+  const chosenCode =
+    chosen.id === parish.id
+      ? source.external_id
+      : ((await db.query<{ external_id: string | null }>(`select external_id from parishes where id = $1`, [chosen.id])).rows[0]?.external_id ?? null);
   const { rows } = await db.query<{ id: string }>(`select id from directory_imports where status = 'applied' order by started_at desc limit 1`);
+  const reports: ParishReport[] = [];
+  if (choice.detailsWrong || !isChainComplete(chosen.chain)) reports.push({ kind: 'details_wrong', parishId: chosen.id });
+  if (group.length > 1) reports.push({ kind: 'lookalike', parishId: chosen.id });
   return {
     ok: true,
     link: {
       status: 'listed',
-      parishId: parish.id,
-      name: parish.name,
-      snapshot: { parish: { id: parish.id, name: parish.name }, importId: rows[0]?.id ?? null, externalId: source.external_id, ...parish.chain },
-      report: choice.detailsWrong || !isChainComplete(parish.chain) ? { kind: 'details_wrong', parishId: parish.id } : null,
+      parishId: chosen.id,
+      name: chosen.name,
+      snapshot: {
+        parish: { id: chosen.id, name: chosen.name },
+        importId: rows[0]?.id ?? null,
+        externalId: chosenCode,
+        ...chosen.chain,
+        ...(group.length > 1 ? { lookalikes: group } : {}),
+      },
+      reports,
     },
   };
 }

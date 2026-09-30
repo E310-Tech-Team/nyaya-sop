@@ -38,7 +38,6 @@ export async function insertApplication(
   application: NormalizedApplication,
   parish: ParishLink,
 ): Promise<{ id: string; created_at: Date } | null> {
-  const report = parish.report;
   const { rows } = await db.query<{ id: string; created_at: Date }>(
     `with inserted as (
        insert into applications (
@@ -49,9 +48,10 @@ export async function insertApplication(
        on conflict (cohort_id, email) do nothing
        returning id, created_at
      ),
-     report as (
+     reports as (
        insert into parish_reports (application_id, kind, reported_name, parish_id)
-       select id, $18::parish_report_kind, $19::text, $20::uuid from inserted where $18::parish_report_kind is not null
+       select i.id, r.kind::parish_report_kind, r.reported_name, r.parish_id
+         from inserted i cross join jsonb_to_recordset($18::jsonb) as r(kind text, reported_name text, parish_id uuid)
        returning 1
      )
      select id, created_at from inserted`,
@@ -73,9 +73,14 @@ export async function insertApplication(
       application.purposeClarity,
       application.consentVersion,
       JSON.stringify(application.meta),
-      report?.kind ?? null,
-      report?.kind === 'not_listed' ? report.name : null,
-      report?.kind === 'details_wrong' ? report.parishId : null,
+      // Rows as one JSON parameter (PGlite doesn't serialise arrays of custom enum types).
+      JSON.stringify(
+        parish.reports.map((report) =>
+          report.kind === 'not_listed'
+            ? { kind: report.kind, reported_name: report.name, parish_id: null }
+            : { kind: report.kind, reported_name: null, parish_id: report.parishId },
+        ),
+      ),
     ],
   );
   return rows[0] ?? null;

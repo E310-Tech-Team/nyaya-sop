@@ -80,6 +80,11 @@ function parishSummary(parish: ParishDraft | null): ReactNode {
         ) : (
           parish.detailsWrong && <span className="block text-[13px] text-muted">You told us these details look wrong.</span>
         )}
+        {parish.lookalikes && parish.lookalikes > 1 && (
+          <span className="block text-[13px] text-muted">
+            One of {parish.lookalikes} parishes with this name here: our team will match your application to the right one.
+          </span>
+        )}
       </>
     );
   }

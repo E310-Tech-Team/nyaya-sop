@@ -1,6 +1,7 @@
 /**
  * Parish review (/api/admin/parish-review): parishes applicants couldn't find, "details look
- * wrong" flags, and earlier free-text answers, each with suggested matches. Staff link the
+ * wrong" flags, look-alike choices ("which parish?", D-55), and earlier free-text answers, each
+ * with suggested matches. Staff link the
  * application to a parish, add the parish, correct the directory, or close the item. It shows
  * applicants' names and changes both applications and the directory, so every route needs
  * applications.view_all, applications.edit and directory.manage.
@@ -15,11 +16,11 @@ import type { Queryable } from '../db';
 import { createParishIn } from '../directory/edits';
 import { DirectoryError, inTransaction } from '../directory/store';
 import { iso, isUuid, paging, sendError, str } from '../http';
-import { parishDetails, searchParishes } from '../parishes';
+import { lookalikeGroup, parishDetails, searchParishes } from '../parishes';
 import { directoryNamespace, type Services } from '../services';
 import { linkApplicationParish, ParishLinkError } from './parish-links';
 
-export const REVIEW_KINDS = ['not_listed', 'details_wrong', 'earlier_text'] as const;
+export const REVIEW_KINDS = ['not_listed', 'details_wrong', 'lookalike', 'earlier_text'] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 
 // An earlier free-text answer still waiting: typed on the old form, not linked, not yet looked at.
@@ -67,6 +68,30 @@ const applicantOf = (row: ApplicantRow) => ({
 const chainFrom = (snapshot: Record<string, unknown> | null): ParishChain | null =>
   snapshot ? (Object.fromEntries(CHURCH_LEVELS.map((level) => [level, snapshot[level] ?? null])) as ParishChain) : null;
 
+/**
+ * The parishes a look-alike choice could mean: the active parishes sharing the linked parish's
+ * name in its unit (as the directory has them now), each with its RCCG code, how many applications
+ * are linked to it, and whether it's the one this application is linked to.
+ */
+async function candidatesOf(db: Queryable, parishId: string, applicationId: string) {
+  const group = await lookalikeGroup(db, parishId);
+  if (!group.length) return [];
+  const { rows } = await db.query<{ id: string; name: string; external_id: string | null; applications: number; linked: boolean }>(
+    `select p.id, p.display_name as name, p.external_id,
+            (select count(*)::int from applications x where x.parish_id = p.id) as applications,
+            exists (select 1 from applications a where a.id = $2 and a.parish_id = p.id) as linked
+       from parishes p where p.id = any($1::uuid[])`,
+    [group, applicationId],
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return group.flatMap((id) => {
+    const row = byId.get(id);
+    return row
+      ? [{ id: row.id, name: row.name, code: row.external_id ? row.external_id.slice(row.external_id.lastIndexOf(':') + 1) : null, applications: row.applications, linked: row.linked }]
+      : [];
+  });
+}
+
 function fail(reply: FastifyReply, error: unknown) {
   if (error instanceof DirectoryError || error instanceof ParishLinkError) return sendError(reply, 400, 'VALIDATION_FAILED', error.message);
   if (error instanceof ReviewConflict) return sendError(reply, 409, 'CONFLICT', error.message);
@@ -82,6 +107,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
       await db.query<Record<ReviewKind, number>>(
         `select (select count(*)::int from parish_reports where status = 'pending' and kind = 'not_listed') as not_listed,
                 (select count(*)::int from parish_reports where status = 'pending' and kind = 'details_wrong') as details_wrong,
+                (select count(*)::int from parish_reports where status = 'pending' and kind = 'lookalike') as lookalike,
                 (select count(*)::int from applications a where ${WAITING_TEXT}) as earlier_text`,
       )
     ).rows[0]!;
@@ -109,6 +135,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
           submitted: null,
           suggestions: (await searchParishes(db, row.parish_name, row.state_of_residence, 3, directoryNamespace(services))).results,
           exactMatch: exact.get(row.application_id) ?? null,
+          candidates: null,
         });
       }
       return { counts, kind, page, pageSize, total: rows[0]?.total ?? 0, items };
@@ -134,6 +161,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
         submitted: kind === 'details_wrong' ? chainFrom(row.parish_snapshot) : null,
         suggestions: row.reported_name ? (await searchParishes(db, row.reported_name, row.state_of_residence, 3, directoryNamespace(services))).results : [],
         exactMatch: null,
+        candidates: kind === 'lookalike' && row.parish_id ? await candidatesOf(db, row.parish_id, row.application_id) : null,
       });
     }
     return { counts, kind, page, pageSize, total: rows[0]?.total ?? 0, items };
