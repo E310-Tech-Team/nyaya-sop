@@ -4,32 +4,46 @@ import { BackLink, PrimaryButton } from '../components/Buttons';
 import { ErrorSummary, focusFirstInvalid } from '../components/ErrorSummary';
 import { Honeypot, SelectField, TextField } from '../components/Fields';
 import { Divider, FormActions, FormCard, StepHeader } from '../components/FormLayout';
-import { ParishPicker } from '../components/ParishPicker';
+import { ParishPicker, ParishQuestionPending } from '../components/ParishPicker';
 import { usePageTitle } from '../components/RouteEffects';
-import { usePublicConfig } from '../lib/config';
-import { AGE_RANGES, GENDERS, STATE_OPTIONS, type AgeRange, type Gender } from '../shared/application';
+import { retryPublicConfig } from '../lib/config';
+import { AGE_RANGES, GENDERS, STATE_OPTIONS, type AgeRange, type FieldErrors, type Gender } from '../shared/application';
 import { LIMITS, hasErrors } from '../shared/validation';
-import { personalErrors, useApplication } from '../state/application';
+import { personalErrors, useApplication, useParishQuestion } from '../state/application';
+
+/** Why the step can't be completed while the parish question isn't known yet. */
+const PARISH_PENDING = {
+  loading: 'The parish question is still loading. Wait a moment, then continue.',
+  failed: 'Choose “Try again” to load the parish question, then continue.',
+} as const;
 
 export default function PersonalInfoPage() {
   usePageTitle('Step 1 of 3: Personal Information');
   const navigate = useNavigate();
-  const { draft, updatePersonal, setHoneypot, setParishMode, setParish, parishCheck } = useApplication();
+  const { draft, updatePersonal, setHoneypot, setParish, parishCheck } = useApplication();
   const [showErrors, setShowErrors] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const answers = draft.personal;
-  const errors = showErrors ? personalErrors(draft) : {};
-
-  // The parish question searches the RCCG list while the directory is switched on (docs/03).
-  const config = usePublicConfig();
-  const directoryOn = config ? config.parishDirectory?.enabled === true : null;
+  // The directory's search while it's switched on, otherwise the parish's name (docs/03).
+  const question = useParishQuestion();
+  // After "Try again" brings the question, focus goes to it (the button it replaced is gone).
+  const focusQuestion = useRef(false);
   useEffect(() => {
-    if (directoryOn !== null) setParishMode(directoryOn ? 'directory' : 'text');
-  }, [directoryOn, setParishMode]);
+    if (!focusQuestion.current || question === 'loading' || question === 'failed') return;
+    focusQuestion.current = false;
+    document.getElementById('parishName')?.focus();
+  }, [question]);
+
+  function stepErrors(): FieldErrors {
+    const errors = personalErrors(draft);
+    if (question === 'loading' || question === 'failed') errors.parishName = PARISH_PENDING[question];
+    return errors;
+  }
+  const errors = showErrors ? stepErrors() : {};
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (hasErrors(personalErrors(draft))) {
+    if (hasErrors(stepErrors())) {
       setShowErrors(true);
       focusFirstInvalid(formRef.current);
       return;
@@ -139,7 +153,7 @@ export default function PersonalInfoPage() {
             />
           </div>
           <Divider />
-          {draft.parishMode === 'directory' ? (
+          {question === 'directory' ? (
             <ParishPicker
               id="parishName"
               number="08"
@@ -150,18 +164,28 @@ export default function PersonalInfoPage() {
               error={errors.parishName}
               initialQuery={answers.parishName}
             />
-          ) : (
+          ) : question === 'text' ? (
             <TextField
               id="parishName"
               number="08"
-              label="Name of RCCG Parish"
-              required={false}
-              hint="If you attend an RCCG parish, tell us which one."
+              label="Name of your RCCG parish"
+              hint="Type your parish’s name as you know it. The Programme team will match it to the RCCG parish list."
               placeholder="Enter parish name"
               maxLength={LIMITS.parishName.max}
               value={answers.parishName}
               onChange={(parishName) => updatePersonal({ parishName })}
               error={errors.parishName}
+            />
+          ) : (
+            <ParishQuestionPending
+              id="parishName"
+              number="08"
+              status={question}
+              error={errors.parishName}
+              onRetry={() => {
+                focusQuestion.current = true;
+                retryPublicConfig();
+              }}
             />
           )}
         </FormCard>

@@ -80,7 +80,7 @@ describe('validatePersonal', () => {
     expect(validatePersonal(validPayload({ fullName: 'Ọláolúwa Adébáyọ̀' }))).toEqual({});
   });
 
-  it('limits the optional parish name', () => {
+  it('limits the parish name’s length (whether an answer is needed depends on the directory: see below)', () => {
     expect(validatePersonal(validPayload({ parishName: 'x'.repeat(121) })).parishName).toBe(MESSAGES.parishTooLong);
   });
 });
@@ -110,7 +110,7 @@ describe('validateApplication', () => {
         ageRange: '21_24',
         stateOfResidence: 'Lagos',
         city: 'Ikeja',
-        parish: { kind: 'typed', name: null },
+        parish: { kind: 'typed', name: 'Grace Chapel' },
         educationLevel: 'bachelors',
         currentStatus: 'employed',
         purposeClarity: 3,
@@ -181,11 +181,32 @@ describe('the parish answer', () => {
   const withParish = (parish: unknown) => ({ ...validPayload(), parish });
   const parishOf = (result: ReturnType<typeof validateApplication>) => (result.ok ? result.value.parish : result.fieldErrors.parishName);
 
-  it('keeps the free text from an older form, even while the directory is on', () => {
-    expect(parishOf(validateApplication(validPayload({ parishName: '  Jesus   House ' }), { parishRequired: true }))).toEqual({
-      kind: 'typed',
-      name: 'Jesus House',
+  it('never takes typed text as the answer while the directory is on, so a request can’t skip the question', () => {
+    const typedOnly = validPayload({ parishName: 'Jesus House' });
+    expect(parishOf(validateApplication(typedOnly, { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect('parish' in typedOnly).toBe(false);
+    expect(parishOf(validateApplication({ ...typedOnly, parish: undefined }, { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(validPayload({ parishName: '' }), { directory: true }))).toBe(MESSAGES.parishRequired);
+  });
+
+  it('requires the parish’s name while the directory is off', () => {
+    expect(parishOf(validateApplication(validPayload({ parishName: '' })))).toBe(MESSAGES.parishTextRequired);
+    expect(parishOf(validateApplication(validPayload({ parishName: '   ' })))).toBe(MESSAGES.parishTextRequired);
+    expect(parishOf(validateApplication(validPayload({ parishName: ' 12 ' })))).toBe(MESSAGES.parishNameInvalid);
+    expect(parishOf(validateApplication(validPayload({ parishName: '  Jesus   House ' })))).toEqual({ kind: 'typed', name: 'Jesus House' });
+  });
+
+  it('still honours an answer from the directory while it is off (a draft made while it was on)', () => {
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id, confirmed: true }), { directory: false }))).toEqual({
+      kind: 'listed',
+      parishId: id,
+      detailsWrong: false,
     });
+  });
+
+  it('keeps only the parish’s ID from the browser: its units come from the directory', () => {
+    const forged = { kind: 'listed', id, confirmed: true, name: 'Made Up', chain: { continent: { id: 'x', name: 'Continent 99' } }, provinceId: 'y' };
+    expect(parishOf(validateApplication(withParish(forged), { directory: true }))).toEqual({ kind: 'listed', parishId: id, detailsWrong: false });
   });
 
   it('takes a confirmed listed parish, with or without a details flag', () => {
@@ -213,9 +234,13 @@ describe('the parish answer', () => {
     expect(parishOf(validateApplication(withParish({ kind: 'not_listed', name: 'x'.repeat(121) })))).toBe(MESSAGES.parishNameInvalid);
   });
 
-  it('requires an answer from a form that uses the directory while it is on', () => {
-    expect(parishOf(validateApplication(withParish(null), { parishRequired: true }))).toBe(MESSAGES.parishRequired);
-    expect(parishOf(validateApplication(withParish({ kind: 'other' }), { parishRequired: true }))).toBe(MESSAGES.parishRequired);
-    expect(parishOf(validateApplication(withParish(null)))).toEqual({ kind: 'typed', name: null });
+  it('requires an answer from the directory while it is on: empty, unknown kinds and malformed IDs don’t count', () => {
+    expect(parishOf(validateApplication(withParish(null), { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish({ kind: 'other' }), { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish({ kind: 'typed', name: 'Grace Chapel' }), { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish({ kind: 'listed', id: '', confirmed: true }), { directory: true }))).toBe(MESSAGES.parishRequired);
+    expect(parishOf(validateApplication(withParish('Jesus House'), { directory: true }))).toBe(MESSAGES.parishRequired);
+    // Directory off and no answer from it: the typed name answers the question.
+    expect(parishOf(validateApplication(withParish(null)))).toEqual({ kind: 'typed', name: 'Grace Chapel' });
   });
 });

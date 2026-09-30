@@ -110,7 +110,10 @@ export type ParishAnswer =
 export type ParishChoice =
   | { kind: 'listed'; parishId: string; detailsWrong: boolean }
   | { kind: 'not_listed'; name: string }
-  /** The free-text question: the directory is off, or an older copy of the form sent it. */
+  /**
+   * The free-text question, used only while the directory is off (then the name is required).
+   * `null` exists only on applications stored before the parish became compulsory.
+   */
   | { kind: 'typed'; name: string | null };
 
 /** JSON body of `POST /api/applications`. */
@@ -168,6 +171,8 @@ export type CurrentCohortResponse = {
 
 export type ApiErrorCode =
   | 'VALIDATION_FAILED'
+  /** The RCCG directory couldn't confirm the chosen parish just now: nothing was stored; try again. */
+  | 'DIRECTORY_UNAVAILABLE'
   | 'ALREADY_APPLIED'
   | 'APPLICATIONS_CLOSED'
   | 'RATE_LIMITED'

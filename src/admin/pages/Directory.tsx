@@ -100,6 +100,9 @@ function PanelHeading({ children }: { children: ReactNode }) {
   );
 }
 
+/** The provider's canonical code from an external ID ("rccg-org:production:RCCG-F3A7C912" → "RCCG-F3A7C912"). */
+const directoryCode = (externalId: string) => externalId.split(':').pop() ?? externalId;
+
 function ParishPanel({ parishId, onChanged, onClose }: { parishId: string; onChanged: () => void; onClose: () => void }) {
   const canManage = useCan('directory.manage');
   const entry = useAsync((signal) => adminApi.parishEntry(parishId, signal), [parishId]);
@@ -112,7 +115,7 @@ function ParishPanel({ parishId, onChanged, onClose }: { parishId: string; onCha
   };
   if (entry.error) return <LoadError error={entry.error} onRetry={entry.reload} />;
   if (!entry.data) return <Loading />;
-  const { parish, aliases, applications, history }: ParishEntry = entry.data;
+  const { parish, aliases, applications, history, apiManaged }: ParishEntry = entry.data;
   const active = parish.status === 'active';
   return (
     <section aria-label="Parish" className="flex flex-col gap-4 rounded-[14px] border border-line bg-white p-5 shadow-[0px_8px_24px_0px_rgba(45,9,20,0.05)]">
@@ -128,6 +131,7 @@ function ParishPanel({ parishId, onChanged, onClose }: { parishId: string; onCha
       <Details
         rows={[
           ...(parish.origin === 'import' ? [['In the RCCG list as', parish.officialName] as [string, ReactNode]] : []),
+          ...(parish.externalId ? [['RCCG directory code', directoryCode(parish.externalId)] as [string, ReactNode]] : []),
           ...chainRows(parish.chain).map(([label, value]) => [label, value] as [string, ReactNode]),
           ['Listed', parish.listedRows > 1 ? `${parish.listedRows} times (one entry until RCCG confirms)` : 'Once'],
           ...(aliases.length ? [['Other spellings', aliases.join(' · ')] as [string, ReactNode]] : []),
@@ -147,7 +151,12 @@ function ParishPanel({ parishId, onChanged, onClose }: { parishId: string; onCha
           ],
         ]}
       />
-      {canManage && parish.status !== 'merged' && (
+      {apiManaged && (
+        <p className="font-sans text-[13px] leading-[1.5] text-muted">
+          This entry comes from the RCCG directory API. Changes are made there (ask the registry team) and reach this site with its next release.
+        </p>
+      )}
+      {canManage && !apiManaged && parish.status !== 'merged' && (
         <div className="flex flex-col gap-2">
           <h3 className="font-sans text-[15px] font-bold text-ink">Correct it</h3>
           <Section title="Rename">
@@ -215,7 +224,7 @@ function UnitPanel({ unitId, onChanged, onClose, onOpenParish }: { unitId: strin
   };
   if (detail.error) return <LoadError error={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return <Loading />;
-  const { unit, counts, lineage, history }: UnitDetail = detail.data;
+  const { unit, counts, lineage, history, apiManaged }: UnitDetail = detail.data;
   const childLevel = CHILD_LEVEL[unit.level];
   return (
     <section aria-label={LEVEL_LABELS[unit.level]} className="flex flex-col gap-4 rounded-[14px] border border-line bg-white p-5 shadow-[0px_8px_24px_0px_rgba(45,9,20,0.05)]">
@@ -232,6 +241,7 @@ function UnitPanel({ unitId, onChanged, onClose, onOpenParish }: { unitId: strin
         rows={[
           ['Level', LEVEL_LABELS[unit.level]],
           ['In the RCCG list as', unit.officialName],
+          ...(unit.externalId ? [['RCCG directory code', directoryCode(unit.externalId)] as [string, ReactNode]] : []),
           ...(unit.level === 'province' ? [['State', unit.state ?? 'Not linked to a state'] as [string, ReactNode]] : []),
           ['Active parishes', counts.activeParishes.toLocaleString('en-GB')],
           [
@@ -251,7 +261,12 @@ function UnitPanel({ unitId, onChanged, onClose, onOpenParish }: { unitId: strin
           ...(lineage.sourceOf.length ? [['In 2026, gave parishes to', lineage.sourceOf.map((target) => target.name).join(', ')] as [string, ReactNode]] : []),
         ]}
       />
-      {canManage && unit.status === 'active' && (
+      {apiManaged && (
+        <p className="font-sans text-[13px] leading-[1.5] text-muted">
+          This entry comes from the RCCG directory API. Changes are made there (ask the registry team) and reach this site with its next release.
+        </p>
+      )}
+      {canManage && !apiManaged && unit.status === 'active' && (
         <div className="flex flex-col gap-2">
           <h3 className="font-sans text-[15px] font-bold text-ink">Correct it</h3>
           <Section title="Rename">
@@ -366,7 +381,7 @@ function TreeTab() {
     <ParishPanel key={parish} parishId={parish} onChanged={browse.reload} onClose={() => set({ parish: null })} />
   ) : panel === 'unit' && unit ? (
     <UnitPanel key={unit} unitId={unit} onChanged={browse.reload} onClose={() => set({ panel: null })} onOpenParish={(id) => set({ parish: id, panel: null })} />
-  ) : !unit && canManage ? (
+  ) : !unit && canManage && data && !data.apiManaged ? (
     <Panel title="Add a continent" description="Only for a continent RCCG has confirmed. Regions and provinces are added from the continent or region they belong to.">
       {notice}
       <OneField label="Continent name" action="Add" busy={busy === 'continent'} onSubmit={(name) => void run('continent', () => adminApi.createUnit({ level: 'continent', name, parentId: null }), `${name} was added.`).then((ok) => ok && browse.reload())} />

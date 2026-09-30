@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { NOTIFICATION_CONSENT_VERSION } from '../../src/shared/platform';
 import type { Queryable } from '../db';
+import { DIRECTORY_SYNC_JOB, runDirectorySync, scheduleDirectorySync } from '../directory/api-jobs';
 import { deliverBatch, dispatchCampaign } from '../notifications/dispatch';
 import type { Services } from '../services';
 import { setHeartbeat } from '../settings';
@@ -73,10 +74,13 @@ export class Worker {
       await cleanup(this.services.db);
       await scheduleMaintenance(this.services.db);
     },
+    [DIRECTORY_SYNC_JOB]: () => runDirectorySync(this.services, this.options.log),
   };
 
   async start(): Promise<void> {
     await scheduleMaintenance(this.services.db, new Date(Date.now() - 86_400_000)); // today's run, if not queued yet
+    // The RCCG directory: a first check soon after starting, then every interval (server/directory/api-jobs.ts).
+    await scheduleDirectorySync(this.services.db, this.services.config, new Date(), { now: true });
     const tick = async () => {
       if (this.#stopping) return;
       try {

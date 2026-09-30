@@ -27,6 +27,7 @@ import { hasStaticBuild, type AppConfig } from './config';
 import { Secrets } from './crypto';
 import type { Db } from './db';
 import { cameViaEdgeProxy, edgeProxyCheck } from './edge-proxy';
+import { createDirectoryApi } from './directory/api';
 import { createEmailTransport, type EmailTransport } from './email';
 import { sendError } from './http';
 import { parishDirectoryEnabled, parishRoutes, resolveParish } from './parishes';
@@ -35,7 +36,7 @@ import { pushRoutes } from './push/routes';
 import { PushService } from './push/service';
 import { HttpsPushTransport, type PushTransport } from './push/transport';
 import { getCurrentCohort, insertApplication } from './repository';
-import type { Services } from './services';
+import { directoryNamespace, type Services } from './services';
 import { backgroundIdle } from './background';
 
 declare module 'fastify' {
@@ -48,12 +49,15 @@ declare module 'fastify' {
 export function createServices(
   config: AppConfig,
   db: Db,
-  overrides: { email?: EmailTransport; pushTransport?: PushTransport } = {},
+  overrides: { email?: EmailTransport; pushTransport?: PushTransport; directoryFetch?: typeof fetch; directorySleep?: (ms: number) => Promise<void> } = {},
 ): Services {
   const push = config.push.publicKey
     ? new PushService(config.push, overrides.pushTransport ?? new HttpsPushTransport(config.push.extraHosts))
     : null;
-  return { config, db, secrets: new Secrets(config.appSecret), email: overrides.email ?? createEmailTransport(config), push };
+  const directory = config.directoryApi
+    ? createDirectoryApi({ env: config.directoryApi.env, key: config.directoryApi.key, fetch: overrides.directoryFetch, sleep: overrides.directorySleep })
+    : null;
+  return { config, db, secrets: new Secrets(config.appSecret), email: overrides.email ?? createEmailTransport(config), push, directory };
 }
 
 /** Also the rules vercel.json gives the same files (server/vercel-config.test.ts). */
@@ -249,8 +253,8 @@ export async function buildApp({
         return reply.code(201).send({ id, reference: referenceFromId(id), submittedAt: new Date().toISOString() });
       }
 
-      // While the parish directory is on, a form that uses it must answer the parish question.
-      const result = validateApplication(request.body, { parishRequired: await parishDirectoryEnabled(db) });
+      // The parish question is compulsory: a parish from the list while the directory is on, else its name.
+      const result = validateApplication(request.body, { directory: await parishDirectoryEnabled(db, directoryNamespace(services)) });
       if (!result.ok) {
         return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', {
           fieldErrors: result.fieldErrors,
@@ -260,9 +264,13 @@ export async function buildApp({
       const cohort = await getCurrentCohort(db);
       if (!cohort?.is_open) return sendError(reply, 403, 'APPLICATIONS_CLOSED', 'Applications are currently closed.');
 
-      // A listed parish must still be on the list: the draft may be days old.
-      const parish = await resolveParish(db, result.value.parish);
+      // A listed parish must still be on the list (the draft may be days old), and current.
+      const parish = await resolveParish(services, result.value.parish);
       if (!parish.ok) {
+        if ('unavailable' in parish) {
+          // Never stored unverified: the draft stays in the browser for another try.
+          return sendError(reply, 503, 'DIRECTORY_UNAVAILABLE', 'We couldn’t confirm your parish with the RCCG directory just now. Your answers are saved: try again in a few minutes.');
+        }
         return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', { fieldErrors: { parishName: parish.error } });
       }
 

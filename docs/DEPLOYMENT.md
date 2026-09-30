@@ -362,7 +362,7 @@ They run automatically when the app starts (`RUN_MIGRATIONS=true`), in order, ea
 
 ### Parish directory
 
-The parish question and the reports use the RCCG parish list, loaded from the command line ([05 §2](05-Backend-Schema.md#parish-directory-0006)). **Never commit the RCCG files or the issue reports**: the repository is public (`.gitignore` ignores spreadsheets and CSVs). Copy the file straight to the server and delete it afterwards.
+The parish question and the reports use the RCCG parish list ([05 §2](05-Backend-Schema.md#parish-directory-0006-0008)). Its source is the **RCCG directory API** once that's configured ([next section](#rccg-directory-api)); until then, a spreadsheet loaded from the command line, as below. Once the API has supplied the directory, spreadsheet imports are refused. **Never commit the RCCG files or the issue reports**: the repository is public (`.gitignore` ignores spreadsheets and CSVs). Copy the file straight to the server and delete it afterwards.
 
 ```bash
 docker compose cp "RCCG PARISHES.xlsx" app:/tmp/parishes.xlsx
@@ -386,6 +386,68 @@ docker compose exec app rm /tmp/parishes.xlsx /tmp/directory-issues.csv
 - **Switching it on:** once a list is imported, an owner switches the parish question on in Admin → Settings (“Ask applicants to choose their parish from the RCCG directory”), next to what's loaded and what's waiting in Parish review. It can't be switched on while the directory is empty. Then work through Admin → Parish review: the answers typed before the directory, with exact matches to confirm together. Parish search needs the `pg_trgm` extension: migration 0007 creates it, which works when the app's database user owns the database (as in Compose and the bare-metal steps); otherwise run `create extension pg_trgm;` as a superuser first.
 - Bare metal: the same commands in the app folder without `docker compose exec app`. In development: `pnpm directory …` (it uses `.data/pglite`, so stop `pnpm dev` first).
 
+### RCCG directory API
+
+Once it's configured, the RCCG Organisation Hierarchy API ([provider's documentation](https://directory-api.rccgyaya.org/docs#description/introduction)) is the directory's **only source**. The worker keeps a copy in step with it, the form searches that copy, and spreadsheet imports and staff corrections are refused. How it works: [05 §2, "Directory API"](05-Backend-Schema.md#directory-api-0010).
+
+**Keys and environments.** The provider issues one key per environment. Each server holds one:
+
+- **production** is the live directory, at `https://directory-api.rccgyaya.org/api/v1/org`. Use it on the live site.
+- **sandbox** is the provider's staging server, `https://rccg-parish-api-staging.rccgyaya.org/api/v1/org`, with its own test codes. Use it only on a staging server or for local integration tests, never on a server that takes real applications. The server warns at start-up if a production server uses it.
+  - On 2026-09-30 that host name didn't exist in public DNS (NXDOMAIN), although the provider's published contract still lists it. Sandbox keys are self-served in the provider's admin area. Ask the registry team for the sandbox's current address before relying on it.
+
+The key needs the `org:sync` and `org:payload` scopes.
+
+**Where the key lives.** Only in the server's `.env`. Never put it in a chat, a ticket, a URL, the repository, a `VITE_` variable or a command line. The site sends it only as `Authorization: Bearer …` to its environment's fixed address. The key never appears in logs, the admin area or error messages.
+
+To set the key, in the app folder on the server:
+
+```bash
+./deploy/directory-key.sh production
+docker compose up -d app worker
+docker compose exec app node server-dist/directory.js api-status
+```
+
+The script asks for the key at a hidden prompt and writes `DIRECTORY_API_ENV` and `DIRECTORY_API_KEY` into `.env`. The key goes in single quotes, which Docker Compose and Node both read literally. The script leaves every other line alone and never prints the key.
+
+On restart the worker fetches the directory straight away. `api-status` then shows the release in use and when the provider last confirmed it. Bare metal: run the same script, then restart the service.
+
+**Going live, the first time:**
+
+1. **Back up** (§A7).
+2. **Set the key and restart**, as above. The first sync downloads the provider's releases and builds the copy. Release `2026.1` is about 50,000 entries in 254 pages and took under 8 minutes when checked; until it finishes, Settings says "None yet".
+   - If the database holds a spreadsheet import, the old entries stop being offered. They are kept, with their history.
+   - Applications keep their parish link and snapshot.
+   - Each old parish that applications link to is compared with the API's parishes, by exact name and place only. Nothing is relinked. `node server-dist/directory.js legacy-report` lists the outcome as names, codes and counts, for staff to act on in Parish review.
+3. Check **Admin → Settings → Parish directory**:
+   - the source (production), the release in use, when the provider last confirmed it, and no problem;
+   - the issues from the sync in **Parish directory → Imports** (entries the provider's data doesn't let the site place). Send them to the registry team.
+4. **Switch the question on**, in the same Settings panel ("Ask applicants to choose their parish from the RCCG directory"). Until then the form asks for the parish's name.
+
+**Settings** (in `.env`; defaults in brackets):
+- `DIRECTORY_SYNC_INTERVAL_MINUTES` [15, 5–1440]: how often the worker asks for the latest release.
+- `DIRECTORY_FRESHNESS_HOURS` [24, 1–168]: how long a confirmation from the provider lasts. After that, each application's parish is checked with the provider directly at submission.
+
+**When the provider is down:**
+- The form keeps working from the last copy. Once that copy is older than the freshness limit, the form says so.
+- An application is accepted only if its parish was confirmed. If it can't be checked, the review page tells the applicant their parish couldn't be confirmed just now and nothing was sent; their answers stay saved for another try. Nothing is stored unconfirmed.
+- A failed sync changes nothing. Settings shows the problem and how many checks have failed in a row.
+- **Check now** (Settings, for directory managers) or `node server-dist/directory.js sync` tries again at once.
+
+| Problem shown | What to do |
+|---|---|
+| The key was refused | The key is wrong, revoked or for the other environment: run the script again with the right one |
+| The key doesn't cover the whole directory | Ask the provider for `org:sync` and `org:payload` |
+| Too many requests / didn't answer / couldn't be reached | Usually passes by itself. The server retries within limits and honours the provider's `Retry-After` |
+| A release arrived incomplete / the releases don't lead back to a base release / unexpected answer | Nothing was applied: tell the registry team, with the release shown |
+| The result wouldn't be consistent | Nothing was changed: send the latest issues to the registry team |
+
+**Maintenance:**
+- **Replacing a key:** run the script again with the new key, restart the app and worker, then revoke the old key with the provider.
+- **Moving a staging server from sandbox to production:** set the production key. The production entries are built alongside the sandbox ones, and the form then offers only the production entries.
+- **Switching the API off:** remove both lines from `.env` and restart. The form then asks for the parish's name. The copy stays as the API left it, and imports and staff corrections stay closed, because its entries are the API's.
+- **Rebuilding the copy:** `node server-dist/directory.js sync --force` rebuilds it from the releases kept here, even when nothing is new.
+
 ### Database roles
 
 Compose's Postgres image makes `POSTGRES_USER` a superuser, and the app and worker connect as it. Bare metal is better (the `sop` role owns the database but isn't a superuser), but can still rewrite any table, including the audit history. Planned ([06, 7.13](06-Implementation-Plan.md#phase-7-hardening--launch-in-progress)), not yet in the scripts: an owner role (not a superuser) that runs the migrations, a separate app role with data access only (`select, insert, update, delete`) for the app and worker (`RUN_MIGRATIONS=false`), and `revoke update, delete, truncate on audit_events` from the app role. Plan it with a restore test, since it changes how updates run.
@@ -396,6 +458,7 @@ Compose's Postgres image makes `POSTGRES_USER` a superuser, and the app and work
 |---|---|---|
 | `POSTGRES_PASSWORD` | `alter role sop password '…'` in psql, update `.env`, `docker compose up -d` | None for users |
 | SMTP credentials | Update `SMTP_URL`, restart | None |
+| `DIRECTORY_API_KEY` | `./deploy/directory-key.sh production`, restart the app and worker, then revoke the old key with the provider ([RCCG directory API](#rccg-directory-api)) | None: the copy stays in use while you change it |
 | VAPID keys | Only if the private key leaked: `push-keys.js`, update `.env`, restart | Devices must re-subscribe: the app does it automatically for people who open it again with permission granted; others stop receiving |
 | `EDGE_PROXY_SECRET` | New value in the Vercel project and in the VPS's `.env`, redeploy Vercel, restart the app | None. Rotate it if a Vercel build from before 2026-09-30 ever ran with `API_ORIGIN` and the secret set (its middleware could be made to send the secret to another host) |
 | `APP_SECRET` | Only if leaked (or the server was compromised): new value in `.env`, restart, then as below | Everyone is signed out (CSRF tokens change). Staff authenticator secrets and push subscriptions encrypted with the old key can't be read: reset two-step verification for every staff member (`admin.js reset-mfa --email …` or Staff page) and run `update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'rejected' where status = 'active';` so devices show "turn on again" |

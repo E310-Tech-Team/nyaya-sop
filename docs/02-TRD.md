@@ -54,22 +54,26 @@ flowchart TB
             Static["@fastify/static<br/>dist/ + SPA fallback"]
             API["/api<br/>applications · accounts · push · admin"]
         end
-        Worker["worker container: node server-dist/worker.js<br/>campaign dispatch · push delivery · nightly clean-up"]
+        Worker["worker container: node server-dist/worker.js<br/>campaign dispatch · push delivery · nightly clean-up · directory sync"]
         PG[("PostgreSQL 17<br/>data + job queue")]
     end
     Push["Push services<br/>FCM · Mozilla · Apple · WNS"]
     SMTP["SMTP provider"]
+    Directory["RCCG directory API<br/>(releases, parish lookup)"]
     Page --> SW --> Caddy --> App
     API --> PG
     Worker --> PG
     Worker -->|VAPID, aes128gcm| Push -->|push event| SW
     API -->|sign-in links, invitations| SMTP
+    Worker -->|polls releases, bearer key| Directory
+    API -.->|"confirms a parish when the copy is stale"| Directory
 ```
 
 - **One origin:** the site, the API and the service worker share a domain. No CORS; `connect-src 'self'`; the service worker's scope is `/`.
 - **Or the website on Vercel** ([DEPLOYMENT.md §C](DEPLOYMENT.md#c-website-on-vercel-api-on-the-vps)): Vercel serves `dist/` with the same headers ([`vercel.json`](../vercel.json)) and its middleware ([`middleware.ts`](../middleware.ts)) forwards `/api/*` to the VPS (Caddy → app, worker and Postgres unchanged). The browser still sees one origin. The middleware adds the visitor's address and a shared secret (`EDGE_PROXY_SECRET`), so the API rate-limits and logs each visitor ([`server/edge-proxy.ts`](../server/edge-proxy.ts)), and stamps Vercel's release id on API responses. [`server/vercel-config.test.ts`](../server/vercel-config.test.ts) keeps `vercel.json`'s security headers, caching and SPA fallback in step with the server.
 - **Shared domain code:** [`src/shared/`](../src/shared/) holds option lists, validation, permissions, notification topics, the link allowlist and time-zone maths. The browser, the service worker and the server all import it.
 - **Background work** runs from a PostgreSQL job queue ([05 §4](05-Backend-Schema.md)), inside the web process (`WORKER_MODE=inline`, the default) or as a separate process (`WORKER_MODE=off` on the web server + `node server-dist/worker.js`; Docker Compose does this).
+- **RCCG directory API** ([05 §2](05-Backend-Schema.md#directory-api-0010), D-53): the parish directory's source when configured. The worker keeps a copy in PostgreSQL in step with the provider's releases (polling: the contract has no webhooks). The form searches that copy, and the API confirms a parish live only when the copy is stale. Server-side only: the key never reaches the browser, and the addresses are fixed per environment (production or sandbox).
 - **SPA fallback:** extension-less `GET` paths outside `/api` get `index.html` (with `X-Robots-Tag: noindex` under `/admin` and `/account`); missing asset files get a real 404.
 
 ## 3. Progressive Web App
@@ -108,7 +112,7 @@ src/            React app
   sw/           sw.ts (service worker), routing.ts (+ tests)
   shared/       application, validation, permissions, platform (topics, statuses, link allowlist), time
 server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts, settings.ts, analytics.ts, public.ts, index.ts, worker-cli.ts, admin-cli.ts, vapid-cli.ts, directory-cli.ts
-  directory/    the RCCG parish directory: source.ts (spreadsheet now, API later), xlsx.ts (built-in .xlsx reader), plan.ts (pure import planner), store.ts (apply/revert), edits.ts (staff corrections), report.ts
+  directory/    the RCCG parish directory: source.ts + xlsx.ts (the spreadsheet), plan.ts (pure import planner), store.ts (apply/revert), edits.ts (staff corrections), report.ts; api.ts (RCCG directory API client), api-sync.ts (release sync, handover), api-jobs.ts (the worker's schedule), test-api.ts (a fake of the API for tests)
   auth/         sessions, guards (session → CSRF/origin → MFA → permission), tokens, staff-routes
   account/      applicant routes, account deletion
   admin/        applicants, accounts + cohorts, communications (campaigns, announcements, test devices), platform (staff, settings, audit, dashboard), directory, parish-review, reports, application-filters (shared by the list, export and reports), parish-links
@@ -146,7 +150,7 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 | `pnpm start` | `node server-dist/index.js`: the built server. Set `NODE_ENV=production` for a real deployment: without it, the server only starts on loopback with a local (or no) `SITE_URL` |
 | `pnpm worker` | `node server-dist/worker.js`: background jobs as a separate process |
 | `pnpm admin …` | Staff bootstrap: `create-owner --email … --name …`, `reset-mfa --email …`, `list` (production: `node server-dist/admin.js …`) |
-| `pnpm directory …` | The RCCG parish directory: `import <file.xlsx>` (dry run; `--apply`, `--as-at`, `--report`), `revert <import-id>`, `lineage <file.csv>`, `status` (production: `node server-dist/directory.js …`; [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) |
+| `pnpm directory …` | The RCCG parish directory: `import <file.xlsx>` (dry run; `--apply`, `--as-at`, `--report`), `revert <import-id>`, `lineage <file.csv>`, `status`; with the directory API, `sync [--force]`, `api-status`, `legacy-report [--refresh]` (production: `node server-dist/directory.js …`; [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) |
 | `pnpm push:keys` | Prints a new VAPID key pair (production: `node server-dist/push-keys.js`) |
 | `pnpm test` / `pnpm typecheck` / `pnpm check` | Tests / types (app + server, then service worker) / everything CI runs |
 | `pnpm db:migrate` | Apply migrations without starting the server |
@@ -170,6 +174,8 @@ Every variable is documented in [`.env.example`](../.env.example). The server lo
 | `EMAIL_TRANSPORT` | smtp if `SMTP_URL`, else none (production) / outbox (development) | `outbox` is a local test adapter, refused in production |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | — | Web Push. Both keys or neither; subject `mailto:` or `https:`. Without keys, push is off |
 | `PUSH_ENDPOINT_HOSTS` | — | Extra push-service hosts to allow |
+| `DIRECTORY_API_ENV`, `DIRECTORY_API_KEY` | — | The RCCG directory API: `production` or `sandbox`, and that environment's key (16–512 visible characters; set with `deploy/directory-key.sh`, never logged). Both or neither. Sandbox on a production server logs a warning |
+| `DIRECTORY_SYNC_INTERVAL_MINUTES`, `DIRECTORY_FRESHNESS_HOURS` | 15, 24 | How often the worker polls for a new release (5–1440), and how long a confirmation from the provider lasts before submissions check the parish live (1–168) |
 | `WORKER_MODE`, `WORKER_POLL_MS` | inline, 2000 | Background jobs in-process, or `off` (separate worker) |
 | `STAFF_MFA_REQUIRED` | true in production | Two-step verification for staff |
 | `STAFF_SESSION_HOURS`, `STAFF_IDLE_MINUTES` | 12, 120 | Staff session lifetime and idle timeout |

@@ -34,6 +34,7 @@ flowchart LR
 | `0007_parish_links.sql` | `pg_trgm`; parish search text and trigram indexes; applications' parish link (`parish_id`, `parish_status`, `parish_snapshot`); parish reports |
 | `0008_parish_admin.sql` | staff corrections imports keep (`staff_fields`, `parishes.source_unit_id`); parishes staff link to applications (`parish_linked_by`, `parish_linked_at`); earlier typed answers staff reviewed (`parish_text_reviewed_at`) |
 | `0009_suspend_invited_staff.sql` | a staff member can be suspended before accepting their invitation (the password check allows `invited` or `suspended` without one; suspending an invitation used to fail) |
+| `0010_directory_api.sql` | the RCCG directory API as the directory's source: the provider's identity on units and parishes (`external_namespace`, `external_uuid` beside `external_id`; name uniqueness now only among spreadsheet rows), the sync state (`directory_sync`), the releases kept (`directory_releases`, `directory_release_changes`) and the handover report (`directory_legacy_matches`, enum `legacy_match_status`) |
 
 Existing applications stay valid: new columns have defaults (`published_status = 'submitted'`, no account, no reviewer), and a person can claim an older application after signing in with the same email ([03 §8](03-App-Flow.md#8-applicant-accounts)). Verified on real PostgreSQL 17 over existing data (2026-09-26).
 
@@ -141,7 +142,7 @@ erDiagram
 | `assigned_reviewer_id` | uuid | FK → `staff_users`, `on delete set null` |
 | `account_id`, `claimed_at` | uuid, timestamptz | FK → `applicant_accounts`, `on delete set null`; both null or both set |
 | `full_name`, `email`, `phone_e164`, `gender`, `age_range`, `state_of_residence`, `city`, `parish_name`, `education_level`, `current_status`, `purpose_clarity` | | the form's answers, as defined in [`0001_init.sql`](../server/migrations/0001_init.sql) with the rules in §5: `email` lower-case and `unique (cohort_id, email)`, phone E.164, `purpose_clarity` 1–5, `parish_name` optional (≤ 200 since 0007: the directory's name for a listed parish, otherwise what was typed) |
-| `parish_id`, `parish_status`, `parish_snapshot` | uuid FK → `parishes`, `application_parish_status`, jsonb | 0007. `parish_status` is how the applicant answered: `listed` (chosen from the directory: `parish_id` and the snapshot set), `reported` ("I can't find my parish": the typed name, plus a parish report), `legacy_text` (the free-text question), `not_provided`. The snapshot is the parish and its chain as the applicant confirmed them, with the import they came from; it never changes. `parish_id` is the **current** parish, which Reports count by: the applicant's choice, or since 0008 one staff linked to any answer (a `listed` answer always has one) |
+| `parish_id`, `parish_status`, `parish_snapshot` | uuid FK → `parishes`, `application_parish_status`, jsonb | 0007. `parish_status` is how the applicant answered: `listed` (chosen from the directory: `parish_id` and the snapshot set), `reported` ("I can't find my parish": the typed name, plus a parish report), `legacy_text` (the free-text question), `not_provided` (only applications stored before 2026-09-30, when the question became compulsory: kept as they are). The snapshot is the parish and its chain as the applicant confirmed them, with the import they came from; it never changes. `parish_id` is the **current** parish, which Reports count by: the applicant's choice, or since 0008 one staff linked to any answer (a `listed` answer always has one) |
 | `parish_linked_by`, `parish_linked_at`, `parish_text_reviewed_at` | FK → staff (set null), timestamptz, timestamptz | 0008. Who set `parish_id` when staff did, and when. An earlier typed answer staff looked at and couldn't match leaves Parish review (`parish_text_reviewed_at`) |
 | `consent_version`, `consent_at` | text FK, timestamptz | the application's contact consent (separate from notification consent) |
 | `submission_meta` | jsonb | `{utmSource, utmMedium, utmCampaign, referrer}`; no IP addresses |
@@ -187,7 +188,7 @@ Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_
 
 ### Parish directory (0006, 0008)
 
-The RCCG parish list, loaded with `pnpm directory import` ([`server/directory/`](../server/directory/), [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) and corrected by staff in Admin → Parish directory ([`edits.ts`](../server/directory/edits.ts)). No applicant data: applications link to parishes (0007, above).
+The RCCG parish list: kept in step with the RCCG directory API once it's configured ([below](#directory-api-0010)), or until then loaded with `pnpm directory import` ([`server/directory/`](../server/directory/), [DEPLOYMENT](DEPLOYMENT.md#parish-directory)) and corrected by staff in Admin → Parish directory ([`edits.ts`](../server/directory/edits.ts)). No applicant data: applications link to parishes (0007, above).
 
 ```mermaid
 erDiagram
@@ -198,21 +199,28 @@ erDiagram
     APPLICATIONS ||--o{ PARISH_REPORTS : raises
     DIRECTORY_IMPORTS ||--o{ DIRECTORY_ISSUES : finds
     DIRECTORY_IMPORTS ||--o{ DIRECTORY_CHANGES : records
+    DIRECTORY_RELEASES ||--o{ DIRECTORY_RELEASE_CHANGES : lists
+    DIRECTORY_SYNC |o--o| DIRECTORY_IMPORTS : "last applied"
+    PARISHES ||--o| DIRECTORY_LEGACY_MATCHES : "handover report"
 ```
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `church_units` | `level` (continent/region/province/zone/area), `official_name`, `display_name`, `name_key`, `parent_id` + `parent_level`, `state` (provinces only), `external_id` (the RCCG API's ID, later), `status` (active/inactive/merged), `merged_into_id`, `origin` (import/staff), `staff_fields` (0008) | Every level above the parish, in one table. `(parent_id, parent_level)` references `(id, level)` and `parent_level < level`, so a unit can only sit under an earlier level. Continent, region and province `name_key`s are unique across the church; zone and area keys only within their parent. `staff_fields` lists what staff corrected (`display_name`, `parent`, `state`) |
-| `parishes` | `unit_id`, `official_name`, `display_name`, `name_key` (unique per unit), `continent_id` / `region_id` / `province_id` / `zone_id` / `area_id`, `search_text`, `listed_rows`, `external_id`, `status`, `merged_into_id`, `origin`, `staff_fields` and `source_unit_id` (0008) | `unit_id` is the lowest level the source gives (the region or continent when there is no province). The five chain columns and `search_text` (name key, other spellings, province and region keys; trigram-indexed, 0007) are caches, rebuilt in the same transaction as every change and checked after it. `staff_fields` lists what staff corrected (`display_name`, `unit_id`, `status`); `source_unit_id` is where the source lists a parish staff moved |
+| `church_units` | `level` (continent/region/province/zone/area), `official_name`, `display_name`, `name_key`, `parent_id` + `parent_level`, `state` (provinces only), `external_namespace` + `external_id` + `external_uuid` (the RCCG directory API's identity, 0010: all three or none), `status` (active/inactive/merged), `merged_into_id`, `origin` (import/staff), `staff_fields` (0008) | Every level above the parish, in one table. `(parent_id, parent_level)` references `(id, level)` and `parent_level < level`, so a unit can only sit under an earlier level. Among spreadsheet rows, continent, region and province `name_key`s are unique across the church, and zone and area keys only within their parent; API entries are recognised by their IDs, so two can share a name (0010). `staff_fields` lists what staff corrected (`display_name`, `parent`, `state`) |
+| `parishes` | `unit_id`, `official_name`, `display_name`, `name_key` (unique per unit among spreadsheet rows), `continent_id` / `region_id` / `province_id` / `zone_id` / `area_id`, `search_text`, `listed_rows`, `external_namespace` + `external_id` + `external_uuid` (0010), `status`, `merged_into_id`, `origin`, `staff_fields` and `source_unit_id` (0008) | `unit_id` is the lowest level the source gives (the region or continent when there is no province). The five chain columns and `search_text` (name key, other spellings, province and region keys; trigram-indexed, 0007) are caches, rebuilt in the same transaction as every change and checked after it. `staff_fields` lists what staff corrected (`display_name`, `unit_id`, `status`); `source_unit_id` is where the source lists a parish staff moved |
 | `parish_aliases` | `parish_id` cascade, `alias`, `alias_key`, `import_id` | Spellings merged at import, earlier names |
 | `unit_lineage` | `level` + `new_key`, `source_level` + `source_key`, names, `approved_on` | Where new units came from (the 2026 changes), by name, so it can be loaded before they exist. Imports use it to recognise moved parishes |
 | `directory_imports` | `source` (spreadsheet/api), `source_label`, `checksum`, `structure_as_at`, `status` (planned/applied/reverted/failed), `counts` jsonb, `error`, `via` (cli/admin/sync), `staff_id` | Every applied or failed import; dry runs aren't recorded |
 | `directory_issues` | `import_id` cascade, `severity`, `code`, `line`, `message`, `details` | Same-name groups, parishes with no province, provinces with no state, ambiguous moves… Directory names only |
 | `directory_changes` | `import_id` or `staff_id`, `via`, `entity` (unit/parish), `entity_id`, `change` (create/update/move/reactivate/deactivate/merge), `before`, `after` | Every change with the fields in full, so an import can be reverted and each entry's history shown |
+| `directory_sync` (0010) | `namespace` PK, `release_version`, `release_id`, `release_name`, `effective_from`, `checked_at`, `synced_at`, `import_id`, `last_error` (a short code), `last_error_at`, `failures` | Where each environment's sync stands: the release applied, when the provider last confirmed it is the latest (freshness), the last failure. Never a payload or a key |
+| `directory_releases` (0010) | `namespace` + `version_code` PK, `release_id`, `base_version_code`, `effective_from`, `counts`, `fetched_at` | Each release downloaded in full (releases are immutable) |
+| `directory_release_changes` (0010) | `namespace` + `version_code` + `seq` PK, `change` jsonb | A release's checked change rows, in order: replayed to rebuild the hierarchy. Directory names and IDs only |
+| `directory_legacy_matches` (0010) | `legacy_parish_id` PK (a spreadsheet parish that applications link to), `namespace`, `status` (matched/ambiguous/unmatched), `candidate_ids`, `applications`, `checked_at` | The handover's report: the API parishes with exactly the same name and chain. Checks: unmatched ⇔ no candidates; matched ⇔ one |
 
 How an import works ([`server/directory/plan.ts`](../server/directory/plan.ts)):
 
-- A **source** (the spreadsheet now, the RCCG API later) gives rows of continent, region, province and parish. Other columns, such as attendance, are never read.
+- A **source** (the spreadsheet) gives rows of continent, region, province and parish. The RCCG directory API doesn't go through this planner: it gives stable IDs, so its sync matches entries by ID, never by name ([below](#directory-api-0010)). Other columns, such as attendance, are never read.
 - Names are **cleaned** (web codes such as `&amp;amp;`, escaped apostrophes, spacing) and compared by **key**: `unitKey()` ignores capitals and punctuation, and `parishKey()` also a leading "RCCG" and a trailing "Parish" ([`src/shared/directory.ts`](../src/shared/directory.ts)). Changing a key function changes how imports recognise entries: recompute `name_key` for existing rows in the same change.
 - A region or province that repeats the name of the level above isn't a level: the parish sits under the level above.
 - Rows with the same unit and parish key are **one entry**. Entries the source no longer lists are **deactivated, never deleted**; entries staff added and merges staff made are left alone. A parish that reappears under the same name in a unit created from its old one (`unit_lineage`) is a **move** and keeps its ID.
@@ -221,6 +229,76 @@ How an import works ([`server/directory/plan.ts`](../server/directory/plan.ts)):
 
 Staff corrections ([`server/directory/edits.ts`](../server/directory/edits.ts), Admin → Parish directory and Parish review): add a continent, region, province or parish; rename; move a unit or parish; set a province's state; deactivate or reactivate a parish; merge a parish into another (its applications move with it, and its names become aliases, so search still finds it); merge a unit into another at the same level (everything under it moves, and a parish the other unit already lists is merged into that one); split a same-name entry into a second parish. Each is one transaction: the change goes to `directory_changes` (`via = 'staff'`), the caches of the parishes it touches are rebuilt and checked, and it's audited with IDs and field names only. Units aren't deactivated by hand: merge them instead.
 - The current RCCG list (dry run, 2026-09-30): 50,107 rows → 6 continents, 67 regions, 469 provinces, **48,479 parish entries** (1,521 same-name groups covering 3,149 rows), 181 parishes with no province, 22 provinces whose name has no state. Nigeria only; it predates the August 2026 changes.
+
+### Directory API (0010)
+
+With `DIRECTORY_API_ENV` and `DIRECTORY_API_KEY` set ([DEPLOYMENT](DEPLOYMENT.md#rccg-directory-api)), the **RCCG Organisation Hierarchy API** is the directory's only source ([`api.ts`](../server/directory/api.ts): the client; [`api-sync.ts`](../server/directory/api-sync.ts): the sync; [`api-jobs.ts`](../server/directory/api-jobs.ts): the schedule). The contract, from the provider's published OpenAPI description ([docs](https://directory-api.rccgyaya.org/docs#description/introduction), read 2026-09-30):
+
+| | |
+|---|---|
+| Addresses | production `https://directory-api.rccgyaya.org/api/v1/org`; sandbox, the provider's staging server with its own test codes, `https://rccg-parish-api-staging.rccgyaya.org/api/v1/org` (its name didn't resolve in public DNS on 2026-09-30, although the contract lists it). Fixed in the code: configuration picks the environment, never a URL |
+| Authentication | `Authorization: Bearer <key>`, one key per environment; scopes `org:sync` (releases and their changes) and `org:payload` (parishes) |
+| Used by the site | `GET /releases/latest` (the release in force: `id`, `version_code`, `name`, `effective_from`; `data: null` when none is published) · `GET /releases/{version}/changes?page&per_page` (≤ 200 a page: each unit created, moved, renamed or retired against the release's `base_version_code`, with `created/moved/renamed/retired_count`, `total`, `has_more`) · `GET /parishes/{canonical_code}` (one parish in the release in force, with `parent_id` and its ancestry; 404 when it isn't there) |
+| In the client, unused | `GET /parishes?query&cursor&per_page` (≤ 50, cursor-paged): the form searches the copy instead. Not used: `/units`, `/tree/{root}`, `/releases/effective`, `/releases/{version}`, `/sandbox/fixture` |
+| Identity | each unit and parish has a UUID (`id`, what `parent_id` points at) and a canonical code (e.g. `RCCG-F3A7C912`). Names are never identifiers |
+| Levels | intercontinental → continent → region → province → zone → area → parish. The intercontinental root isn't stored: continents are the top here |
+| Errors | 401 (key missing, invalid or revoked) · 403 (outside the key's scope) · 404 · 422 · 429 with `Retry-After` |
+| Updates | nothing is pushed (no webhooks): releases are published, immutable, and the site polls for them |
+
+**A synchronised copy, not a live proxy.** The form's search is type-ahead, and reports and filters join the hierarchy with applications. The provider also rate-limits (429). Asking it live would make the form as slow and as available as the provider, and would give the reports nothing to join against. So the site keeps a copy built from the releases:
+
+1. **Polling.** The worker asks `/releases/latest` at start-up and every `DIRECTORY_SYNC_INTERVAL_MINUTES` (15). The schedule is a deduplicated job per time slot, so one worker's schedule never piles up. Two other triggers: staff with directory.manage can **Check now** in Settings (`POST /api/admin/directory/sync`), and `pnpm directory sync` runs one from the command line. Every answer records `checked_at`: the copy was the latest at that moment.
+2. **Downloading.** For a new release, the changes of every release in its chain that isn't kept yet are downloaded page by page. A release is kept only once it's complete: every page agrees on the release, its base and the total, and the items add up to the counts. Otherwise nothing is kept (`incomplete_release`).
+3. **Writing.** The chain is replayed from its base release into the whole hierarchy, then written in one transaction, one writer at a time (an advisory lock):
+   - entries are matched by UUID within the environment's namespace;
+   - changed fields go to `directory_changes`, with a `directory_imports` row (`source = 'api'`, `via` sync/cli/admin, the counts);
+   - the caches are rebuilt and the consistency check must pass, otherwise nothing is written.
+   Applying the same release again changes nothing.
+4. **Only a `retired` change takes an entry out of use.** It is deactivated, never deleted, along with everything under a retired unit. An absence is never read as a removal. Some entries stop being usable: a parent the provider doesn't give, a level that changed, an empty name, a missing code, or an entry missing from a chain the provider started again. Those keep their last good state and are listed as issues (`missing_parent`, `level_changed`, `bad_name`, `missing_code`, `not_in_releases`; codes and names only), and the counts say how many were `kept`.
+5. **Failures.** A failed download or check changes nothing. The last good state stays in use, and `directory_sync` records a short code (`api_unauthorized`, `api_rate_limited`, `incomplete_release`, `inconsistent`…) and the failures in a row. Settings shows both.
+
+**Freshness.** The copy is as current as the provider's latest release when it last answered: within one poll interval of a publication while the provider is up. It isn't real time.
+
+- Search results say how current the copy is: `directory: {source: 'api', release, checkedAt, stale}`.
+- `stale` means the copy hasn't been confirmed for `DIRECTORY_FRESHNESS_HOURS` (24). The form tells applicants when it is.
+
+At submission, a listed parish must be active in the copy, in the namespace in use. An entry from the old spreadsheet or from the other environment is refused with "search again". What happens next depends on freshness:
+
+- **Fresh copy:** that check is enough.
+- **Stale copy:** the server asks the provider for that one parish (`/parishes/{code}`):
+  - no longer there: refused, as no longer listed;
+  - moved or renamed since: refused, asking the applicant to check their parish again, and a sync is queued;
+  - the provider unreachable: 503 `DIRECTORY_UNAVAILABLE`. The applicant's answers stay saved in the browser.
+
+An unconfirmed parish is never stored. The snapshot keeps the provider's code (`externalId`).
+
+**Environments.** `external_namespace` is `rccg-org:production` or `rccg-org:sandbox`, and `external_id` is `<namespace>:<canonical code>`. `external_uuid` is the provider's UUID, unique within a namespace. The two environments never mix: search, readiness counts and submission checks use only the configured one.
+
+**Handover from the spreadsheet.** The first sync in a database with spreadsheet rows deactivates them. They are kept with their history, so applications keep their `parish_id` and snapshot. Each spreadsheet parish that applications link to is then compared with the API's parishes: the same name key and the same continent, region and province keys (a missing level matches only a missing level). Similar names never count. The result goes to `directory_legacy_matches` (`pnpm directory legacy-report [--refresh]`). Nothing is relinked automatically: staff link applications through Parish review.
+
+**The API is the authority.** Once API entries exist:
+- spreadsheet imports are refused (`applyPlan`), and so is reverting an API sync;
+- staff corrections are closed ([`edits.ts`](../server/directory/edits.ts)). Admin → Parish directory shows the entries read-only, with their RCCG directory code, and corrections go to the registry team.
+
+**The client.** The key travels only in the `Authorization` header, to the fixed address. The client:
+- refuses redirects and bodies over 8 MB;
+- checks every answer against the contract, and treats an unexpected shape as an error, never a guess;
+- retries within bounds:
+
+| Request | Timeout | Tries | Longest wait honoured |
+|---|---|---|---|
+| Sync | 20 s | 4 | `Retry-After` up to 60 s |
+| Submission check | 6 s | 2 | 2 s |
+
+401, 403, 404 and other 4xx answers are never retried. Errors carry a kind and a status, never the key or a payload. The logs record figures and codes only.
+
+**Tests** never reach the provider: [`test-api.ts`](../server/directory/test-api.ts) is an in-memory fake of the contract (releases, paging, search, lookup, and failures on demand).
+
+**The live directory** (production release `2026.1`, "17th August 2026 approved list", synced read-only into a scratch database on 2026-09-30): 50,649 changes in 254 pages (7.8 minutes, no rate limiting).
+- **What it holds:** 6 continents (1, 2, 3, 11, 12 and Special Continents), 73 regions, 489 provinces and 50,081 parishes. 49,900 parishes have a province, 154 sit directly under a region and 27 directly under a continent. There is no zone or area.
+- **Duplicate names:** 1,500 groups of parishes share a name within one unit (3,102 parishes). They're kept apart by code, and the form can't tell them apart ([06, open question](06-Implementation-Plan.md#next-steps-in-order)).
+- **Other data problems:** 29 provinces' names give no state, and one parish name contains a phone number.
+- **Sync result:** the sync found no data problems (no missing parents, codes or names).
 
 ### Enums
 
@@ -234,6 +312,7 @@ Staff corrections ([`server/directory/edits.ts`](../server/directory/edits.ts), 
 | `push_subscription_status`, `campaign_status`, `delivery_status`, `job_status` | see the tables above |
 | `church_level` | `continent` · `region` · `province` · `zone` · `area` (in this order; [`src/shared/directory.ts`](../src/shared/directory.ts)) |
 | `directory_status`, `directory_origin`, `directory_source`, `directory_import_status` | active/inactive/merged · import/staff · spreadsheet/api · planned/applied/reverted/failed |
+| `legacy_match_status` (0010) | `matched` · `ambiguous` · `unmatched` |
 
 ## 3. API
 
@@ -247,7 +326,7 @@ JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors:
 | `GET /api/cohorts/current` | 120/min | Open cohort |
 | `POST /api/applications` | 20/10 min | Submit an application (also records `application_submitted`); the parish answer is described below |
 | `GET /api/config` | 120/min | `{accounts:{enabled}, push:{enabled, publicKey}, supportEmail, buildId, parishDirectory:{enabled}}` (the directory is enabled when switched on in Settings and the list has active parishes) |
-| `GET /api/parishes/search?q=&state=&limit=` | 240/min | 404 while the directory is switched off (an imported list may still be under review). Otherwise, active parishes whose name, province or region has every typed word at the start of a word (2–60 characters; "LP 12" = Lagos Province 12; "RCCG" and "Parish" ignored). Best first: words in the name, whole words, the applicant's `state`, then name and province order; the closest spellings (`fuzzy: true`) when nothing matches. `{results: [{id, name, chain, inState}], total, fuzzy}`, at most 10. Names and units only |
+| `GET /api/parishes/search?q=&state=&limit=` | 240/min | 404 while the directory is switched off (an imported list may still be under review). Otherwise, active parishes whose name, province or region has every typed word at the start of a word (2–60 characters; "LP 12" = Lagos Province 12; "RCCG" and "Parish" ignored). Best first: words in the name, whole words, the applicant's `state`, then name and province order; the closest spellings (`fuzzy: true`) when nothing matches. `{results: [{id, name, chain, inState}], total, fuzzy, directory?}`, at most 10. Names and units only. With the RCCG directory API, only its entries in the configured environment, and `directory: {source: 'api', release, checkedAt, stale}` |
 | `GET /api/parishes/:id` | 240/min | One parish as it stands (`status` active/inactive/merged, `mergedInto`, `chain`), to re-check a saved draft; 404 if unknown |
 | `GET /api/announcements` | 120/min | Published public announcements |
 | `POST /api/events` | 60/min | Client analytics event (allowlisted names and properties only) |
@@ -275,14 +354,14 @@ JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors:
 | Dashboard | `GET /dashboard` (a failed job's error text only for settings.manage or audit.view) | dashboard.view |
 | Applicants | `GET /applicants?q&cohort&status&published&reviewer&claimed&from&to&unit&direct&without&parish&parishStatus&sort&page&pageSize` (`from`/`to`: Lagos days; `unit`: anywhere under a church unit, or with `direct=1` directly under it; `without=region\|province`: a linked parish with no unit at that level; `parish`: an ID, `any` or `none`; each row has its `parish`) · `GET /applicants/export.csv?…` · `GET /applicants/:id` (with `parish`: the answer, the current parish and chain, the chain as confirmed, who linked it, reports) · `POST …/:id/notes` · `POST …/:id/assign` · `POST …/:id/status` · `POST …/:id/publish` (`expectedStatus`, 409 if stale) · `POST …/:id/correct` · `POST …/:id/parish` (`parishId`, or null to remove a staff link; resolves pending parish reports) · `POST …/:id/delete` (`confirm` = reference) · `GET /reviewers` | view_all or view_assigned (reviewers: assignments only) · note · assign · review · publish · export · edit |
 | Reports | Every report takes the Applicants filters (`cohort`, `from`, `to`, `status`, `published`, `unit`, `direct`, `without`, `parish`). A `unit` or `parish` that doesn't exist is 404; a parish outside its `unit` (directly under it with `direct=1`), or a `level` not below the unit, is 400. `GET /reports/summary` (applications; unique applicants by email; review and published status; the parish answers, each split linked/not linked; linked by staff; without a directory parish; with no region/province; parishes represented out of active ones; the Parish review backlog; the period and, with a start date, the equal period before; the place, with `parish`: its status, what it was merged into, its unit and its chain from the continent; and the directory version) · `GET /reports/units?level=continent\|region\|province\|parish&q&sort=applications\|name\|parishes\|<review status>&dir=asc\|desc&include=all\|applications&page&pageSize` (≤ 48; the drill-down: every continent by default, every unit at a level, the units under `unit`, or parishes; units and parishes with no applications are listed unless `include=applications`; each unit card has `children` (the active units directly under it, per level, with how many have applications) and its active parishes and how many have applications; a parish card's `drill` opens its own view; `extras` so totals add up: parishes directly under the unit or with no region/province, and at the top the **Unassigned** applications with no directory parish; status and parish orders only for roles that see exact counts) · `GET /reports/units.csv?…` (the whole listing, totals only, with the period and directory version; ≤ 50,000 rows; 10/min; audited as `reports.exported`) · `GET /reports/trend?interval=day\|week&…` (Lagos days; weeks start Monday; empty periods filled; 30 days or 12 weeks without dates) · `GET /reports/cohorts?…` · `GET /reports/overview` (dashboard card) | reports.view |
-| Parish directory | `GET /directory/overview` · `GET /directory/browse?unit&q&page&show=all` · `GET /directory/search?q&kind=unit\|parish&level` · `GET /directory/units/:id` · `GET /directory/parishes/:id` (details, aliases, applications count, history) · `GET /directory/imports` · `GET /directory/imports/:id?code&page` · `GET /directory/lineage` · `POST /directory/units` · `PATCH /directory/units/:id` (`displayName`, `parentId`, `state`) · `POST …/units/:id/merge` · `POST /directory/parishes` · `PATCH /directory/parishes/:id` (`displayName`, `unitId`, `status`) · `POST …/parishes/:id/merge` · `POST …/parishes/:id/split` | directory.view · directory.manage (changes) |
+| Parish directory | `POST /directory/sync` (Check now: queues a sync with the RCCG directory API; 202, 409 when it isn't configured; 6/min; audited `directory.sync_requested`) · `GET /directory/overview` · `GET /directory/browse?unit&q&page&show=all` · `GET /directory/search?q&kind=unit\|parish&level` · `GET /directory/units/:id` · `GET /directory/parishes/:id` (details, aliases, applications count, history; with `apiManaged` and the RCCG directory code, `externalId`) · `GET /directory/imports` · `GET /directory/imports/:id?code&page` · `GET /directory/lineage` · `POST /directory/units` · `PATCH /directory/units/:id` (`displayName`, `parentId`, `state`) · `POST …/units/:id/merge` · `POST /directory/parishes` · `PATCH /directory/parishes/:id` (`displayName`, `unitId`, `status`) · `POST …/parishes/:id/merge` · `POST …/parishes/:id/split` | directory.view · directory.manage (changes) |
 | Parish review | `GET /parish-review?kind=not_listed\|details_wrong\|earlier_text&page` (with counts and suggested parishes; for earlier answers, the one exact match in the applicant's state) · `POST /parish-review/reports/:id/resolve` (`action`: `link` + `parishId`, `add` + `unitId` + `name`, `fixed`, `reject`; 409 once resolved) · `POST /parish-review/earlier/:id/link` · `POST …/earlier/:id/dismiss` · `GET /parish-review/earlier/matches` · `POST /parish-review/earlier/confirm` (`items`, up to 500; each re-checked; 64 KB body) | applications.view_all **and** applications.edit **and** directory.manage |
 | Accounts | `GET /accounts` · `GET /accounts/:id` · `POST …/:id/suspend` · `…/reactivate` · `…/revoke-sessions` · `…/delete` (`confirm` = email) | accounts.view · accounts.manage |
 | Cohorts | `GET /cohorts` · `POST /cohorts` · `PATCH /cohorts/:id` (local times + `timeZone`) | cohorts.manage (list also for viewers) |
 | Campaigns | `GET/POST /campaigns` (`idempotencyKey`) · `GET/PATCH /campaigns/:id` (drafts only) · `POST /campaigns/audience-preview` · `POST /campaigns/:id/test` · `POST /campaigns/:id/schedule` (`when`, `localTime`, `timeZone`, `confirmDevices`, `confirmInbox`; 409 with fresh counts if they changed) · `POST /campaigns/:id/cancel` · `GET/POST /test-devices` · `POST /test-devices/:id/remove` | campaigns.manage · campaigns.send (schedule, cancel) |
 | Announcements | `GET/POST /announcements` (a `cohortId` must name a cohort) · `PATCH /announcements/:id` · `POST …/:id/publish` · `POST …/:id/archive` | announcements.manage |
 | Staff | `GET /staff` · `POST /staff` (invite) · `POST /staff/:id/role` · `…/suspend` (also voids their invitation and reset links) · `…/reactivate` · `…/reset-mfa` · `…/resend-invite` · `…/revoke-sessions` · `…/unlock` (ends a sign-in lock; 409 if not locked; audited) | staff.manage |
-| Settings | `GET/PATCH /settings` (with integration health, no secrets, and the parish directory's readiness: counts per level, the latest import, corrections, reviews waiting) | settings.manage |
+| Settings | `GET/PATCH /settings` (with integration health, no secrets, and the parish directory's readiness: counts per level, the latest import, corrections, reviews waiting, and `api`: the environment, release in use, when last confirmed and applied, freshness, the last problem as a code, failures in a row, the handover's counts) | settings.manage |
 | Audit | `GET /audit?action&actor&targetType&targetId&page` | audit.view |
 | Legacy | `GET /applications.csv` → 303 to the audited export for signed-in exporters; 401 otherwise | applications.export |
 
@@ -294,9 +373,9 @@ Query strings are read one value per field (the first, as the browser's `URLSear
 
 ### `POST /api/applications`
 
-See [§5 validation](#5-validation-rules) and the status table: 201 `{id, reference, submittedAt}`, 400 `VALIDATION_FAILED`, 403 `APPLICATIONS_CLOSED`, 409 `ALREADY_APPLIED`, 413, 415, 429 `RATE_LIMITED`. The honeypot field returns a normal-looking 201 and stores nothing.
+See [§5 validation](#5-validation-rules) and the status table: 201 `{id, reference, submittedAt}`, 400 `VALIDATION_FAILED`, 403 `APPLICATIONS_CLOSED`, 409 `ALREADY_APPLIED`, 413, 415, 429 `RATE_LIMITED`, 503 `DIRECTORY_UNAVAILABLE` (the parish couldn't be confirmed with the RCCG directory API: [above](#directory-api-0010)). The honeypot field returns a normal-looking 201 and stores nothing.
 
-**The parish answer.** A form that uses the parish directory sends `parish`: `{kind: 'listed', id, confirmed: true, detailsWrong?}` or `{kind: 'not_listed', name}`. While the directory is on, that answer is required. The server checks a listed parish is still active (a merged or deactivated one gets a field error asking the applicant to search again), fills in the chain itself, ignoring any names the browser sends, and stores the application and any parish report in one statement. A body without `parish` (an older copy of the form) is still accepted, with `parishName` as free text.
+**The parish answer.** A form that uses the parish directory sends `parish`: `{kind: 'listed', id, confirmed: true, detailsWrong?}` or `{kind: 'not_listed', name}`. The parish question is compulsory (D-52). While the directory is on, `parish` is the only answer: a body without it, or with typed text only, is refused with a field error ("Please search for and select your parish to continue."). While it's off, `parishName` is required (2–120 characters, with a letter) and stored as `legacy_text`. The server checks a listed parish is still active (a merged or deactivated one gets a field error asking the applicant to search again), fills in the chain itself from the parish ID, ignoring any names or IDs of units the browser sends, and stores the application and any parish report in one statement. A listed parish the directory doesn't place under a continent is stored as the directory has it (nothing is filled in) with a `details_wrong` report for staff. With the RCCG directory API, the parish must be one of its entries in the configured environment, and is confirmed with the provider when the copy is stale ([freshness](#directory-api-0010)); the snapshot keeps its code (`externalId`).
 
 ## 4. Jobs, campaigns and delivery
 
@@ -329,7 +408,7 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 | Gender / Age range / Education / Status | one of the enum values |
 | State of residence | one of 36 states, "FCT (Abuja)" or "Outside Nigeria" |
 | City/Town | required; 2–80 chars; contains a letter |
-| RCCG parish | free text: optional, ≤ 120. From the directory (while it is on): a listed parish, confirmed, or the name of one that isn't listed (2–120, contains a letter) |
+| RCCG parish | required. While the directory is on: a listed parish, confirmed, or the name of one that isn't listed (2–120, contains a letter); typed text alone doesn't count. While it's off: the parish's name (2–120, contains a letter) |
 | Purpose clarity | integer 1–5 |
 | Link tags (`meta`) | `utmSource`, `utmMedium`, `utmCampaign`, `referrer` only; cleaned; ≤ 120 characters each, cut on character boundaries. The browser applies the same rule when it captures them, so a crafted link can't make the application too large or unstorable |
 | Consent version | must exist in `consent_versions` |

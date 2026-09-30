@@ -92,7 +92,7 @@ Payments · delivering training, grading, mentorship or community management · 
 | F23 | Admin platform with individual staff accounts, two-step verification, five roles, audit history | **Built** |
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
-| F26 | Parish directory: applicants choose their parish from the RCCG list; staff correct the directory, review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish | **Built** (Phase 16; off until the list is imported on the VPS and switched on; the RCCG API later) |
+| F26 | Parish directory: applicants choose their parish from the RCCG list; staff review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish. The list comes from the official RCCG directory API, kept current automatically (D-53); where the API isn't configured, from an imported spreadsheet that staff can correct | **Built** (Phase 16; the API connection is tested against a fake of its contract, not yet live: off until the API key is on the server and the question is switched on in Settings) |
 
 ## 5. Form content
 
@@ -113,7 +113,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 |
 | 06 | State of Residence | select | All 36 states + FCT (Abuja) + Outside Nigeria |
 | 07 | City/Town of Residence | text | 2–80 characters |
-| 08 | Name of RCCG Parish | text, optional | Hint: "If you attend an RCCG parish, tell us which one." While the parish directory is on: "Your RCCG parish", required, a search of the RCCG list; province, region and continent fill in and are locked |
+| 08 | Your RCCG parish | required | While the parish directory is on: a search of the RCCG list; province, region and continent come from the chosen parish (read-only) and are confirmed, or "I can't find my parish" with its name. While it's off: "Name of your RCCG parish", typed (hint: "Type your parish's name as you know it. The Programme team will match it to the RCCG parish list.") |
 
 ### Section 2: Education & Career
 
@@ -173,7 +173,7 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | # | Question | Status |
 |---|---|---|
 | Q1 | Where should submissions be stored? | ✅ **Decided:** self-hosted PostgreSQL on the VPS (2026-09-26) |
-| Q2 | Was a "RCCG member? Yes/No" question removed? | ✅ Resolved by rewording the parish hint; the parish stays optional. Reopen if the question should come back. **Superseded while the parish directory is on:** the parish is required and chosen from the RCCG list (D-31) |
+| Q2 | Was a "RCCG member? Yes/No" question removed? | ✅ Resolved by rewording the parish hint; the parish stays optional. Reopen if the question should come back. **Superseded while the parish directory is on:** the parish is required and chosen from the RCCG list (D-31). **Superseded everywhere (2026-09-30, D-52):** the parish is compulsory whether or not the directory is on |
 | Q3 | Time estimate: 5 or 12 minutes? | ✅ "About 5 minutes" (11 questions). Change in `src/config/site.ts` |
 | Q4 | Full state list / diaspora? | ✅ 36 states + FCT + "Outside Nigeria". **Confirm** |
 | Q5 | How is eligibility (18–30, RCCG) enforced? | Open: currently self-declared via the consent statement and age ranges |

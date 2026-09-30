@@ -129,6 +129,20 @@ export type ChainUnit = { id: string; name: string };
 /** Null where the directory has no such level for this parish (zone and area, for now, everywhere). */
 export type ParishChain = Record<ChurchLevel, ChainUnit | null>;
 
+/**
+ * Whether the directory places this parish in full: every parish belongs to a continent. A
+ * parish may sit directly under a region or a continent (no province, or no region), which is
+ * complete; one that reaches no continent is a gap in the list, reported to staff, never filled in.
+ */
+export const isChainComplete = (chain: ParishChain): boolean => chain.continent !== null;
+
+/**
+ * The directory's freshness, sent with search results: `stale` when it comes from the RCCG directory
+ * API and the provider hasn't confirmed its latest release for longer than the site allows (the
+ * suggestions may then be out of date). Absent for a directory imported without the API.
+ */
+export type DirectoryFreshness = { source: 'api'; release: string | null; checkedAt: string | null; stale: boolean };
+
 export type ParishSuggestion = {
   id: string;
   name: string;
@@ -143,6 +157,8 @@ export type ParishSearchResponse = {
   total: number;
   /** Nothing matched exactly, so these are the closest spellings ("Did you mean…?"). */
   fuzzy: boolean;
+  /** How current the list is, when it comes from the RCCG directory API. */
+  directory?: DirectoryFreshness;
 };
 
 /** The parish as it stands now: what a saved draft is checked against. */

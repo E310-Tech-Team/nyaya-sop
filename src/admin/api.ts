@@ -103,11 +103,35 @@ export type DirectoryReadiness = {
   corrections: number;
   lineageWaiting: number;
   pendingReviews: number;
+  /** The RCCG directory API, when it is the source: its environment and how current the copy is (never the key). */
+  api: DirectoryApiStatus | null;
+};
+
+export type DirectoryApiStatus = {
+  env: 'production' | 'sandbox';
+  release: string | null;
+  releaseName: string | null;
+  effectiveFrom: string | null;
+  /** When the provider last confirmed the release in use is its latest. */
+  checkedAt: string | null;
+  /** When a release was last applied. */
+  syncedAt: string | null;
+  fresh: boolean;
+  freshnessHours: number;
+  syncIntervalMinutes: number;
+  /** A short code (e.g. api_unauthorized), never a message from the provider. */
+  lastError: string | null;
+  lastErrorAt: string | null;
+  failures: number;
+  /** The handover from the spreadsheet: its parishes with applications, compared with the API's. */
+  oldList: { matched: number; ambiguous: number; unmatched: number };
 };
 
 export type BrowseChild = UnitBrief & { status: DirectoryStatus; state: string | null; origin: string; corrected: boolean; units: number; parishes: number; changed2026: boolean };
 export type BrowseParish = { id: string; name: string; status: DirectoryStatus; listedRows: number; origin: string; corrected: boolean; applications: number };
 export type Browse = {
+  /** Entries come from the RCCG directory API: they change there, not in this screen. */
+  apiManaged: boolean;
   unit: (UnitBrief & { status: DirectoryStatus; state: string | null; origin: string; corrected: string[] }) | null;
   ancestors: UnitBrief[];
   children: BrowseChild[];
@@ -120,7 +144,17 @@ export type HistoryItem = { id: string; at: string; via: 'import' | 'staff'; cha
 export type History = { items: HistoryItem[]; names: Record<string, string> };
 
 export type UnitDetail = {
-  unit: UnitBrief & { officialName: string; state: string | null; status: DirectoryStatus; origin: string; corrected: string[]; mergedInto: { id: string; name: string | null } | null };
+  unit: UnitBrief & {
+    officialName: string;
+    state: string | null;
+    status: DirectoryStatus;
+    origin: string;
+    corrected: string[];
+    mergedInto: { id: string; name: string | null } | null;
+    /** "<namespace>:<canonical code>" for an entry from the RCCG directory API. */
+    externalId: string | null;
+  };
+  apiManaged: boolean;
   ancestors: UnitBrief[];
   counts: { units: number; activeParishes: number; parishesDirectly: number; applications: number };
   lineage: { createdFrom: { name: string; level: ChurchLevel; approvedOn: string | null }[]; sourceOf: { name: string; level: ChurchLevel; approvedOn: string | null }[] };
@@ -135,10 +169,12 @@ export type ParishEntry = {
     corrected: string[];
     unit: UnitBrief;
     listedUnder: { id: string; name: string | null } | null;
+    externalId: string | null;
   };
   aliases: string[];
   applications: number;
   history: History;
+  apiManaged: boolean;
 };
 
 export type ImportRow = {
@@ -518,6 +554,8 @@ export const adminApi = {
 
   // Parish directory
   directoryOverview: (signal?: AbortSignal) => call<DirectoryReadiness>('/directory/overview', { signal }),
+  /** Queues a check of the RCCG directory API for the worker (202). */
+  syncDirectoryNow: () => post<{ queued: true }>('/directory/sync'),
   browseDirectory: (params: { unit?: string; q?: string; page?: number; show?: string }, signal?: AbortSignal) => call<Browse>(`/directory/browse${query(params)}`, { signal }),
   searchUnits: (q: string, level?: ChurchLevel, signal?: AbortSignal) => call<{ units: UnitMatch[] }>(`/directory/search${query({ q, kind: 'unit', level })}`, { signal }),
   searchDirectoryParishes: (q: string, signal?: AbortSignal) => call<{ parishes: ParishSuggestion[] }>(`/directory/search${query({ q, kind: 'parish' })}`, { signal }),

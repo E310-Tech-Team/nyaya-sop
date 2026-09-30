@@ -14,6 +14,18 @@
  *       optionally source_level (when the source is at another level) and approved_on.
  *   pnpm directory status
  *
+ * With the RCCG directory API configured (DIRECTORY_API_ENV, DIRECTORY_API_KEY), the API is the
+ * source and the worker keeps the copy current; imports from a spreadsheet are refused:
+ *
+ *   pnpm directory sync [--force]
+ *       Checks the provider's latest release now and applies it if it is new (--force: rebuild
+ *       from the releases kept here even when it isn't). Prints figures only, never the key.
+ *   pnpm directory api-status
+ *   pnpm directory legacy-report [--refresh]
+ *       The handover from the spreadsheet: its parishes that applications link to, and the API's
+ *       parishes with exactly the same name and chain. Names, codes and counts only. --refresh
+ *       compares them again with the current release.
+ *
  * In production (built): node server-dist/directory.js import …
  */
 import { readFile, writeFile } from 'node:fs/promises';
@@ -23,6 +35,8 @@ import { NAMED_LEVELS, cleanName, unitKey, type ChurchLevel } from '../src/share
 import { ConfigError, loadConfig, loadDotEnv } from './config';
 import { parseCsv } from './csv';
 import { createDb, type Db } from './db';
+import { createDirectoryApi, namespaceOf } from './directory/api';
+import { isFresh, refreshLegacyMatches, syncDirectory, syncState } from './directory/api-sync';
 import { planImport } from './directory/plan';
 import { issuesCsv, planSummary } from './directory/report';
 import { spreadsheetSource } from './directory/source';
@@ -32,12 +46,18 @@ import { migrate } from './migrate';
 loadDotEnv();
 const { positionals, values } = parseArgs({
   allowPositionals: true,
-  options: { apply: { type: 'boolean', default: false }, 'as-at': { type: 'string' }, report: { type: 'string' } },
+  options: {
+    apply: { type: 'boolean', default: false },
+    'as-at': { type: 'string' },
+    report: { type: 'string' },
+    force: { type: 'boolean', default: false },
+    refresh: { type: 'boolean', default: false },
+  },
 });
 const [command, argument] = positionals;
 
 const USAGE =
-  'Commands: import <file.xlsx> [--apply] [--as-at YYYY-MM-DD] [--report issues.csv] | revert <import-id> | lineage <file.csv> [--apply] | status';
+  'Commands: import <file.xlsx> [--apply] [--as-at YYYY-MM-DD] [--report issues.csv] | revert <import-id> | lineage <file.csv> [--apply] | status | sync [--force] | api-status | legacy-report [--refresh]';
 
 function validDate(value: string | undefined): string | null {
   if (value === undefined) return null;
@@ -132,12 +152,87 @@ async function status(db: Db) {
   console.log('Consistency:', JSON.stringify(await checkConsistency(db)));
 }
 
+type Config = ReturnType<typeof loadConfig>;
+
+function apiOf(config: Config) {
+  if (!config.directoryApi) throw new Error('The RCCG directory API isn’t configured: set DIRECTORY_API_ENV and DIRECTORY_API_KEY (docs/DEPLOYMENT.md, “Directory API”).');
+  return createDirectoryApi({ env: config.directoryApi.env, key: config.directoryApi.key });
+}
+
+async function sync(db: Db, config: Config) {
+  const result = await syncDirectory(db, apiOf(config), { via: 'cli', force: values.force });
+  if (result.status === 'failed') throw new Error(`The sync failed (${result.error}); nothing was changed and the last good state stays in use.`);
+  if (result.status === 'current') {
+    console.log(`Current: release ${result.release ?? '(none published)'} is the provider's latest. Nothing to apply.`);
+    return;
+  }
+  const { units, parishes, issues, handover, fetchedReleases } = result.counts;
+  const line = (name: string, c: typeof units) =>
+    `${name}: ${c.created} added, ${c.updated} renamed, ${c.moved} moved, ${c.deactivated} retired, ${c.reactivated} back, ${c.unchanged} unchanged` +
+    (c.kept ? `, ${c.kept} kept as they were (the releases don't describe them usably: see the issues)` : '');
+  console.log(`Applied release ${result.release} (import ${result.importId}; ${fetchedReleases} release(s) downloaded).`);
+  console.log(line('Units', units));
+  console.log(line('Parishes', parishes));
+  console.log(`Issues for the registry team: ${issues} (Parish directory > Imports lists them).`);
+  if (handover) {
+    console.log(
+      `Handover from the spreadsheet: ${handover.units} units and ${handover.parishes} parishes no longer used; of its parishes with applications, ${handover.matched} have one exact match, ${handover.ambiguous} several, ${handover.unmatched} none (pnpm directory legacy-report).`,
+    );
+  }
+}
+
+async function apiStatus(db: Db, config: Config) {
+  const api = apiOf(config);
+  const state = await syncState(db, api.namespace);
+  console.log(`Environment: ${config.directoryApi!.env} (${api.namespace})`);
+  if (!state) {
+    console.log('Not synced yet: run pnpm directory sync, or wait for the worker.');
+    return;
+  }
+  console.log(`Release: ${state.releaseVersion ?? 'none'}${state.releaseName ? ` (${state.releaseName})` : ''}`);
+  console.log(`Last confirmed current: ${state.checkedAt ?? 'never'} (${isFresh(state, config.directoryApi!.freshnessHours) ? 'fresh' : 'stale: submissions check parishes live'})`);
+  console.log(`Last update applied: ${state.syncedAt ?? 'never'}`);
+  console.log(`Last problem: ${state.lastError ? `${state.lastError}, ${state.failures} in a row, at ${state.lastErrorAt}` : 'none'}`);
+}
+
+async function legacyReport(db: Db, config: Config) {
+  const namespace = namespaceOf(apiOf(config).env);
+  if (values.refresh) await refreshLegacyMatches(db, namespace);
+  const { rows } = await db.query<{ name: string; place: string | null; status: string; applications: number; candidates: string[] | null }>(
+    `select p.display_name as name, concat_ws(' · ', v.display_name, r.display_name, c.display_name) as place,
+            m.status::text as status, m.applications,
+            array(select n.external_id || ' (' || n.display_name || ')' from parishes n where n.id = any (m.candidate_ids) order by n.external_id) as candidates
+       from directory_legacy_matches m
+       join parishes p on p.id = m.legacy_parish_id
+       left join church_units c on c.id = p.continent_id
+       left join church_units r on r.id = p.region_id
+       left join church_units v on v.id = p.province_id
+      where m.namespace = $1
+      order by m.status, p.display_name`,
+    [namespace],
+  );
+  if (!rows.length) {
+    console.log('No parish from the earlier list has applications: nothing to map.');
+    return;
+  }
+  for (const row of rows) {
+    console.log(`${row.status.padEnd(9)} ${row.name} (${row.place || 'no units'}): ${row.applications} application(s)${row.candidates?.length ? ` → ${row.candidates.join(', ')}` : ''}`);
+  }
+  console.log('\nNothing was relinked. Link applications in the admin area (Applicants > the application > Parish), which keeps each applicant\'s answer.');
+}
+
 async function main() {
   const config = loadConfig();
   const db = await createDb(config);
   try {
     await migrate(db);
-    if (command === 'import') await importList(db);
+    if (command === 'import' && config.directoryApi) {
+      throw new Error('This server takes the directory from the RCCG directory API (DIRECTORY_API_ENV is set): a spreadsheet can no longer change it.');
+    }
+    if (command === 'sync') await sync(db, config);
+    else if (command === 'api-status') await apiStatus(db, config);
+    else if (command === 'legacy-report') await legacyReport(db, config);
+    else if (command === 'import') await importList(db);
     else if (command === 'revert') await revert(db);
     else if (command === 'lineage') await lineage(db);
     else if (command === 'status') await status(db);

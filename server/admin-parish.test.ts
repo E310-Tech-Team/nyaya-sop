@@ -74,11 +74,24 @@ async function seed() {
     trinity: await submit(listed(parishes.trinity)),
     rivers: await submit({ ...listed(parishes.rehobothRivers), stateOfResidence: 'Rivers' }),
     notListed: await submit({ parish: { kind: 'not_listed', name: 'Glory Tabernacle' } }),
-    typedJesus: await submit({ parishName: 'Jesus House' }),
-    typedRehoboth: await submit({ parishName: 'RCCG Rehoboth Parish', stateOfResidence: 'Rivers' }),
-    typedGrace: await submit({ parishName: 'grace chapel' }),
-    none: await submit({}),
+    typedJesus: '',
+    typedRehoboth: '',
+    typedGrace: '',
+    none: '',
   };
+  // Answers stored before the directory was switched on: typed names (the question asked for them
+  // then), and one from before the parish question became compulsory, as such rows are stored.
+  const setDirectory = async (on: boolean) => {
+    await ctx.db.query(`update app_settings set value = $1::jsonb where key = 'parish_directory_enabled'`, [JSON.stringify(on)]);
+    clearSettingsCache();
+  };
+  await setDirectory(false);
+  apps.typedJesus = await submit({ parishName: 'Jesus House' });
+  apps.typedRehoboth = await submit({ parishName: 'RCCG Rehoboth Parish', stateOfResidence: 'Rivers' });
+  apps.typedGrace = await submit({ parishName: 'grace chapel' });
+  apps.none = await submit({ parishName: 'Earlier answer' });
+  await ctx.db.query(`update applications set parish_status = 'not_provided', parish_name = null where id = $1`, [apps.none]);
+  await setDirectory(true);
   const staff = await createStaff(ctx, { role: 'owner' });
   const owner = asUser(ctx.app, await staffSignIn(ctx, staff));
   const units = {

@@ -8,7 +8,7 @@ import { isLoopbackAddress } from './config';
 import type { OutboxTransport } from './email';
 import { iso, sendError } from './http';
 import { parishDirectoryEnabled } from './parishes';
-import type { Services } from './services';
+import { directoryNamespace, type Services } from './services';
 import { getSettings } from './settings';
 
 /** Events the browser may report (the rest are recorded by the server itself). */
@@ -31,7 +31,7 @@ export async function publicRoutes(app: FastifyInstance, services: Services) {
       push: { enabled: Boolean(services.push), publicKey: services.push?.publicKey ?? null },
       supportEmail: settings.support_email,
       buildId: config.buildId,
-      parishDirectory: { enabled: await parishDirectoryEnabled(db) },
+      parishDirectory: { enabled: await parishDirectoryEnabled(db, directoryNamespace(services)) },
     };
   });
 

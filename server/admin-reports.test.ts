@@ -71,10 +71,21 @@ async function seed() {
     trinity: await submit(listed(await parishId('Trinity Sanctuary', 'Region 19'))),
     rivers: await submit({ ...listed(await parishId('Rehoboth', 'Rivers Province 4')), stateOfResidence: 'Rivers' }),
     notListed: await submit({ parish: { kind: 'not_listed', name: 'Glory Tabernacle' } }),
-    typed: await submit({ parishName: 'Jesus House' }),
-    none: await submit({}),
+    typed: '',
+    none: '',
     secondCohort: '',
   };
+  // Answers stored before the directory was switched on: a typed name (the question asked for it
+  // then), and one from before the parish question became compulsory, as such rows are stored.
+  const setDirectory = async (on: boolean) => {
+    await ctx.db.query(`update app_settings set value = $1::jsonb where key = 'parish_directory_enabled'`, [JSON.stringify(on)]);
+    clearSettingsCache();
+  };
+  await setDirectory(false);
+  apps.typed = await submit({ parishName: 'Jesus House' });
+  apps.none = await submit({ parishName: 'Earlier answer' });
+  await ctx.db.query(`update applications set parish_status = 'not_provided', parish_name = null where id = $1`, [apps.none]);
+  await setDirectory(true);
   const staff = await createStaff(ctx, { role: 'owner' });
   const owner = asUser(ctx.app, await staffSignIn(ctx, staff));
   // A second cohort, open now: the same person applies again.

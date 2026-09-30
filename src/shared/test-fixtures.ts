@@ -10,7 +10,8 @@ export const validPayload = (overrides: Partial<ApplicationPayload> = {}): Appli
   ageRange: '21_24',
   stateOfResidence: 'Lagos',
   city: 'Ikeja',
-  parishName: '',
+  // The parish question while the directory is off (the default in tests): its name is required.
+  parishName: '  Grace   Chapel ',
   educationLevel: 'bachelors',
   currentStatus: 'employed',
   purposeClarity: 3,

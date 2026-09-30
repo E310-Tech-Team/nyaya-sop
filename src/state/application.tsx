@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { ApiError, getParish } from '../lib/api';
 import { readAttribution } from '../lib/attribution';
+import { usePublicConfig, usePublicConfigStatus } from '../lib/config';
 import { parishAnswer, recheck, type ParishDraft } from '../lib/parish';
 import { readSession, writeSession } from '../lib/storage';
 import {
@@ -13,7 +14,7 @@ import {
   type SubmitApplicationResponse,
 } from '../shared/application';
 import type { ParishDetailsResponse } from '../shared/directory';
-import { hasErrors, validateEducation, validateParish, validatePersonal, validatePurpose } from '../shared/validation';
+import { hasErrors, validateEducation, validateParish, validateParishText, validatePersonal, validatePurpose } from '../shared/validation';
 
 export type Draft = {
   consent: boolean;
@@ -28,9 +29,9 @@ export type Draft = {
   parish: ParishDraft | null;
 };
 
-type State = { draft: Draft; submission: SubmitApplicationResponse | null };
+export type State = { draft: Draft; submission: SubmitApplicationResponse | null };
 
-type Action =
+export type Action =
   | { type: 'consent'; value: boolean }
   | { type: 'personal'; value: Partial<PersonalAnswers> }
   | { type: 'education'; value: Partial<EducationAnswers> }
@@ -64,7 +65,8 @@ export const emptyDraft = (): Draft => ({
   parish: null,
 });
 
-function reducer(state: State, action: Action): State {
+/** How the draft changes (exported for its tests). */
+export function reducer(state: State, action: Action): State {
   const { draft } = state;
   switch (action.type) {
     case 'consent':
@@ -135,16 +137,36 @@ export const STEPS = [
 export type StepKey = (typeof STEPS)[number]['key'] | 'review';
 
 /**
- * The Personal step's errors. In directory mode the parish must be chosen and confirmed (or
- * reported as not listed) instead of typed.
+ * The Personal step's errors. The parish question is compulsory: in directory mode a parish chosen
+ * from the list and confirmed (or reported as not listed); otherwise its name. Typed text in the
+ * directory's search box is never an answer.
  */
 export function personalErrors(draft: Draft): FieldErrors {
   const errors = validatePersonal(draft.personal);
-  if (draft.parishMode !== 'directory') return errors;
   delete errors.parishName;
-  const checked = validateParish(parishAnswer(draft.parish), true);
+  const checked = draft.parishMode === 'directory' ? validateParish(parishAnswer(draft.parish), true) : validateParishText(draft.personal.parishName);
   if (!checked.ok) errors.parishName = checked.error;
   return errors;
+}
+
+/** The parish question the form asks: 'loading' or 'failed' until the server's settings arrive. */
+export type ParishQuestion = 'loading' | 'failed' | Draft['parishMode'];
+
+/**
+ * Which parish question to ask, from the server's settings: the directory search while it's on,
+ * otherwise the parish's name (docs/03). Every step keeps the draft in step with it, so a draft
+ * started under the other setting is checked again (its steps reopen until it's answered).
+ */
+export function useParishQuestion(): ParishQuestion {
+  const { setParishMode } = useApplication();
+  const config = usePublicConfig();
+  const status = usePublicConfigStatus();
+  const directoryOn = config ? config.parishDirectory?.enabled === true : null;
+  useEffect(() => {
+    if (directoryOn !== null) setParishMode(directoryOn ? 'directory' : 'text');
+  }, [directoryOn, setParishMode]);
+  if (directoryOn === null) return status === 'failed' ? 'failed' : 'loading';
+  return directoryOn ? 'directory' : 'text';
 }
 
 /**

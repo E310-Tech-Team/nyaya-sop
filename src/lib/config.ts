@@ -8,20 +8,34 @@ import { apiRequest } from './api';
  */
 let config: PublicConfig | null = null;
 let pending: Promise<PublicConfig | null> | null = null;
+/** The last attempt failed (offline, or the server couldn't be reached). */
+let failed = false;
 const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
 
 export function loadPublicConfig(): Promise<PublicConfig | null> {
   pending ??= apiRequest<PublicConfig>('/config', { timeoutMs: 8_000 })
     .then((value) => {
       config = value;
-      listeners.forEach((listener) => listener());
+      failed = false;
+      notify();
       return value;
     })
     .catch(() => {
       pending = null; // try again next time someone asks
+      failed = true;
+      notify();
       return null;
     });
   return pending;
+}
+
+/** Asks again after a failure (a "Try again" button). */
+export function retryPublicConfig(): void {
+  if (config || pending) return;
+  failed = false;
+  notify();
+  void loadPublicConfig();
 }
 
 const subscribe = (listener: () => void) => {
@@ -32,3 +46,13 @@ const subscribe = (listener: () => void) => {
 
 /** null until loaded (or if the server can't be reached). */
 export const usePublicConfig = () => useSyncExternalStore(subscribe, () => config, () => null);
+
+export type PublicConfigStatus = 'loading' | 'ready' | 'failed';
+
+/** Whether the settings have arrived, are still on their way, or couldn't be loaded. */
+export const usePublicConfigStatus = (): PublicConfigStatus =>
+  useSyncExternalStore(
+    subscribe,
+    () => (config ? 'ready' : failed ? 'failed' : 'loading'),
+    () => 'loading',
+  );

@@ -77,7 +77,7 @@ describe('staff corrections to parishes', () => {
     expect(plan.parishes).toEqual([]);
     expect(overrides(plan.issues)).toEqual([{ name: 'Grace Chapel, Ikeja', fields: ['name'], unit: 'Lagos Province 3' }]);
     expect(await record(grace)).toMatchObject({ display_name: 'Grace Chapel, Ikeja', staff_fields: ['display_name'] });
-    expect((await searchParishes(db, 'ikeja', null, 10)).results.map((result) => result.id)).toEqual([grace]);
+    expect((await searchParishes(db, 'ikeja', null, 10, null)).results.map((result) => result.id)).toEqual([grace]);
     expect(await checkConsistency(db)).toEqual(CONSISTENT);
   });
 
@@ -132,7 +132,7 @@ describe('staff corrections to parishes', () => {
     await expect(mergeParish(db, grace, grace, staffId)).rejects.toThrow(/different parish/);
     expect(await mergeParish(db, grace, jesus3, staffId)).toEqual({ applicationsMoved: 0 });
     expect(await record(grace)).toMatchObject({ status: 'merged', merged_into_id: jesus3 });
-    expect((await searchParishes(db, 'grace chapel', null, 10)).results.map((result) => result.id)).toEqual([jesus3]);
+    expect((await searchParishes(db, 'grace chapel', null, 10, null)).results.map((result) => result.id)).toEqual([jesus3]);
 
     const { plan } = await importRows(LIST);
     expect(plan.parishes).toEqual([]);
