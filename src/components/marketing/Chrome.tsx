@@ -172,6 +172,10 @@ export function MarketingFooter() {
           </nav>
         </div>
         <div className="border-[rgba(243,240,230,0.06)] border-b mt-[40px] w-full" />
+        {/* Supporting photos are AI-generated (docs/IMAGERY.md); the hero is not covered by this note. */}
+        <p className="font-sans font-normal leading-[18px] max-w-[760px] pt-[20px] text-[12px] text-[rgba(243,240,230,0.62)]" style={opsz}>
+          About our images: the photographs in the About, Programme and Journey sections, and on the application pages, are AI-generated. They are not pictures of real applicants, participants or RCCG events. The Biblical Blueprint paintings are artistic interpretations.
+        </p>
         <div className="flex flex-col xl:flex-row font-sans font-normal gap-[8px] xl:gap-0 xl:items-center xl:justify-between pt-[20px] text-[12px] w-full" style={opsz}>
           <p className="text-[rgba(243,240,230,0.62)]">© {new Date().getFullYear()} RCCG National Young Adults &amp; Youth. All rights reserved.</p>
           <p className="text-[rgba(243,240,230,0.62)]">Built for the School of Purpose community</p>

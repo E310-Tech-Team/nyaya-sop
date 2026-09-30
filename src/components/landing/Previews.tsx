@@ -1,5 +1,5 @@
-import imgVisualSide from '../../assets/landing/doctrine-study-group.webp';
-import imgUnityPortrait from '../../assets/landing/vision-portrait.webp';
+import imgVisualSide from '../../assets/landing/home-programme.webp';
+import imgUnityPortrait from '../../assets/landing/home-about.webp';
 import { ABOUT_COPY, DOCTRINE, FAQ, FAQ_PREVIEW, JOURNEY } from '../../config/programme';
 import { Eyebrow, MoreLink } from '../marketing/Chrome';
 import { FaqContact, FaqList } from './Faq';
@@ -60,10 +60,10 @@ export function AboutPreview() {
             <div className="absolute inset-0 bg-brand" />
             <img
               data-depth
-              alt="A young woman arranging sticky notes on a planning wall"
+              alt="Two young professionals talking as they walk through a courtyard"
               loading="lazy"
               decoding="async"
-              className="absolute inset-0 size-full object-cover"
+              className="absolute inset-0 size-full object-cover object-[50%_15%]"
               src={imgUnityPortrait}
             />
           </div>
@@ -84,10 +84,10 @@ export function ProgrammePreview() {
         >
           <div data-reveal="settle" data-reveal-at="0" className="relative hidden h-[480px] w-[420px] shrink-0 rounded-[24px] xl:block">
             <img
-              alt="Young adults studying together around a library table"
+              alt="A young woman reading a book at a sunlit library desk"
               loading="lazy"
               decoding="async"
-              className="absolute inset-0 size-full rounded-[24px] object-cover"
+              className="absolute inset-0 size-full rounded-[24px] object-cover object-[50%_25%]"
               src={imgVisualSide}
             />
             <div className="absolute inset-0 rounded-[24px] bg-[rgba(132,29,38,0.2)]" />

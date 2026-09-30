@@ -17,14 +17,17 @@ import img0506a from '../../assets/landing/route-05-06-a.svg';
 import img0506b from '../../assets/landing/route-05-06-b.svg';
 import { JOURNEY } from '../../config/programme';
 
-/** Artwork and positions for the desktop journey cascade; the words come from JOURNEY. */
+/**
+ * Artwork and positions for the desktop journey cascade; the words come from JOURNEY. The photos
+ * are AI-generated (docs/IMAGERY.md); `focus` keeps faces in view in the wide card crops.
+ */
 export const JOURNEY_ART = [
-  { img: imgPhoto, alt: 'A young woman filling in an application on a tablet in a café', left: 10, top: 40 },
-  { img: imgPhoto2, alt: 'A young woman joining a live online session with other participants', left: 450, top: 0 },
-  { img: imgPhoto1, alt: 'A certificate of achievement beside an evaluation scorecard', left: 890, top: 51 },
-  { img: imgPhoto3, alt: 'Participants cheering together outdoors at the boot camp', left: 890, top: 490 },
-  { img: imgPhoto4, alt: 'A senior mentor in conversation with two young professionals', left: 450, top: 450 },
-  { img: imgPhoto5, alt: 'A large group of young people networking at a community event', left: 10, top: 500 },
+  { img: imgPhoto, alt: 'A young woman working on a laptop at a desk at home', focus: '50% 10%', left: 10, top: 40 },
+  { img: imgPhoto2, alt: 'A young man in headphones taking notes during an online session', focus: '50% 15%', left: 450, top: 0 },
+  { img: imgPhoto1, alt: 'Two young professionals writing in notebooks at a library table', focus: '50% 15%', left: 890, top: 51 },
+  { img: imgPhoto3, alt: 'Five young adults working through a planning exercise at a workshop table', focus: '50% 50%', left: 890, top: 490 },
+  { img: imgPhoto4, alt: 'An experienced mentor talking with two young professionals who are taking notes', focus: '50% 15%', left: 450, top: 450 },
+  { img: imgPhoto5, alt: 'Young professionals talking in small groups in a courtyard', focus: '50% 10%', left: 10, top: 500 },
 ];
 
 /** A journey stage's duration/format facts; lines only wrap between facts. */
@@ -188,7 +191,7 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
             and how people move on. DOM order is the reading order 01 → 06. */}
         <ol className="absolute h-[960px] left-[80px] top-[228px] right-[80px]">
           {JOURNEY.map((stage, idx) => {
-            const { img, alt, left, top } = JOURNEY_ART[idx];
+            const { img, alt, focus, left, top } = JOURNEY_ART[idx];
             return (
               <li
                 key={stage.num}
@@ -199,7 +202,7 @@ export function JourneySection({ id = 'stages' }: { id?: string }) {
                 style={{ left, top }}
               >
                 <div className="h-[196px] overflow-clip relative shrink-0 w-full">
-                  <img data-depth alt={alt} loading="lazy" decoding="async" className="absolute inset-0 max-w-none object-cover size-full" src={img} />
+                  <img data-depth alt={alt} loading="lazy" decoding="async" className="absolute inset-0 max-w-none object-cover size-full" style={{ objectPosition: focus }} src={img} />
                   {stage.condition && (
                     <p className="absolute bg-[#dcc28a] font-sans font-extrabold left-[16px] px-[12px] py-[5px] rounded-full text-[#3b081a] text-[11px] top-[16px] tracking-[0.8px] uppercase">
                       {stage.condition}

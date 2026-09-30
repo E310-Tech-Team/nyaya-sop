@@ -10,7 +10,7 @@ export function Doctrine({ id = 'doctrine' }: { id?: string }) {
     {/* ── MOBILE DOCTRINE ── */}
     <div className="on-dark landing-gutter bg-[#841d26] flex flex-col gap-[30px] items-start py-[72px] w-full xl:hidden">
       <div data-reveal="fade" className="h-[360px] relative rounded-[24px] w-full overflow-hidden">
-        <img data-depth alt="Young adults studying together around a library table" loading="lazy" decoding="async" className="absolute max-w-none object-cover rounded-[24px] size-full" src={imgVisualSide} />
+        <img data-depth alt="Three young adults talking through open books at a library table" loading="lazy" decoding="async" className="absolute max-w-none object-cover object-[50%_25%] rounded-[24px] size-full" src={imgVisualSide} />
         <div className="absolute bg-[rgba(132,29,38,0.2)] inset-0 rounded-[24px]" />
       </div>
       <div className="flex flex-col gap-[26px] items-start w-full">
@@ -56,7 +56,7 @@ export function Doctrine({ id = 'doctrine' }: { id?: string }) {
         {/* Visual side */}
         {/* One restrained entrance for the whole frame (photo and tint together, no extra clip). */}
         <div data-reveal="settle" data-reveal-at="0" className="h-[648px] relative rounded-[24px] shrink-0 w-[480px]">
-          <img alt="Young adults studying together around a library table" loading="lazy" decoding="async" className="absolute max-w-none object-cover rounded-[24px] size-full" src={imgVisualSide} />
+          <img alt="Three young adults talking through open books at a library table" loading="lazy" decoding="async" className="absolute max-w-none object-cover object-[50%_25%] rounded-[24px] size-full" src={imgVisualSide} />
           <div className="absolute bg-[rgba(132,29,38,0.2)] inset-0 rounded-[24px]" />
         </div>
         {/* Content */}
