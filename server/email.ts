@@ -9,7 +9,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { isLoopbackHost, type AppConfig, type EmailTransportKind } from './config';
 
-export type EmailPurpose = 'applicant_sign_in' | 'staff_invite' | 'staff_password_reset';
+export type EmailPurpose = 'applicant_sign_in' | 'staff_invite' | 'staff_password_reset' | 'staff_email_code' | 'staff_security';
 export type EmailMessage = { to: string; subject: string; text: string; html: string; purpose: EmailPurpose };
 
 export interface EmailTransport {
@@ -82,15 +82,21 @@ export function createEmailTransport(config: AppConfig): EmailTransport {
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function layout(heading: string, paragraphs: string[], action: { label: string; url: string }, footer: string): string {
+/** The email's HTML. `action` is a button with its link; `code` is a one-time code shown large (no link). */
+function layout(heading: string, paragraphs: string[], action: { label: string; url: string } | null, footer: string, code?: string): string {
   const p = (text: string) => `<p style="margin:0 0 16px;font:15px/1.6 Arial,sans-serif;color:#202124">${escapeHtml(text)}</p>`;
   return `<!doctype html><html lang="en"><body style="margin:0;background:#f3f0e6;padding:24px">
 <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #d8d0c3;border-radius:12px;padding:28px">
 <p style="margin:0 0 20px;font:11px/1.4 Arial,sans-serif;letter-spacing:3px;color:#841d26">RCCG NYAYA<br><span style="font-size:15px;font-weight:900;letter-spacing:.6px">SCHOOL OF PURPOSE</span></p>
 <h1 style="margin:0 0 16px;font:700 20px Arial,sans-serif;color:#202124">${escapeHtml(heading)}</h1>
 ${paragraphs.map(p).join('')}
-<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#841d26;color:#fff;text-decoration:none;font:700 15px Arial,sans-serif;padding:12px 22px;border-radius:999px">${escapeHtml(action.label)}</a></p>
-<p style="margin:0 0 8px;font:13px/1.5 Arial,sans-serif;color:#665d60">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all">${escapeHtml(action.url)}</span></p>
+${code ? `<p style="margin:8px 0 24px;font:700 32px/1.2 'Courier New',monospace;letter-spacing:8px;color:#202124">${escapeHtml(code)}</p>` : ''}
+${
+  action
+    ? `<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#841d26;color:#fff;text-decoration:none;font:700 15px Arial,sans-serif;padding:12px 22px;border-radius:999px">${escapeHtml(action.label)}</a></p>
+<p style="margin:0 0 8px;font:13px/1.5 Arial,sans-serif;color:#665d60">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all">${escapeHtml(action.url)}</span></p>`
+    : ''
+}
 <p style="margin:16px 0 0;font:13px/1.5 Arial,sans-serif;color:#665d60">${escapeHtml(footer)}</p>
 </div></body></html>`;
 }
@@ -137,5 +143,54 @@ export function staffResetEmail(to: string, url: string, minutes: number): Email
     subject: 'Reset your School of Purpose admin password',
     text: `${lines.join('\n\n')}\n\nReset your password: ${url}\n\n${footer}\n`,
     html: layout('Reset your password', lines, { label: 'Reset password', url }, footer),
+  };
+}
+
+/** A one-time code for the admin's second step or a security change. No link: the code is typed in on the site. */
+export function staffEmailCodeEmail(to: string, code: string, minutes: number): EmailMessage {
+  const lines = [`Here is your School of Purpose admin code. It works once and expires in ${minutes} minutes.`];
+  const footer = "Never share this code. If you didn't just ask for it, someone may have your password: change it and tell the site owner.";
+  return {
+    to,
+    purpose: 'staff_email_code',
+    subject: 'Your School of Purpose admin code',
+    text: `${lines.join('\n\n')}\n\n${code}\n\n${footer}\n`,
+    html: layout('Your admin code', lines, null, footer, code),
+  };
+}
+
+export type StaffSecurityChange =
+  | 'passkey_added'
+  | 'passkey_removed'
+  | 'app_added'
+  | 'app_replaced'
+  | 'app_removed'
+  | 'email_codes_on'
+  | 'email_codes_off'
+  | 'recovery_codes_replaced'
+  | 'methods_reset';
+
+const SECURITY_CHANGES: Record<StaffSecurityChange, string> = {
+  passkey_added: 'A passkey was added to your School of Purpose admin account.',
+  passkey_removed: 'A passkey was removed from your School of Purpose admin account.',
+  app_added: 'An authenticator app was set up for your School of Purpose admin account.',
+  app_replaced: 'The authenticator app for your School of Purpose admin account was replaced. Codes from the old one no longer work.',
+  app_removed: 'The authenticator app was removed from your School of Purpose admin account.',
+  email_codes_on: 'Signing in to your School of Purpose admin account with a code sent by email was turned on.',
+  email_codes_off: 'Signing in to your School of Purpose admin account with a code sent by email was turned off.',
+  recovery_codes_replaced: 'New recovery codes were created for your School of Purpose admin account. The old ones no longer work.',
+  methods_reset: 'An owner reset the two-step verification on your School of Purpose admin account. You will set it up again when you next sign in.',
+};
+
+/** Tells a staff member that their sign-in methods changed (06 D-58). */
+export function staffSecurityEmail(to: string, change: StaffSecurityChange): EmailMessage {
+  const lines = [SECURITY_CHANGES[change]];
+  const footer = "If this wasn't you, change your password and tell the site owner straight away.";
+  return {
+    to,
+    purpose: 'staff_security',
+    subject: 'Your School of Purpose admin sign-in methods changed',
+    text: `${lines.join('\n\n')}\n\n${footer}\n`,
+    html: layout('Your sign-in methods changed', lines, null, footer),
   };
 }

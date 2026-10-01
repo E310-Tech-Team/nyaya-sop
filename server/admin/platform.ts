@@ -4,6 +4,8 @@ import { can, isStaffRole } from '../../src/shared/permissions';
 import { isValidEmail, normalizeEmail } from '../../src/shared/validation';
 import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
+import { clearMfa } from '../auth/methods';
+import { notifySecurityChange } from '../auth/second-step';
 import { revokeStaffSessions } from '../auth/sessions';
 import { createStaffInvite, inviteLink, staffActor } from '../auth/staff-routes';
 import { voidStaffTokens } from '../auth/tokens';
@@ -175,19 +177,19 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     return { ok: true };
   });
 
-  /** For a lost authenticator: clears MFA so they enrol again at next sign-in. Not for yourself. */
+  /**
+   * For a lost phone, passkey or inbox: clears every method (passkeys, the app, email codes,
+   * recovery codes) so they set two-step verification up again at their next sign-in. Not for yourself.
+   */
   app.post<{ Params: { id: string } }>('/staff/:id/reset-mfa', { preHandler: manageStaff }, async (request, reply) => {
     const staff = await target(request.params.id);
     if (!staff) return sendError(reply, 404, 'NOT_FOUND', 'Staff member not found.');
     if (staff.id === request.staff!.id) return sendError(reply, 403, 'FORBIDDEN', 'Ask another owner to reset your two-step verification.');
-    await db.query(
-      `update staff_users set mfa_secret_enc = null, mfa_pending_secret_enc = null, mfa_enabled_at = null, mfa_last_step = null where id = $1`,
-      [staff.id],
-    );
-    await db.query('delete from staff_recovery_codes where staff_id = $1', [staff.id]);
+    await clearMfa(db, staff.id);
     await revokeStaffSessions(db, staff.id);
     await voidStaffTokens(db, staff.id, ['staff_password_reset']);
     await audit(db, staffActor(request.staff!), 'staff.mfa_reset', { type: 'staff', id: staff.id });
+    notifySecurityChange(services, request, staff.email, 'methods_reset');
     return { ok: true };
   });
 

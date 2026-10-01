@@ -27,6 +27,7 @@ export type StaffContext = {
   mfaEnabled: boolean;
   mfaVerified: boolean;
   mfaAttempts: number;
+  stepUpAt: Date | null;
 };
 
 export type AccountContext = { sessionId: string; id: string; email: string; createdAt: Date };
@@ -100,6 +101,7 @@ export function staffGuard(services: Services, options: StaffGuardOptions = {}):
       mfaEnabled,
       mfaVerified,
       mfaAttempts: session.mfa_attempts,
+      stepUpAt: session.step_up_at,
     };
   };
 }

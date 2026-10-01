@@ -1,35 +1,28 @@
 /**
- * Staff sign-in: individual accounts, password (scrypt) + TOTP second factor with single-use
- * recovery codes, per-account lockout, invitations and password reset by single-use links.
- * Mounted under /api/admin.
+ * Staff sign-in: individual accounts; a password (scrypt) and then a second step (a passkey, an
+ * authenticator app code, an email code or a single-use recovery code), or a passkey on its own;
+ * per-account lockout; invitations and password reset by single-use links. Managing the methods
+ * is in staff-mfa-routes.ts. Mounted under /api/admin.
  */
 import type { FastifyInstance } from 'fastify';
-import { Secret, TOTP } from 'otpauth';
-import QRCode from 'qrcode';
-import { ROLE_PERMISSIONS, type StaffRole } from '../../src/shared/permissions';
+import type { StaffRole } from '../../src/shared/permissions';
 import type { SessionSummary } from '../../src/shared/platform';
 import { isValidEmail, normalizeEmail } from '../../src/shared/validation';
 import { audit, type AuditActor } from '../audit';
 import { runInBackground } from '../background';
-import {
-  hashPassword,
-  newRecoveryCode,
-  normaliseRecoveryCode,
-  passwordProblem,
-  sha256Hex,
-  verifyDummyPassword,
-  verifyPassword,
-} from '../crypto';
-import type { Queryable } from '../db';
+import { hashPassword, passwordProblem, verifyDummyPassword, verifyPassword } from '../crypto';
 import { staffInviteEmail, staffResetEmail } from '../email';
-import { deviceLabel, iso, isUuid, sendError, str } from '../http';
+import { iso, isUuid, sendError, str } from '../http';
 import type { Services } from '../services';
+import { attemptFailed, attemptReturned, clearAttempts, takeAttempt } from './attempts';
+import { EMAIL_CODE_MINUTES, emailCodesOn, sendEmailCode } from './email-codes';
 import { checkOrigin, staffGuard, type StaffContext } from './guards';
-import { clearSessionCookie, createStaffSession, csrfTokenFor, revokeStaffSessions, setSessionCookie } from './sessions';
+import { mfaSummary, strongFor } from './methods';
+import { asAuthenticationResponse, authenticationOptions, checkPasskey, findPasskey, relyingParty } from './passkeys';
+import { checkSecondFactor, completeStaffSession, sessionPayload, startStaffSession } from './second-step';
+import { clearSessionCookie, csrfTokenFor, revokeStaffSessions } from './sessions';
 import { consumeAuthToken, createAuthToken, peekAuthToken, recentTokenCount, voidStaffTokens } from './tokens';
 
-const TOTP_BASE = { issuer: 'School of Purpose', algorithm: 'SHA1', digits: 6, period: 30 } as const;
-const LOCK_AFTER_FAILURES = 5;
 const INVITE_HOURS = 72;
 const RESET_MINUTES = 30;
 const MAX_MFA_ATTEMPTS = 5;
@@ -38,123 +31,6 @@ export const staffActor = (staff: StaffContext): AuditActor => ({ type: 'staff',
 
 export const siteLink = (services: Services, path: string) =>
   `${services.config.siteOrigin ?? 'http://localhost:5173'}${path}`;
-
-export const totpFor = (secretBase32: string, label: string) =>
-  new TOTP({ ...TOTP_BASE, label, secret: Secret.fromBase32(secretBase32) });
-
-/**
- * Checks a 6-digit code (±1 step for clock drift) and records the step, so the same code is
- * never accepted twice, even by two requests racing each other.
- */
-export async function checkTotpCode(services: Services, staffId: string, secretEnc: string, code: string): Promise<boolean> {
-  if (!/^\d{6}$/.test(code)) return false;
-  const delta = totpFor(services.secrets.decrypt(secretEnc), '').validate({ token: code, window: 1 });
-  if (delta === null) return false;
-  const step = Math.floor(Date.now() / 30_000) + delta;
-  const { rows } = await services.db.query(
-    `update staff_users set mfa_last_step = $2 where id = $1 and (mfa_last_step is null or mfa_last_step < $2) returning id`,
-    [staffId, step],
-  );
-  return rows.length === 1;
-}
-
-/**
- * Recovery codes are stored as an HMAC under a key derived from APP_SECRET (not in the database),
- * tied to their owner, so a copy of the database alone can't be searched for them. Codes issued
- * before this used plain SHA-256 and still work until they're used or replaced.
- */
-const recoveryHash = (services: Services, staffId: string, normalised: string) => services.secrets.hmac('recovery-code/v1', `${staffId}:${normalised}`);
-
-/** Uses up one recovery code. */
-async function useRecoveryCode(services: Services, staffId: string, code: string): Promise<boolean> {
-  const normalised = normaliseRecoveryCode(code);
-  if (normalised.length !== 10) return false;
-  const { rows } = await services.db.query(
-    `update staff_recovery_codes set used_at = now()
-      where staff_id = $1 and code_hash = any($2::text[]) and used_at is null returning id`,
-    [staffId, [recoveryHash(services, staffId, normalised), sha256Hex(normalised)]],
-  );
-  return rows.length === 1;
-}
-
-async function replaceRecoveryCodes(services: Services, staffId: string): Promise<string[]> {
-  const codes = Array.from({ length: 10 }, newRecoveryCode);
-  const hashes = codes.map((code) => recoveryHash(services, staffId, normaliseRecoveryCode(code)));
-  // One statement: the old codes stop working exactly when the new ones start.
-  await services.db.query(
-    `with removed as (delete from staff_recovery_codes where staff_id = $1)
-     insert into staff_recovery_codes (staff_id, code_hash) select $1, hash from unnest($2::text[]) as hash`,
-    [staffId, hashes],
-  );
-  return codes;
-}
-
-/** Second factor for sensitive steps (password reset, new recovery codes): a TOTP or recovery code. */
-async function checkSecondFactor(services: Services, staffId: string, body: unknown): Promise<'totp' | 'recovery' | null> {
-  const { rows } = await services.db.query<{ mfa_secret_enc: string | null }>('select mfa_secret_enc from staff_users where id = $1', [staffId]);
-  const secretEnc = rows[0]?.mfa_secret_enc;
-  if (!secretEnc) return null;
-  const code = str(body, 'code', 10);
-  if (code && (await checkTotpCode(services, staffId, secretEnc, code))) return 'totp';
-  const recovery = str(body, 'recoveryCode', 20);
-  if (recovery && (await useRecoveryCode(services, staffId, recovery))) return 'recovery';
-  return null;
-}
-
-// ── The account's attempt budget ─────────────────────────────────────────────
-
-/** How long a lock lasts: 15 minutes at the limit, doubling with each further failure, at most 24 hours. */
-const LOCK_LENGTH = (count: string) => `least(interval '24 hours', interval '15 minutes' * power(2, ${count} - $2::int))`;
-
-type Attempt = { count: number; relocked: boolean };
-
-/**
- * Takes one attempt from the account's budget BEFORE a password or code is checked, in one
- * statement, so requests racing each other can't get past the lockout. Below the limit each
- * attempt counts. Once a lock has run out, one attempt at a time gets through: it re-locks the
- * account as it passes (for longer each time), and a correct answer lifts that again. Null while
- * the account is locked.
- */
-async function takeAttempt(db: Queryable, staffId: string): Promise<Attempt | null> {
-  const { rows } = await db.query<{ count: number }>(
-    `update staff_users
-        set failed_login_count = failed_login_count + 1,
-            locked_until = case when failed_login_count >= $2::int then now() + ${LOCK_LENGTH('(failed_login_count + 1)')} else locked_until end
-      where id = $1 and (locked_until is null or locked_until <= now())
-        and (failed_login_count < $2::int or locked_until is not null)
-      returning failed_login_count as count`,
-    [staffId, LOCK_AFTER_FAILURES],
-  );
-  const count = rows[0]?.count;
-  return count === undefined ? null : { count, relocked: count > LOCK_AFTER_FAILURES };
-}
-
-/** A wrong answer: the attempt stays counted, and the one that reaches the limit locks the account. */
-async function attemptFailed(db: Queryable, staffId: string, attempt: Attempt): Promise<void> {
-  if (attempt.relocked || attempt.count < LOCK_AFTER_FAILURES) return;
-  await db.query(`update staff_users set locked_until = now() + ${LOCK_LENGTH('$3::int')} where id = $1`, [staffId, LOCK_AFTER_FAILURES, attempt.count]);
-}
-
-/** A right password that still needs the second factor: the attempt is handed back, and a lock it set is lifted. */
-async function attemptReturned(db: Queryable, staffId: string, attempt: Attempt): Promise<void> {
-  await db.query(
-    `update staff_users set failed_login_count = greatest(failed_login_count - 1, 0), locked_until = case when $2::boolean then now() else locked_until end where id = $1`,
-    [staffId, attempt.relocked],
-  );
-}
-
-/** Signed in (or reset) with every factor: the budget starts again. */
-const clearAttempts = (db: Queryable, staffId: string) =>
-  db.query('update staff_users set failed_login_count = 0, locked_until = null, last_login_at = now() where id = $1', [staffId]);
-
-export function sessionPayload(services: Services, staff: StaffContext) {
-  return {
-    staff: { id: staff.id, email: staff.email, displayName: staff.displayName, role: staff.role, mfaEnabled: staff.mfaEnabled },
-    permissions: ROLE_PERMISSIONS[staff.role],
-    mfa: { enabled: staff.mfaEnabled, verified: staff.mfaVerified, required: services.config.auth.staffMfaRequired },
-    csrfToken: csrfTokenFor(services.secrets, 'staff', staff.sessionId),
-  };
-}
 
 /** Creates an invited staff member and their single-use setup link (used by owners and the bootstrap CLI). */
 export async function createStaffInvite(
@@ -191,16 +67,11 @@ async function trySend(services: Services, message: Parameters<Services['email']
 }
 
 export async function staffAuthRoutes(app: FastifyInstance, services: Services) {
-  const { config, db, secrets } = services;
+  const { config, db } = services;
   const signedInAny = staffGuard(services, { allowPendingMfa: true, allowWithoutMfaSetup: true });
   const signedInNoMfaYet = staffGuard(services, { allowWithoutMfaSetup: true });
-  const signedIn = staffGuard(services);
-
-  const startSession = async (staffId: string, userAgent: string | undefined, reply: Parameters<typeof setSessionCookie>[0]) => {
-    const session = await createStaffSession(db, staffId, config.auth.staffSessionHours, deviceLabel(userAgent));
-    setSessionCookie(reply, 'staff', session.token, config, config.auth.staffSessionHours * 3600);
-    return session;
-  };
+  const rp = (request: { headers: { origin?: string } }) => relyingParty(config, request.headers.origin);
+  const staffTarget = (id: string) => ({ type: 'staff', id });
 
   app.get('/session', { preHandler: signedInAny }, async (request) => sessionPayload(services, request.staff!));
 
@@ -225,34 +96,87 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     const attempt = await takeAttempt(db, staff.id);
     if (!attempt) {
       await verifyDummyPassword(password);
-      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_locked', { type: 'staff', id: staff.id });
+      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_locked', staffTarget(staff.id));
       return generic();
     }
     if (!(await verifyPassword(password, staff.password_hash))) {
       await attemptFailed(db, staff.id, attempt);
-      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_failed', { type: 'staff', id: staff.id }, { failures: attempt.count });
+      await audit(db, { type: 'staff', id: staff.id }, 'staff.login_failed', staffTarget(staff.id), { failures: attempt.count });
       return generic();
     }
-    // With a second factor, the budget only starts again once that is passed too, so signing in
+    // With a second step, the budget only starts again once that is passed too, so signing in
     // again doesn't buy an attacker who knows the password fresh guesses at the code.
     if (staff.mfa_enabled_at) await attemptReturned(db, staff.id, attempt);
     else await clearAttempts(db, staff.id);
-    const session = await startSession(staff.id, request.headers['user-agent'], reply);
-    await audit(db, { type: 'staff', id: staff.id }, 'staff.login', { type: 'staff', id: staff.id }, { step: 'password' });
+    const session = await startStaffSession(services, staff.id, request.headers['user-agent'], reply);
+    await audit(db, { type: 'staff', id: staff.id }, 'staff.login', staffTarget(staff.id), { step: 'password' });
     const next = staff.mfa_enabled_at ? 'mfa' : config.auth.staffMfaRequired ? 'mfa_setup' : 'done';
-    return { next, csrfToken: csrfTokenFor(secrets, 'staff', session.id) };
+    return { next, csrfToken: csrfTokenFor(services.secrets, 'staff', session.id) };
   });
 
-  /**
-   * Signing in is complete: a new session (new token, new id) replaces the one used so far, so
-   * nothing issued before the second factor carries over.
-   */
-  const completeSession = async (staff: StaffContext, userAgent: string | undefined, reply: Parameters<typeof setSessionCookie>[0]) => {
-    const session = await startSession(staff.id, userAgent, reply);
-    await db.query('update staff_sessions set mfa_verified_at = now() where id = $1', [session.id]);
-    await db.query('update staff_sessions set revoked_at = now() where id = $1', [staff.sessionId]);
-    return csrfTokenFor(secrets, 'staff', session.id);
-  };
+  // ── Signing in with a passkey alone (06 D-58) ────────────────────────────
+
+  // The challenge names no account yet: the passkey the person picks does.
+  app.post('/passkey/sign-in/options', { config: { rateLimit: { max: 30, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
+    if (!checkOrigin(services, request, reply)) return reply;
+    return authenticationOptions(db, rp(request), 'sign_in', {}, null);
+  });
+
+  app.post('/passkey/sign-in', { config: { rateLimit: { max: 10, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
+    if (!checkOrigin(services, request, reply)) return reply;
+    const generic = () =>
+      sendError(reply, 401, 'UNAUTHORIZED', 'That passkey didn’t sign you in. Try again, or sign in with your email and password.');
+    const response = asAuthenticationResponse((request.body as { passkey?: unknown } | null)?.passkey);
+    const passkey = response ? await findPasskey(db, response) : null;
+    if (!response || !passkey) return generic();
+    const { rows } = await db.query<{ status: string }>('select status::text as status from staff_users where id = $1', [passkey.staff_id]);
+    if (rows[0]?.status !== 'active') return generic();
+    // A passkey is both factors (user verification is required), but a wrong one still counts
+    // against the account's budget, taken before it's checked.
+    const attempt = await takeAttempt(db, passkey.staff_id);
+    if (!attempt) {
+      await audit(db, { type: 'staff', id: passkey.staff_id }, 'staff.login_locked', staffTarget(passkey.staff_id));
+      return generic();
+    }
+    const check = await checkPasskey(db, rp(request), passkey, response, 'sign_in', {}, { requireUserHandle: true });
+    if (!check.ok) {
+      await attemptFailed(db, passkey.staff_id, attempt);
+      await audit(db, { type: 'staff', id: passkey.staff_id }, 'staff.login_failed', staffTarget(passkey.staff_id), { method: 'passkey', failures: attempt.count });
+      if (check.counterWentBack) {
+        await audit(db, { type: 'staff', id: passkey.staff_id }, 'staff.passkey_counter_went_back', staffTarget(passkey.staff_id), { passkeyId: passkey.id });
+      }
+      return generic();
+    }
+    await clearAttempts(db, passkey.staff_id);
+    const csrfToken = await completeStaffSession(services, { id: passkey.staff_id, sessionId: null }, request.headers['user-agent'], reply, 'passkey', true);
+    await audit(db, { type: 'staff', id: passkey.staff_id }, 'staff.login', staffTarget(passkey.staff_id), { step: 'passkey' });
+    return { next: 'done', csrfToken };
+  });
+
+  // ── The second step ──────────────────────────────────────────────────────
+
+  const waitingForSecondStep = (staff: StaffContext) => staff.mfaEnabled && !staff.mfaVerified;
+
+  app.post('/mfa/passkey/options', { preHandler: signedInAny, config: { rateLimit: { max: 15, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
+    const staff = request.staff!;
+    if (!waitingForSecondStep(staff)) return sendError(reply, 400, 'BAD_REQUEST', 'There’s no second step waiting.');
+    const options = await authenticationOptions(db, rp(request), 'second_step', { staffId: staff.id, sessionId: staff.sessionId }, staff.id);
+    return options ?? sendError(reply, 400, 'BAD_REQUEST', 'This account has no passkeys.');
+  });
+
+  // Same answer whatever happens (sent, email codes off, three already sent), and nothing is
+  // done before it goes back.
+  app.post('/mfa/email/send', { preHandler: signedInAny, config: { rateLimit: { max: 5, timeWindow: 15 * 60_000 } } }, async (request, reply) => {
+    const staff = request.staff!;
+    if (!waitingForSecondStep(staff)) return sendError(reply, 400, 'BAD_REQUEST', 'There’s no second step waiting.');
+    runInBackground(
+      async () => {
+        if (await emailCodesOn(db, staff.id)) await sendEmailCode(services, staff, staff.sessionId, 'second_step');
+      },
+      (error) => request.log.error({ code: (error as { code?: unknown }).code }, 'Email code could not be sent'),
+    );
+    return reply.code(202).send({ message: `If email codes are on for your account, a code is on its way. It expires in ${EMAIL_CODE_MINUTES} minutes.` });
+  });
 
   app.post('/mfa/verify', { preHandler: signedInAny, config: { rateLimit: { max: 15, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
     const staff = request.staff!;
@@ -261,9 +185,9 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     const tooMany = async () => {
       await db.query('update staff_sessions set revoked_at = now() where id = $1', [staff.sessionId]);
       clearSessionCookie(reply, 'staff', config);
-      return sendError(reply, 401, 'UNAUTHORIZED', 'Too many incorrect codes. Please sign in again later.');
+      return sendError(reply, 401, 'UNAUTHORIZED', 'Too many incorrect attempts. Please sign in again later.');
     };
-    // Both limits are taken before the code is checked, each in one statement: this session's
+    // Both limits are taken before the answer is checked, each in one statement: this session's
     // attempts, then the account's budget (shared with passwords and every other session).
     const { rows: reserved } = await db.query(
       `update staff_sessions set mfa_attempts = mfa_attempts + 1
@@ -273,71 +197,29 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     if (!reserved.length) return tooMany();
     const attempt = await takeAttempt(db, staff.id);
     if (!attempt) return tooMany();
-    const method = await checkSecondFactor(services, staff.id, request.body);
-    if (!method) {
+    const result = await checkSecondFactor(services, staff.id, request.body, {
+      allow: ['passkey', 'totp', 'email', 'recovery'],
+      purpose: 'second_step',
+      sessionId: staff.sessionId,
+      rp: rp(request),
+    });
+    if (!result.method) {
       await attemptFailed(db, staff.id, attempt);
-      await audit(db, staffActor(staff), 'staff.mfa_failed', { type: 'staff', id: staff.id });
-      return sendError(reply, 401, 'UNAUTHORIZED', 'That code didn’t work. Check your authenticator app and try again.');
+      await audit(db, staffActor(staff), 'staff.mfa_failed', staffTarget(staff.id));
+      if (result.clonedPasskey) await audit(db, staffActor(staff), 'staff.passkey_counter_went_back', staffTarget(staff.id), { passkeyId: result.clonedPasskey });
+      return sendError(reply, 401, 'UNAUTHORIZED', 'That didn’t work. Check it and try again, or choose another way.');
     }
     await clearAttempts(db, staff.id);
-    const csrfToken = await completeSession(staff, request.headers['user-agent'], reply);
-    await audit(db, staffActor(staff), 'staff.mfa_verified', { type: 'staff', id: staff.id }, { method });
-    const remaining =
-      method === 'recovery'
-        ? (await db.query<{ n: number }>('select count(*)::int as n from staff_recovery_codes where staff_id = $1 and used_at is null', [staff.id]))
-            .rows[0]!.n
-        : null;
-    return { ok: true, recoveryCodesRemaining: remaining, csrfToken };
-  });
-
-  app.post('/mfa/enrol/start', { preHandler: signedInNoMfaYet }, async (request, reply) => {
-    const staff = request.staff!;
-    if (staff.mfaEnabled) return sendError(reply, 409, 'CONFLICT', 'Two-step verification is already on for this account.');
-    const secret = new Secret({ size: 20 });
-    await db.query('update staff_users set mfa_pending_secret_enc = $2 where id = $1', [staff.id, secrets.encrypt(secret.base32)]);
-    const uri = totpFor(secret.base32, staff.email).toString();
-    return { otpauthUri: uri, secret: secret.base32, qrDataUrl: await QRCode.toDataURL(uri, { margin: 1, width: 240 }) };
-  });
-
-  app.post('/mfa/enrol/confirm', { preHandler: signedInNoMfaYet, config: { rateLimit: { max: 15, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
-    const staff = request.staff!;
-    if (staff.mfaEnabled) return sendError(reply, 409, 'CONFLICT', 'Two-step verification is already on for this account.');
-    const { rows } = await db.query<{ mfa_pending_secret_enc: string | null }>('select mfa_pending_secret_enc from staff_users where id = $1', [staff.id]);
-    const pending = rows[0]?.mfa_pending_secret_enc;
-    const code = str(request.body, 'code', 10) ?? '';
-    const delta = pending && /^\d{6}$/.test(code) ? totpFor(secrets.decrypt(pending), '').validate({ token: code, window: 1 }) : null;
-    if (!pending || delta === null) {
-      return sendError(reply, 400, 'VALIDATION_FAILED', 'That code didn’t match. Check the time on your phone is set automatically and try again.');
-    }
-    const step = Math.floor(Date.now() / 30_000) + delta;
-    await db.query(
-      `update staff_users set mfa_secret_enc = mfa_pending_secret_enc, mfa_pending_secret_enc = null,
-              mfa_enabled_at = now(), mfa_last_step = $2 where id = $1`,
-      [staff.id, step],
-    );
-    const recoveryCodes = await replaceRecoveryCodes(services, staff.id);
-    // Sessions opened with the password alone end; this one continues under a new token.
-    const csrfToken = await completeSession(staff, request.headers['user-agent'], reply);
-    await db.query(`update staff_sessions set revoked_at = now() where staff_id = $1 and revoked_at is null and mfa_verified_at is null`, [staff.id]);
-    await audit(db, staffActor(staff), 'staff.mfa_enabled', { type: 'staff', id: staff.id });
-    return { recoveryCodes, csrfToken };
-  });
-
-  app.post('/mfa/recovery-codes', { preHandler: signedIn, config: { rateLimit: { max: 5, timeWindow: 5 * 60_000 } } }, async (request, reply) => {
-    const staff = request.staff!;
-    if (!staff.mfaEnabled) return sendError(reply, 400, 'BAD_REQUEST', 'Two-step verification is not set up.');
-    if (!(await checkSecondFactor(services, staff.id, request.body))) {
-      return sendError(reply, 401, 'UNAUTHORIZED', 'Enter a current code from your authenticator app.');
-    }
-    const recoveryCodes = await replaceRecoveryCodes(services, staff.id);
-    await audit(db, staffActor(staff), 'staff.recovery_codes_replaced', { type: 'staff', id: staff.id });
-    return { recoveryCodes };
+    const summary = await mfaSummary(db, staff.id);
+    const csrfToken = await completeStaffSession(services, staff, request.headers['user-agent'], reply, result.method, strongFor(result.method, summary));
+    await audit(db, staffActor(staff), 'staff.mfa_verified', staffTarget(staff.id), { method: result.method });
+    return { ok: true, recoveryCodesRemaining: result.method === 'recovery' ? summary.recoveryCodes : null, csrfToken };
   });
 
   app.post('/logout', { preHandler: signedInAny }, async (request, reply) => {
     await db.query('update staff_sessions set revoked_at = now() where id = $1', [request.staff!.sessionId]);
     clearSessionCookie(reply, 'staff', config);
-    await audit(db, staffActor(request.staff!), 'staff.logout', { type: 'staff', id: request.staff!.id });
+    await audit(db, staffActor(request.staff!), 'staff.logout', staffTarget(request.staff!.id));
     return { ok: true };
   });
 
@@ -356,7 +238,7 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     ]);
     await revokeStaffSessions(db, staff.id, staff.sessionId);
     await voidStaffTokens(db, staff.id, ['staff_password_reset']);
-    await audit(db, staffActor(staff), 'staff.password_changed', { type: 'staff', id: staff.id });
+    await audit(db, staffActor(staff), 'staff.password_changed', staffTarget(staff.id));
     return { ok: true };
   });
 
@@ -385,13 +267,13 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     );
     if (!rows.length) return sendError(reply, 404, 'NOT_FOUND', 'Session not found.');
     if (request.params.id === request.staff!.sessionId) clearSessionCookie(reply, 'staff', config);
-    await audit(db, staffActor(request.staff!), 'staff.session_revoked', { type: 'staff', id: request.staff!.id });
+    await audit(db, staffActor(request.staff!), 'staff.session_revoked', staffTarget(request.staff!.id));
     return { ok: true };
   });
 
   app.post('/me/sessions/revoke-others', { preHandler: signedInNoMfaYet }, async (request) => {
     await revokeStaffSessions(db, request.staff!.id, request.staff!.sessionId);
-    await audit(db, staffActor(request.staff!), 'staff.sessions_revoked', { type: 'staff', id: request.staff!.id }, { scope: 'others' });
+    await audit(db, staffActor(request.staff!), 'staff.sessions_revoked', staffTarget(request.staff!.id), { scope: 'others' });
     return { ok: true };
   });
 
@@ -430,12 +312,12 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     if (!rows[0]) {
       return sendError(reply, 400, 'INVALID_TOKEN', 'This invitation link has expired or has already been used. Ask an owner for a new one.');
     }
-    const session = await startSession(rows[0].id, request.headers['user-agent'], reply);
-    await audit(db, { type: 'staff', id: rows[0].id }, 'staff.invite_accepted', { type: 'staff', id: rows[0].id });
-    return { next: config.auth.staffMfaRequired ? 'mfa_setup' : 'done', csrfToken: csrfTokenFor(secrets, 'staff', session.id) };
+    const session = await startStaffSession(services, rows[0].id, request.headers['user-agent'], reply);
+    await audit(db, { type: 'staff', id: rows[0].id }, 'staff.invite_accepted', staffTarget(rows[0].id));
+    return { next: config.auth.staffMfaRequired ? 'mfa_setup' : 'done', csrfToken: csrfTokenFor(services.secrets, 'staff', session.id) };
   });
 
-  // ── Password reset (generic responses; needs the second factor too) ──────
+  // ── Password reset (generic responses; needs the second step too) ─────────
 
   const GENERIC_RESET = 'If that address belongs to an active admin account, a reset link is on its way. It expires in 30 minutes.';
 
@@ -457,13 +339,23 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
           await voidStaffTokens(db, staff.id, ['staff_password_reset']); // only the newest link works
           const token = await createAuthToken(db, 'staff_password_reset', email, RESET_MINUTES, staff.id);
           if (await trySend(services, staffResetEmail(email, siteLink(services, `/admin/reset?token=${token}`), RESET_MINUTES))) {
-            await audit(db, { type: 'system', id: null }, 'staff.password_reset_requested', { type: 'staff', id: staff.id });
+            await audit(db, { type: 'system', id: null }, 'staff.password_reset_requested', staffTarget(staff.id));
           }
         },
         (error) => request.log.error({ code: (error as { code?: unknown }).code }, 'Password reset link could not be prepared'),
       );
     }
     return reply.code(202).send({ message: GENERIC_RESET });
+  });
+
+  // A passkey challenge for this reset link (the link names the account; there's no session).
+  app.post('/password/reset/passkey', { config: { rateLimit: { max: 10, timeWindow: 15 * 60_000 } } }, async (request, reply) => {
+    if (!checkOrigin(services, request, reply)) return reply;
+    const peeked = await peekAuthToken(db, 'staff_password_reset', str(request.body, 'token', 80) ?? '');
+    const options = peeked?.staff_id
+      ? await authenticationOptions(db, rp(request), 'password_reset', { staffId: peeked.staff_id, tokenId: peeked.id }, peeked.staff_id)
+      : null;
+    return options ?? sendError(reply, 400, 'NO_PASSKEY', 'There’s no passkey to use with this link. Use your authenticator app or a recovery code.');
   });
 
   app.post('/password/reset', { config: { rateLimit: { max: 10, timeWindow: 15 * 60_000 } } }, async (request, reply) => {
@@ -480,15 +372,27 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
       [peeked.staff_id],
     );
     if (rows[0]?.status !== 'active') return invalid();
-    // The emailed link alone isn't enough: a second factor is needed too, and wrong codes count
-    // against the same budget as sign-in (a stolen link doesn't bring unlimited guesses).
+    // The emailed link alone isn't enough: the second step is needed too, and wrong answers count
+    // against the same budget as sign-in (a stolen link doesn't bring unlimited guesses). Never an
+    // email code: the link came by email, so the inbox alone would be enough.
     if (rows[0].mfa_enabled_at) {
       const attempt = await takeAttempt(db, peeked.staff_id);
       if (!attempt) return sendError(reply, 401, 'UNAUTHORIZED', 'Too many incorrect codes. Please try again later.');
-      if (!(await checkSecondFactor(services, peeked.staff_id, request.body))) {
+      const result = await checkSecondFactor(services, peeked.staff_id, request.body, {
+        allow: ['passkey', 'totp', 'recovery'],
+        purpose: 'password_reset',
+        tokenId: peeked.id,
+        rp: rp(request),
+      });
+      if (!result.method) {
         await attemptFailed(db, peeked.staff_id, attempt);
-        await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.mfa_failed', { type: 'staff', id: peeked.staff_id }, { step: 'password_reset' });
-        return sendError(reply, 401, 'MFA_REQUIRED', 'Enter a current code from your authenticator app (or a recovery code).');
+        await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.mfa_failed', staffTarget(peeked.staff_id), { step: 'password_reset' });
+        return sendError(
+          reply,
+          401,
+          'MFA_REQUIRED',
+          'Confirm it’s you with your passkey, a code from your authenticator app or a recovery code. (A code sent by email can’t confirm a reset: the link came by email too.)',
+        );
       }
     }
     const consumed = await consumeAuthToken(db, 'staff_password_reset', tokenText);
@@ -499,7 +403,7 @@ export async function staffAuthRoutes(app: FastifyInstance, services: Services) 
     );
     await revokeStaffSessions(db, peeked.staff_id);
     await voidStaffTokens(db, peeked.staff_id, ['staff_password_reset']);
-    await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.password_reset', { type: 'staff', id: peeked.staff_id });
+    await audit(db, { type: 'staff', id: peeked.staff_id }, 'staff.password_reset', staffTarget(peeked.staff_id));
     return { ok: true };
   });
 }

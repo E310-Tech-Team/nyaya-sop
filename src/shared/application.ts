@@ -205,6 +205,12 @@ export type ApiErrorCode =
   | 'INVALID_TOKEN'
   | 'MFA_REQUIRED'
   | 'MFA_SETUP_REQUIRED'
+  /** A security change (a sign-in method, recovery codes) needs a recent check: confirm it's you first. */
+  | 'STEP_UP_REQUIRED'
+  /** Removing this would leave no way through two-step verification while it's required. */
+  | 'LAST_METHOD'
+  /** The reset link's account has no passkey to confirm it with. */
+  | 'NO_PASSKEY'
   | 'ACCOUNT_SUSPENDED'
   | 'ACCOUNTS_UNAVAILABLE'
   | 'PUSH_UNAVAILABLE'
