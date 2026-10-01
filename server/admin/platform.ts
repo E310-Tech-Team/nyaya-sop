@@ -220,6 +220,21 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     return { emailed, inviteUrl: emailed ? null : url };
   });
 
+  // An owner shares an invitation another way (a message app, in person: D-60): a new link, shown
+  // once to the owner and never emailed. Like any new link it replaces the earlier one, so the
+  // emailed link stops working. The link itself is never stored or logged; the audit says it was shown.
+  app.post<{ Params: { id: string } }>(
+    '/staff/:id/invite-link',
+    { preHandler: manageStaff, config: { rateLimit: { max: 20, timeWindow: 60 * 60_000 } } },
+    async (request, reply) => {
+      const staff = await target(request.params.id);
+      if (!staff || staff.status !== 'invited') return sendError(reply, 404, 'NOT_FOUND', 'No pending invitation for that person.');
+      const url = await inviteLink(services, staff.id, staff.email);
+      await audit(db, staffActor(request.staff!), 'staff.invite_link_shown', { type: 'staff', id: staff.id });
+      return { inviteUrl: url };
+    },
+  );
+
   app.post<{ Params: { id: string } }>('/staff/:id/revoke-sessions', { preHandler: manageStaff }, async (request, reply) => {
     const staff = await target(request.params.id);
     if (!staff) return sendError(reply, 404, 'NOT_FOUND', 'Staff member not found.');

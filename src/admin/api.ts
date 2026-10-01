@@ -585,6 +585,8 @@ export const adminApi = {
   resetStaffMfa: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/reset-mfa`),
   unlockStaff: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/unlock`),
   resendInvite: (staffId: string) => post<{ emailed: boolean; inviteUrl: string | null }>(`/staff/${id(staffId)}/resend-invite`),
+  /** A new invitation link for the owner to share another way (D-60); it replaces the emailed one. */
+  staffInviteLink: (staffId: string) => post<{ inviteUrl: string }>(`/staff/${id(staffId)}/invite-link`),
   revokeStaffSessions: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/revoke-sessions`),
 
   // Settings and audit
