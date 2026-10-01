@@ -2,7 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader, Panel, Select, TextArea, errorMessage, when } from '../../components/ui';
 import { ApiError } from '../../lib/api';
-import { chainRows } from '../../lib/parish';
+import { chainRows, placeLabel } from '../../lib/parish';
 import { useAsync } from '../../lib/useAsync';
 import { CHURCH_LEVELS, PARISH_ANSWER_LABELS, type ParishChain } from '../../shared/directory';
 import { APPLICATION_UPDATE_NOTIFICATION, PUBLISHED_STATUS_LABELS, REVIEW_STATUS_LABELS } from '../../shared/platform';
@@ -46,8 +46,20 @@ function ParishPanel({ app, canEdit, onChanged }: { app: ApplicantDetail; canEdi
       {notice}
       {parish.status !== 'listed' && parish.answer && (
         <p className="font-sans text-[15px] text-ink">
-          {parish.status === 'reported' ? 'They couldn’t find their parish and typed' : 'They typed'}: <strong>{parish.answer}</strong>
+          {parish.status === 'reported'
+            ? parish.place
+              ? `They chose ${placeLabel(parish.place.unit)}, couldn’t find their parish there and typed`
+              : 'They couldn’t find their parish and typed'
+            : 'They typed'}
+          : <strong>{parish.answer}</strong>
         </p>
+      )}
+      {parish.place && (
+        // D-59: where they said it is, as the directory named it when they applied.
+        <div className="flex flex-col gap-2 rounded-[10px] bg-cream px-3 py-2">
+          <p className="font-sans text-[13px] font-bold uppercase tracking-[0.06em] text-muted">The province they chose</p>
+          <Details rows={chainRows(parish.place.chain)} />
+        </div>
       )}
       {current ? (
         <div className="flex flex-col gap-2">

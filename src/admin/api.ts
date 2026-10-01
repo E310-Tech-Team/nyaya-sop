@@ -70,6 +70,8 @@ export type ApplicantParish = {
   current: ParishDetailsResponse | null;
   /** `lookalikes`: the applicant chose one of this many same-named parishes (D-55), or null. */
   submitted: { parish: ChainUnit; chain: ParishChain; lookalikes: number | null } | null;
+  /** "Not listed" after choosing a province (D-59): that place and the units above it, as the directory named them then. */
+  place: { unit: ReviewPlace; chain: ParishChain } | null;
   linkedBy: { name: string; at: string } | null;
   textReviewedAt: string | null;
   reports: ParishReport[];
@@ -207,6 +209,8 @@ export type LineageGroup = { level: ChurchLevel; name: string; approvedOn: strin
 // ── Parish review (server/admin/parish-review.ts) ────────────────────────────
 
 export type ReviewKind = 'not_listed' | 'details_wrong' | 'lookalike' | 'earlier_text';
+/** The province (or region or continent) an applicant chose before saying their parish isn't listed (D-59). */
+export type ReviewPlace = { id: string; name: string; level: ChurchLevel };
 /** A parish a look-alike choice could mean (server/admin/parish-review.ts `candidatesOf`). */
 export type LookalikeCandidate = { id: string; name: string; code: string | null; applications: number; linked: boolean };
 export type ReviewItem = {
@@ -216,7 +220,10 @@ export type ReviewItem = {
   application: { id: string; reference: string; fullName: string; state: string; cohort: string };
   name: string | null;
   parish: ParishDetailsResponse | null;
+  /** What they confirmed ("details look wrong"), or the province they chose ("not listed", with `place`). */
   submitted: ParishChain | null;
+  /** "Not listed" items only: the province chosen first, when there was one. */
+  place: ReviewPlace | null;
   suggestions: ParishSuggestion[];
   exactMatch: string | null;
   /** "Which parish?" items only: the look-alike group, first parish first. */

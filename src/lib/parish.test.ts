@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { isChainComplete, type ParishChain, type ParishDetailsResponse } from '../shared/directory';
-import { chainLine, chainRows, highlightParts, lookalikeNote, parishAnswer, recheck, resultsAnnouncement, type ListedParish } from './parish';
+import {
+  belowPlace,
+  chainLine,
+  chainRows,
+  highlightParts,
+  lookalikeNote,
+  parishAnswer,
+  placeContext,
+  placeLabel,
+  placeOfChain,
+  placeParishesAnnouncement,
+  placesAnnouncement,
+  recheck,
+  recheckPlace,
+  resultsAnnouncement,
+  type ChosenPlace,
+  type ListedParish,
+} from './parish';
 
 const unit = (id: string, name: string) => ({ id, name });
 const LAGOS_3: ParishChain = {
@@ -116,6 +133,68 @@ describe('parishAnswer', () => {
     expect(parishAnswer({ kind: 'not_listed', name: 'Glory Tabernacle' })).toEqual({ kind: 'not_listed', name: 'Glory Tabernacle' });
     expect(parishAnswer({ kind: 'withdrawn', name: 'Old', reason: 'inactive', mergedInto: null })).toBeNull();
     expect(parishAnswer(null)).toBeNull();
+  });
+
+  it('sends the province chosen for a parish that isn’t listed, by its ID only (D-59)', () => {
+    const place: ChosenPlace = { kind: 'place', id: 'lp3', level: 'province', name: 'Lagos Province 3', chain: LAGOS_3 };
+    expect(parishAnswer({ kind: 'not_listed', name: 'Glory Tabernacle' }, place)).toEqual({ kind: 'not_listed', name: 'Glory Tabernacle', unitId: 'lp3' });
+    expect(parishAnswer({ kind: 'not_listed', name: 'Glory Tabernacle' }, { kind: 'anywhere' })).toEqual({ kind: 'not_listed', name: 'Glory Tabernacle' });
+    expect(parishAnswer({ kind: 'not_listed', name: 'Glory Tabernacle' }, { kind: 'withdrawn', name: 'Lagos Province 3' })).toEqual({
+      kind: 'not_listed',
+      name: 'Glory Tabernacle',
+    });
+    // A listed parish carries its own place.
+    expect(parishAnswer(listed(), place)).toEqual({ kind: 'listed', id: 'p1', confirmed: true, detailsWrong: false });
+  });
+});
+
+describe('places (step 1, D-59)', () => {
+  const place = (overrides: Partial<ChosenPlace> = {}): ChosenPlace => ({ kind: 'place', id: 'lp3', level: 'province', name: 'Lagos Province 3', chain: LAGOS_3, ...overrides });
+
+  it('finds the place a parish belongs to: its province, else its region, else its continent', () => {
+    expect(placeOfChain({ ...LAGOS_3, zone: unit('z1', 'Zone 1') })).toEqual(place());
+    expect(placeOfChain({ ...LAGOS_3, province: null })).toEqual(place({ id: 'r54', level: 'region', name: 'Region 54', chain: { ...LAGOS_3, province: null } }));
+    const continentOnly = { continent: unit('c2', 'Continent 2'), region: null, province: null, zone: null, area: null };
+    expect(placeOfChain(continentOnly)).toEqual(place({ id: 'c2', level: 'continent', name: 'Continent 2', chain: continentOnly }));
+    expect(placeOfChain({ continent: null, region: null, province: null, zone: unit('z1', 'Zone 1'), area: null })).toBeNull();
+  });
+
+  it('names a region’s or continent’s own parishes as such, and says what a place is in', () => {
+    expect(placeLabel(place())).toBe('Lagos Province 3');
+    expect(placeLabel({ level: 'region', name: 'Region 13' })).toBe('Region 13 (parishes not in a province)');
+    expect(placeLabel({ level: 'continent', name: 'Continent 2' })).toBe('Continent 2 (parishes not in a region)');
+    expect(placeContext(place())).toBe('Region 54 · Continent 3');
+    expect(placeContext({ level: 'continent', chain: { ...LAGOS_3, region: null, province: null } })).toBe('');
+    // Inside a place, only what is below it.
+    expect(belowPlace({ ...LAGOS_3, zone: unit('z1', 'Zone 1') }, 'province')).toBe('Zone 1');
+    expect(belowPlace(LAGOS_3, 'province')).toBe('');
+  });
+
+  it('says how many places and parishes there are, and how many are shown', () => {
+    const units = (levels: ChosenPlace['level'][], total: number) => ({
+      results: levels.map((level, index) => ({ id: `u${index}`, level, name: 'X', chain: LAGOS_3, parishes: 1, inState: false })),
+      total,
+    });
+    expect(placesAnnouncement(units([], 0))).toBe('No provinces found.');
+    expect(placesAnnouncement(units(['province'], 1))).toBe('1 province found.');
+    expect(placesAnnouncement(units(['province', 'province'], 30))).toBe('Showing 2 of 30 provinces.');
+    expect(placesAnnouncement(units(['province', 'region'], 2))).toBe('2 matches found.');
+    const found = (total: number, fuzzy = false) => ({ total, fuzzy });
+    expect(placeParishesAnnouncement(found(104), 20, 'Lagos Province 12', false)).toBe('Showing 20 of 104 parishes in Lagos Province 12.');
+    expect(placeParishesAnnouncement(found(104), 104, 'Lagos Province 12', false)).toBe('104 parishes in Lagos Province 12.');
+    expect(placeParishesAnnouncement(found(1), 1, 'Lagos Province 12', true)).toBe('1 parish in Lagos Province 12 matches.');
+    expect(placeParishesAnnouncement(found(3), 3, 'Lagos Province 12', true)).toBe('3 parishes in Lagos Province 12 match.');
+    expect(placeParishesAnnouncement(found(2, true), 2, 'Lagos Province 12', true)).toBe('No exact match in Lagos Province 12. 2 similar names found.');
+    expect(placeParishesAnnouncement(found(0), 0, 'Lagos Province 12', true)).toBe('No parishes in Lagos Province 12 match.');
+  });
+
+  it('checks a saved place again: the same, renamed, or gone', () => {
+    const saved = place();
+    const details = { id: 'lp3', level: 'province' as const, name: 'Lagos Province 3', chain: LAGOS_3, parishes: 4 };
+    expect(recheckPlace(saved, details)).toBe(saved);
+    expect(recheckPlace(saved, { ...details, name: 'Lagos Province 3A' })).toEqual(place({ name: 'Lagos Province 3A' }));
+    expect(recheckPlace(saved, null)).toEqual({ kind: 'withdrawn', name: 'Lagos Province 3' });
+    expect(recheckPlace(saved, { ...details, level: 'zone' })).toEqual({ kind: 'withdrawn', name: 'Lagos Province 3' });
   });
 });
 
