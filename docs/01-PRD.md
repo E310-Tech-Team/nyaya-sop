@@ -92,11 +92,11 @@ Payments · delivering training, grading, mentorship or community management · 
 | F23 | Admin platform with individual staff accounts, two-step verification, five roles, audit history | **Built** |
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
-| F26 | Parish directory: applicants choose their parish from the RCCG list; staff review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish. The list comes from the official RCCG directory API, kept current automatically (D-53); same-named parishes in one province are offered as one choice, and staff settle which one (D-55); where the API isn't configured, from an imported spreadsheet that staff can correct | **Built** (Phase 16): the RCCG directory API is live on the server (release 2026.1). The question stays off in Settings until the look-alike choice (16.10) ships |
+| F26 | Parish directory: applicants choose their parish from the RCCG list; staff review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish. The list comes from the official RCCG directory API, kept current automatically (D-53); same-named parishes in one province are offered as one choice, and staff settle which one (D-55); the question asks for the province first, then the parish in it (D-59); where the API isn't configured, from an imported spreadsheet that staff can correct | **Built** (Phase 16): the RCCG directory API is live on the server (release 2026.1). The question stays off in Settings until the look-alike choice (16.10) ships |
 
 ## 5. Form content
 
-The rules are enforced in the browser and on the server ([05 §4](05-Backend-Schema.md#4-validation-rules)). Everything is required except the parish. **Parish directory (Phase 16, D-28/D-31):** built; once an owner switches it on, the parish becomes required and is chosen from the RCCG parish list, with "I can't find my parish" as the way through ([03, Personal step](03-App-Flow.md#the-parish-question-question-08-while-the-parish-directory-is-on)).
+The rules are enforced in the browser and on the server ([05 §4](05-Backend-Schema.md#4-validation-rules)). Everything is required except the parish. **Parish directory (Phase 16, D-28/D-31):** built; once an owner switches it on, the parish becomes required and is chosen from the RCCG parish list in two steps, the province and then a parish in it (D-59), with "I don't know my province" and "I can't find my parish" as the ways through ([03, Personal step](03-App-Flow.md#the-parish-question-question-08-while-the-parish-directory-is-on)).
 
 ### Welcome: consent
 
@@ -113,7 +113,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 |
 | 06 | State of Residence | select | All 36 states + FCT (Abuja) + Outside Nigeria |
 | 07 | City/Town of Residence | text | 2–80 characters |
-| 08 | Your RCCG parish | required | While the parish directory is on: a search of the RCCG list; province, region and continent come from the chosen parish (read-only) and are confirmed, or "I can't find my parish" with its name. While it's off: "Name of your RCCG parish", typed (hint: "Type your parish's name as you know it. The Programme team will match it to the RCCG parish list.") |
+| 08 | Your RCCG parish | required | While the parish directory is on, two steps (D-59): **"Your province"** (searched by name or number, "LP 12"; the applicant's state first; also the regions and continents some parishes sit directly under, e.g. "Region 13 (parishes not in a province)"), then **"Your parish in <province>"** (type to filter, or browse the whole list 20 at a time). Province, region and continent come from the chosen parish (read-only) and are confirmed. "I don't know my province" searches every province instead; "I can't find my parish" takes its name, with the province chosen. While it's off: "Name of your RCCG parish", typed (hint: "Type your parish's name as you know it. The Programme team will match it to the RCCG parish list.") |
 
 ### Section 2: Education & Career
 
