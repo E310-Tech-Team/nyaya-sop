@@ -8,7 +8,7 @@
  */
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { referenceFromId } from '../../src/shared/application';
-import { CHURCH_LEVELS, parishKey, type ParishChain } from '../../src/shared/directory';
+import { CHURCH_LEVELS, parishKey, type ChurchLevel, type ParishChain } from '../../src/shared/directory';
 import { audit } from '../audit';
 import { staffGuard } from '../auth/guards';
 import { staffActor } from '../auth/staff-routes';
@@ -67,6 +67,24 @@ const applicantOf = (row: ApplicantRow) => ({
 
 const chainFrom = (snapshot: Record<string, unknown> | null): ParishChain | null =>
   snapshot ? (Object.fromEntries(CHURCH_LEVELS.map((level) => [level, snapshot[level] ?? null])) as ParishChain) : null;
+
+type Place = { id: string; name: string; level: ChurchLevel };
+
+/** "Not listed" after choosing a province (D-59): the unit they chose, as the application keeps it. */
+const placeFrom = (snapshot: Record<string, unknown> | null): Place | null => {
+  const unit = snapshot?.unit as Place | undefined;
+  return unit && typeof unit.id === 'string' && typeof unit.name === 'string' ? unit : null;
+};
+
+/** Suggestions for a typed name: the province they chose first (when they did), then everywhere. */
+async function suggestionsFor(db: Queryable, services: Services, name: string, state: string | null, place: Place | null) {
+  const namespace = directoryNamespace(services);
+  if (place) {
+    const near = await searchParishes(db, name, null, 3, namespace, { place });
+    if (near.results.length) return near.results;
+  }
+  return (await searchParishes(db, name, state, 3, namespace)).results;
+}
 
 /**
  * The parishes a look-alike choice could mean: the active parishes sharing the linked parish's
@@ -133,7 +151,8 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
           name: row.parish_name,
           parish: null,
           submitted: null,
-          suggestions: (await searchParishes(db, row.parish_name, row.state_of_residence, 3, directoryNamespace(services))).results,
+          place: null,
+          suggestions: await suggestionsFor(db, services, row.parish_name, row.state_of_residence, null),
           exactMatch: exact.get(row.application_id) ?? null,
           candidates: null,
         });
@@ -141,8 +160,18 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
       return { counts, kind, page, pageSize, total: rows[0]?.total ?? 0, items };
     }
 
-    const { rows } = await db.query<ApplicantRow & { id: string; reported_name: string | null; parish_id: string | null; parish_snapshot: Record<string, unknown> | null; total: number }>(
+    const { rows } = await db.query<
+      ApplicantRow & {
+        id: string;
+        reported_name: string | null;
+        parish_id: string | null;
+        parish_snapshot: Record<string, unknown> | null;
+        parish_place_snapshot: Record<string, unknown> | null;
+        total: number;
+      }
+    >(
       `select r.id, r.reported_name, r.parish_id, r.created_at, a.id as application_id, a.full_name, a.state_of_residence, a.parish_snapshot,
+              a.parish_place_snapshot,
               c.name as cohort, count(*) over ()::int as total
          from parish_reports r join applications a on a.id = r.application_id join cohorts c on c.id = a.cohort_id
         where r.status = 'pending' and r.kind = $1::parish_report_kind
@@ -151,6 +180,7 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
     );
     const items = [];
     for (const row of rows) {
+      const place = kind === 'not_listed' ? placeFrom(row.parish_place_snapshot) : null;
       items.push({
         id: row.id,
         kind,
@@ -158,8 +188,10 @@ export async function parishReviewRoutes(app: FastifyInstance, services: Service
         application: applicantOf(row),
         name: row.reported_name,
         parish: row.parish_id ? await parishDetails(db, row.parish_id) : null,
-        submitted: kind === 'details_wrong' ? chainFrom(row.parish_snapshot) : null,
-        suggestions: row.reported_name ? (await searchParishes(db, row.reported_name, row.state_of_residence, 3, directoryNamespace(services))).results : [],
+        // What they confirmed ("details look wrong"), or the province they chose ("not listed").
+        submitted: kind === 'details_wrong' ? chainFrom(row.parish_snapshot) : place ? chainFrom(row.parish_place_snapshot) : null,
+        place,
+        suggestions: row.reported_name ? await suggestionsFor(db, services, row.reported_name, row.state_of_residence, place) : [],
         exactMatch: null,
         candidates: kind === 'lookalike' && row.parish_id ? await candidatesOf(db, row.parish_id, row.application_id) : null,
       });
