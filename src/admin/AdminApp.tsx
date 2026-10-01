@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { LogOutIcon, MenuIcon, XIcon } from 'lucide-react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router';
 import { BrandLockup } from '../components/BrandLockup';
 import { Button, LoadError, Loading, PageHeader } from '../components/ui';
 import { can, ROLE_LABELS, type Permission } from '../shared/permissions';
 import { adminApi } from './api';
 import { ForgotPasswordPage, InviteSetupPage, LoginPage, ResetPasswordPage } from './AuthPages';
+import { navFor, PARISH_REVIEW } from './nav';
 import AccountsPage, { AccountDetailPage } from './pages/Accounts';
 import AnnouncementsPage from './pages/Announcements';
 import ApplicantDetailPage from './pages/ApplicantDetail';
@@ -88,9 +90,6 @@ function RequireStaff() {
   return <Navigate to="/admin/login" replace state={{ from: location.pathname + location.search }} />;
 }
 
-// Parish review shows applicants and changes the directory: it needs all three (server/admin/parish-review.ts).
-const PARISH_REVIEW: Permission[] = ['applications.view_all', 'applications.edit', 'directory.manage'];
-
 /** With `all`, every listed permission is needed; otherwise any one. */
 function Allowed({ any, all = false, children }: { any: Permission[]; all?: boolean; children: ReactNode }) {
   const staff = useStaff();
@@ -106,22 +105,6 @@ function Allowed({ any, all = false, children }: { any: Permission[]; all?: bool
   );
 }
 
-const NAV: { to: string; label: string; any: Permission[]; all?: boolean }[] = [
-  { to: '/admin', label: 'Dashboard', any: ['dashboard.view'] },
-  { to: '/admin/applicants', label: 'Applicants', any: ['applications.view_all', 'applications.view_assigned'] },
-  { to: '/admin/accounts', label: 'Accounts', any: ['accounts.view'] },
-  { to: '/admin/reports', label: 'Reports and analytics', any: ['reports.view'] },
-  { to: '/admin/parish-review', label: 'Parish review', any: PARISH_REVIEW, all: true },
-  { to: '/admin/directory', label: 'Parish directory', any: ['directory.view'] },
-  { to: '/admin/cohorts', label: 'Cohorts', any: ['cohorts.manage', 'applications.view_all'] },
-  { to: '/admin/campaigns', label: 'Notifications', any: ['campaigns.manage'] },
-  { to: '/admin/announcements', label: 'Announcements', any: ['announcements.manage'] },
-  { to: '/admin/staff', label: 'Staff', any: ['staff.manage'] },
-  { to: '/admin/settings', label: 'Settings', any: ['settings.manage'] },
-  { to: '/admin/audit', label: 'Audit history', any: ['audit.view'] },
-  { to: '/admin/security', label: 'Your security', any: [] },
-];
-
 function AdminLayout() {
   const staff = useStaff();
   const { pathname } = useLocation();
@@ -129,9 +112,7 @@ function AdminLayout() {
   useEffect(() => setMenuOpen(false), [pathname]);
   if (staff.step !== 'signed-in') return null;
   const { role, displayName } = staff.session.staff;
-  const items = NAV.filter(
-    (item) => item.any.length === 0 || (item.all ? item.any.every((permission) => can(role, permission)) : item.any.some((permission) => can(role, permission))),
-  );
+  const items = navFor(role);
 
   const signOut = async () => {
     await adminApi.logout().catch(() => undefined);
@@ -146,9 +127,11 @@ function AdminLayout() {
             <NavLink
               to={item.to}
               end={item.to === '/admin'}
-              className="flex min-h-[40px] items-center rounded-[10px] px-3 font-sans text-[14px] font-semibold text-white/80 hover:bg-white/10 hover:text-white aria-[current=page]:bg-white aria-[current=page]:text-brand"
+              className="flex min-h-[40px] items-start gap-3 rounded-[10px] px-3 py-[11px] font-sans text-[14px] font-semibold leading-[18px] text-white/80 hover:bg-white/10 hover:text-white aria-[current=page]:bg-white aria-[current=page]:text-brand"
             >
-              {item.label}
+              {/* Decorative: the label names the link. 18 px, the label's line height, so a wrapped label keeps it beside its first line. */}
+              <item.icon aria-hidden="true" className="size-[18px] shrink-0" strokeWidth={1.75} />
+              <span className="min-w-0">{item.label}</span>
             </NavLink>
           </li>
         ))}
@@ -166,11 +149,12 @@ function AdminLayout() {
           </Link>
           <button
             type="button"
-            className="min-h-[40px] rounded-full border border-white/40 px-4 font-sans text-[13px] font-bold lg:hidden"
+            className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-white/40 px-4 font-sans text-[13px] font-bold lg:hidden"
             aria-expanded={menuOpen}
             aria-controls="admin-nav"
             onClick={() => setMenuOpen((open) => !open)}
           >
+            {menuOpen ? <XIcon aria-hidden="true" className="size-[16px] shrink-0" strokeWidth={2} /> : <MenuIcon aria-hidden="true" className="size-[16px] shrink-0" strokeWidth={2} />}
             {menuOpen ? 'Close' : 'Menu'}
           </button>
         </div>
@@ -183,6 +167,7 @@ function AdminLayout() {
               <span className="text-white/60">{ROLE_LABELS[role]}</span>
             </p>
             <Button tone="secondary" className="min-h-[38px] self-start text-[13px]" onClick={() => void signOut()}>
+              <LogOutIcon aria-hidden="true" className="size-[16px]" strokeWidth={1.75} />
               Sign out
             </Button>
           </div>
