@@ -40,6 +40,22 @@ The mark is an archery target seen as a journey:
 - Colour lockup on white, paper and cream; cream lockup on burgundy and the near-black footer; monochrome only where a single ink is required.
 - Give it clear space and keep it legible. On the site the lockup is never shorter than 40 px, and the mark alone never smaller than 16 px (favicon).
 
+## Partner mark: RCCG Young Adults & Youths
+
+The footer credits the programme's parent ministry: "An initiative of RCCG National Young Adults and Youth Affairs", beside the RCCG Young Adults & Youths emblem. The owner supplied the emblem on 2026-09-30.
+
+- `partners/rccg-yaya-supplied.webp`: the logo as supplied (1080×1080, on white). Never edit it.
+- `partners/rccg-yaya-transparent.png`: the same logo with its white page made transparent (672×935), for use on any background.
+- `src/assets/brand/rccg-yaya-emblem.webp`: the footer's copy (138×192, three times its 64 px display height).
+
+Rules:
+- As with the lockup, use it as supplied: don't redraw, recolour, re-type or crop it, the crown included.
+- Its own whites (the ring behind the lettering, the ribbon and its curled ends) are part of the emblem and stay white.
+- On the site keep it at least 48 px tall, with clear space around it.
+- It is RCCG's mark: use it only to credit RCCG National Young Adults and Youth Affairs.
+
+To rebuild after the supplied file changes, run `python3 scripts/partner-logo.py` (Python 3 with Pillow and numpy). Only white connected to the image's edges becomes transparent, plus the enclosed pockets listed in the script. Check the result on the dark footer and on white before committing.
+
 ## Regenerating the web files
 
 ```bash

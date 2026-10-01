@@ -38,6 +38,7 @@ Open http://localhost:5173. `pnpm dev` starts Vite (web, with hot reload) and th
 | `pnpm push:keys` | Generate a VAPID key pair for Web Push (once per site) |
 | `pnpm worker` | Run background jobs as a separate process (with `WORKER_MODE=off` on the web server) |
 | `python3 scripts/brand-assets.py` | Rebuild the logo lockups, favicons and app icons from the brand masters in `design/brand/` (needs Pillow; outputs are committed) |
+| `python3 scripts/partner-logo.py` | Rebuild the footer's RCCG Young Adults & Youths emblem from the supplied logo in `design/brand/partners/`, its white page made transparent (needs Pillow and numpy; outputs are committed) |
 
 ## Project layout
 

@@ -107,7 +107,7 @@ src/            React app
   account/      applicant account area (lazy chunk)
   admin/        admin platform (lazy chunk): AdminApp, AuthPages, pages/* (incl. ParishReview, Directory), reports/* (Reports and analytics), directory-parts (parish and unit finders)
   components/   layout, fields, ui/ (the account/admin kit: index.tsx, shadcn/ui primitives, basic.tsx for public pages), BrandLockup, InstallGuide, notifications/*, AppStatus (offline notice, update prompt)
-  assets/       landing and success artwork, brand/ (logo lockups built by scripts/brand-assets.py)
+  assets/       landing and success artwork, brand/ (logo lockups built by scripts/brand-assets.py; the footer's RCCG Young Adults & Youths emblem by scripts/partner-logo.py)
   lib/          api (CSRF-aware client), pwa (registration/updates), install, push, account, config, events, utils (`cn`, for the primitives)
   sw/           sw.ts (service worker), routing.ts (+ tests)
   shared/       application, validation, permissions, platform (topics, statuses, link allowlist), time
@@ -120,7 +120,7 @@ server/         app.ts, config.ts, crypto.ts, db.ts, http.ts, audit.ts, email.ts
   jobs/         queue, worker
   notifications/  audience, dispatch
   migrations/   0001_init … 0008_parish_admin
-scripts/        build-server.mjs, vite-pwa.ts, brand-assets.py
+scripts/        build-server.mjs, vite-pwa.ts, brand-assets.py, partner-logo.py (the footer emblem: Pillow + numpy)
 deploy/         install.sh (one-command VPS install), ci-deploy.sh (the release GitHub Actions runs on the server), Caddyfile, backup.sh, school-of-purpose.service (systemd), nginx.conf.example
 .github/        workflows/ci.yml (checks; releases to production from main)
 design/         brand/ (logo masters, palette, usage rules), landing-reference.webp
