@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
-import { ApiError, getParish } from '../lib/api';
+import { ApiError, getParish, getUnit } from '../lib/api';
 import { readAttribution } from '../lib/attribution';
 import { usePublicConfig, usePublicConfigStatus } from '../lib/config';
-import { parishAnswer, recheck, type ParishDraft } from '../lib/parish';
+import { PLACE_LEVELS, parishAnswer, placeOfChain, recheck, recheckPlace, type ChosenPlace, type ParishDraft, type ProvinceDraft } from '../lib/parish';
 import { readSession, writeSession } from '../lib/storage';
 import {
   CONSENT_VERSION,
@@ -14,8 +14,8 @@ import {
   type PurposeAnswers,
   type SubmitApplicationResponse,
 } from '../shared/application';
-import type { ParishDetailsResponse } from '../shared/directory';
-import { hasErrors, validateEducation, validateParish, validateParishText, validatePersonal, validatePurpose } from '../shared/validation';
+import { CHURCH_LEVELS, type ChainUnit, type ParishChain, type ParishDetailsResponse, type UnitDetails } from '../shared/directory';
+import { MESSAGES, hasErrors, validateEducation, validateParish, validateParishText, validatePersonal, validatePurpose } from '../shared/validation';
 
 export type Draft = {
   consent: boolean;
@@ -26,6 +26,8 @@ export type Draft = {
   website: string;
   /** 'directory' while the parish question searches the RCCG list (set by the Personal step). */
   parishMode: 'text' | 'directory';
+  /** Step 1 in directory mode (D-59): the province (or region or continent), or "I don't know my province". */
+  province: ProvinceDraft | null;
   /** The parish answer in directory mode (the free text stays in personal.parishName). */
   parish: ParishDraft | null;
 };
@@ -39,8 +41,10 @@ export type Action =
   | { type: 'purpose'; value: Partial<PurposeAnswers> }
   | { type: 'honeypot'; value: string }
   | { type: 'parishMode'; value: Draft['parishMode'] }
+  | { type: 'province'; value: ProvinceDraft | null }
   | { type: 'parish'; value: ParishDraft | null }
   | { type: 'recheck'; id: string; current: ParishDetailsResponse | null }
+  | { type: 'recheckProvince'; id: string; current: UnitDetails | null }
   | { type: 'submitted'; value: SubmitApplicationResponse }
   | { type: 'clearDraft' };
 
@@ -63,8 +67,13 @@ export const emptyDraft = (): Draft => ({
   purpose: { purposeClarity: null },
   website: '',
   parishMode: 'text',
+  province: null,
   parish: null,
 });
+
+/** The same place, or both "I don't know my province". */
+const samePlace = (a: ProvinceDraft | null, b: ProvinceDraft | null) =>
+  a?.kind === 'place' && b?.kind === 'place' ? a.id === b.id : a?.kind === 'anywhere' && b?.kind === 'anywhere';
 
 /** How the draft changes (exported for its tests). */
 export function reducer(state: State, action: Action): State {
@@ -87,12 +96,24 @@ export function reducer(state: State, action: Action): State {
       const personal = action.value === 'text' && chosen ? { ...draft.personal, parishName: chosen } : draft.personal;
       return { ...state, draft: { ...draft, personal, parishMode: action.value } };
     }
+    case 'province':
+      // Another place (or none): a parish chosen in the old one doesn't belong to it, so it goes too.
+      return { ...state, draft: { ...draft, province: action.value, parish: samePlace(draft.province, action.value) ? draft.parish : null } };
     case 'parish':
       return { ...state, draft: { ...draft, parish: action.value } };
-    case 'recheck':
+    case 'recheck': {
       // Only if the applicant hasn't chosen something else meanwhile.
       if (draft.parish?.kind !== 'listed' || draft.parish.id !== action.id) return state;
-      return { ...state, draft: { ...draft, parish: recheck(draft.parish, action.current) } };
+      const parish = recheck(draft.parish, action.current);
+      // A parish the directory moved to another place takes the place with it.
+      const chosen = draft.province?.kind === 'place' ? draft.province : null;
+      const moved = parish.kind === 'listed' && chosen ? placeOfChain(parish.chain) : null;
+      const province = moved && chosen && (moved.id !== chosen.id || moved.name !== chosen.name) ? moved : draft.province;
+      return { ...state, draft: { ...draft, parish, province } };
+    }
+    case 'recheckProvince':
+      if (draft.province?.kind !== 'place' || draft.province.id !== action.id) return state;
+      return { ...state, draft: { ...draft, province: recheckPlace(draft.province, action.current) } };
     case 'submitted':
       // Keep the draft until the success page mounts (see clearDraft); clearing it here would
       // let the review page's step guard redirect before navigation to /apply/success lands.
@@ -116,6 +137,38 @@ function savedParish(value: unknown): ParishDraft | null {
   return null;
 }
 
+/** A chain read back from storage: each level a unit with an ID and a name, or null. */
+function savedChain(value: unknown): ParishChain | null {
+  if (!value || typeof value !== 'object') return null;
+  const chain = value as Record<string, unknown>;
+  const unitOf = (unit: unknown): ChainUnit | null => {
+    const { id, name } = (unit ?? {}) as Partial<ChainUnit>;
+    return typeof id === 'string' && typeof name === 'string' ? { id, name } : null;
+  };
+  return Object.fromEntries(CHURCH_LEVELS.map((level) => [level, unitOf(chain[level])])) as ParishChain;
+}
+
+/**
+ * The place read back from storage, or, from a draft saved before the province step (or without a
+ * usable one), the place its parish belongs to: a listed parish's province, region or continent
+ * (D-59), and for a parish reported as not listed, "I don't know my province", as it was answered.
+ */
+function savedProvince(value: unknown, parish: ParishDraft | null): ProvinceDraft | null {
+  const province = value as Partial<ChosenPlace> | { kind?: unknown; name?: unknown } | null | undefined;
+  if (province?.kind === 'place') {
+    const { id, name, level } = province as Partial<ChosenPlace>;
+    const chain = savedChain((province as Partial<ChosenPlace>).chain);
+    if (typeof id === 'string' && typeof name === 'string' && (PLACE_LEVELS as readonly unknown[]).includes(level) && chain) {
+      return { kind: 'place', id, name, level: level as ChosenPlace['level'], chain };
+    }
+  }
+  if (province?.kind === 'anywhere') return { kind: 'anywhere' };
+  if (province?.kind === 'withdrawn' && typeof province.name === 'string') return { kind: 'withdrawn', name: province.name };
+  if (parish?.kind === 'listed') return placeOfChain(parish.chain);
+  if (parish?.kind === 'not_listed') return { kind: 'anywhere' };
+  return null;
+}
+
 /**
  * A draft read back from sessionStorage. Merged section by section so older or partial saved
  * drafts can't break the shape. A gender the form no longer offers ("Prefer not to say", saved
@@ -126,6 +179,7 @@ export function restoreDraft(saved: Partial<Draft> | null): Draft {
   const base = emptyDraft();
   if (!saved) return base;
   const personal = { ...base.personal, ...saved.personal };
+  const parish = savedParish(saved.parish);
   return {
     consent: saved.consent === true,
     personal: { ...personal, gender: isGender(personal.gender) ? personal.gender : '' },
@@ -133,7 +187,8 @@ export function restoreDraft(saved: Partial<Draft> | null): Draft {
     purpose: { ...base.purpose, ...saved.purpose },
     website: typeof saved.website === 'string' ? saved.website : '',
     parishMode: saved.parishMode === 'directory' ? 'directory' : 'text',
-    parish: savedParish(saved.parish),
+    province: savedProvince(saved.province, parish),
+    parish,
   };
 }
 
@@ -155,13 +210,21 @@ export type StepKey = (typeof STEPS)[number]['key'] | 'review';
 /**
  * The Personal step's errors. The parish question is compulsory: in directory mode a parish chosen
  * from the list and confirmed (or reported as not listed); otherwise its name. Typed text in the
- * directory's search box is never an answer.
+ * directory's search box is never an answer. Its error names the step to do next: the province
+ * (or "I don't know my province") first, then the parish.
  */
 export function personalErrors(draft: Draft): FieldErrors {
   const errors = validatePersonal(draft.personal);
   delete errors.parishName;
-  const checked = draft.parishMode === 'directory' ? validateParish(parishAnswer(draft.parish), true) : validateParishText(draft.personal.parishName);
-  if (!checked.ok) errors.parishName = checked.error;
+  if (draft.parishMode === 'directory') {
+    const answer = parishAnswer(draft.parish, draft.province);
+    const placed = draft.province?.kind === 'place' || draft.province?.kind === 'anywhere';
+    const checked = !answer && !placed ? ({ ok: false, error: MESSAGES.parishPlaceRequired } as const) : validateParish(answer, true);
+    if (!checked.ok) errors.parishName = checked.error;
+  } else {
+    const checked = validateParishText(draft.personal.parishName);
+    if (!checked.ok) errors.parishName = checked.error;
+  }
   return errors;
 }
 
@@ -210,7 +273,7 @@ export function toPayload(draft: Draft): ApplicationPayload {
     website: draft.website,
     meta: readAttribution(),
     // Only in directory mode: without it the server takes parishName as free text.
-    ...(draft.parishMode === 'directory' ? { parish: parishAnswer(draft.parish) } : {}),
+    ...(draft.parishMode === 'directory' ? { parish: parishAnswer(draft.parish, draft.province) } : {}),
   };
 }
 
@@ -226,10 +289,12 @@ type ContextValue = {
   updatePurpose: (value: Partial<PurposeAnswers>) => void;
   setHoneypot: (value: string) => void;
   setParishMode: (value: Draft['parishMode']) => void;
+  /** Step 1 (D-59). `fresh`: just chosen from the search, so it needn't be checked again. Another place clears the parish. */
+  setProvince: (value: ProvinceDraft | null, options?: { fresh?: boolean }) => void;
   /** `fresh`: just chosen from the search, so it needn't be checked again. */
   setParish: (value: ParishDraft | null, options?: { fresh?: boolean }) => void;
   parishCheck: ParishCheck;
-  /** Check the chosen parish against the directory again (after the server rejected it). */
+  /** Check the chosen parish (and province) against the directory again (after the server rejected it). */
   recheckParish: () => void;
   markSubmitted: (value: SubmitApplicationResponse) => void;
   /** Forget the answers (after a confirmed submission); the submission receipt is kept. */
@@ -280,12 +345,44 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('online', retry);
   }, [parishCheck]);
 
+  // The province saved with the draft, the same way (D-59). A listed parish's check covers it
+  // (its chain names the place), so only while there is none.
+  const checkedPlaces = useRef(new Set<string>());
+  const [placeOffline, setPlaceOffline] = useState(false);
+  const placeId = state.draft.province?.kind === 'place' && state.draft.parish?.kind !== 'listed' ? state.draft.province.id : null;
+  useEffect(() => {
+    if (!placeId || checkedPlaces.current.has(placeId)) return;
+    const controller = new AbortController();
+    const settle = (current: UnitDetails | null) => {
+      checkedPlaces.current.add(placeId);
+      dispatch({ type: 'recheckProvince', id: placeId, current });
+      setPlaceOffline(false);
+    };
+    getUnit(placeId, controller.signal).then(settle, (error: unknown) => {
+      if (controller.signal.aborted) return;
+      if (error instanceof ApiError && error.status === 404) settle(null);
+      else setPlaceOffline(true);
+    });
+    return () => controller.abort();
+  }, [placeId, checkRun]);
+  useEffect(() => {
+    if (!placeOffline) return;
+    const retry = () => setCheckRun((run) => run + 1);
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [placeOffline]);
+
+  const setProvince = useCallback((value: ProvinceDraft | null, options?: { fresh?: boolean }) => {
+    if (options?.fresh && value?.kind === 'place') checkedPlaces.current.add(value.id);
+    dispatch({ type: 'province', value });
+  }, []);
   const setParish = useCallback((value: ParishDraft | null, options?: { fresh?: boolean }) => {
     if (options?.fresh && value?.kind === 'listed') checked.current.add(value.id);
     dispatch({ type: 'parish', value });
   }, []);
   const recheckParish = useCallback(() => {
     checked.current.clear();
+    checkedPlaces.current.clear();
     setCheckRun((run) => run + 1);
   }, []);
   const markSubmitted = useCallback((value: SubmitApplicationResponse) => dispatch({ type: 'submitted', value }), []);
@@ -301,13 +398,14 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       updatePurpose,
       setHoneypot,
       setParishMode,
+      setProvince,
       setParish,
       parishCheck,
       recheckParish,
       markSubmitted,
       clearDraft,
     }),
-    [state, setConsent, updatePersonal, updateEducation, updatePurpose, setHoneypot, setParishMode, setParish, parishCheck, recheckParish, markSubmitted, clearDraft],
+    [state, setConsent, updatePersonal, updateEducation, updatePurpose, setHoneypot, setParishMode, setProvince, setParish, parishCheck, recheckParish, markSubmitted, clearDraft],
   );
 
   return <ApplicationContext.Provider value={value}>{children}</ApplicationContext.Provider>;

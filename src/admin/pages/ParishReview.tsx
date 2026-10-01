@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Badge, Button, Checkbox, Input, LoadError, Loading, Notice, PageHeader, Pagination, Panel, TableScroll, errorMessage, td, th, when } from '../../components/ui';
-import { chainLine, chainRows } from '../../lib/parish';
+import { chainLine, chainRows, placeContext, placeLabel } from '../../lib/parish';
 import { useAsync } from '../../lib/useAsync';
 import type { ParishChain } from '../../shared/directory';
 import { adminApi, type LookalikeCandidate, type ReviewItem, type ReviewKind, type UnitMatch } from '../api';
@@ -75,10 +75,13 @@ function LinkChoices({ item, act, initialQuery }: { item: ReviewItem; act: Act; 
   );
 }
 
-/** "I can't find my parish": add it to the directory in the right unit, and link the application. */
+/**
+ * "I can't find my parish": add it to the directory in the right unit, and link the application.
+ * Starts in the province the applicant chose, when they chose one (D-59).
+ */
 function AddParish({ item, act }: { item: ReviewItem; act: Act }) {
   const [name, setName] = useState(item.name ?? '');
-  const [unit, setUnit] = useState<UnitMatch | null>(null);
+  const [unit, setUnit] = useState<UnitMatch | null>(item.place ? { ...item.place, parent: null } : null);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!unit) return;
@@ -211,7 +214,19 @@ function ReviewCard({ item, act }: { item: ReviewItem; act: Act }) {
     body = (
       <>
         <p className="font-sans text-[15px] text-ink">
-          {item.kind === 'earlier_text' ? 'Typed on the earlier form:' : 'They couldn’t find their parish and typed:'} <strong>{item.name}</strong>
+          {item.kind === 'earlier_text' ? (
+            'Typed on the earlier form:'
+          ) : item.place ? (
+            // D-59: the province they chose first, as the directory named it then.
+            <>
+              They chose <strong>{placeLabel(item.place)}</strong>
+              {item.submitted && placeContext({ level: item.place.level, chain: item.submitted }) && ` (${placeContext({ level: item.place.level, chain: item.submitted })})`},
+              couldn’t find their parish there and typed:
+            </>
+          ) : (
+            'They couldn’t find their parish and typed:'
+          )}{' '}
+          <strong>{item.name}</strong>
         </p>
         <LinkChoices item={item} act={act} initialQuery={item.name ?? ''} />
         {item.kind === 'not_listed' && <AddParish item={item} act={act} />}

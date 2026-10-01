@@ -122,7 +122,19 @@ export const PARISH_ANSWER_LABELS: Record<'listed' | 'reported' | 'legacy_text' 
 
 // ── Parish search and lookup (GET /api/parishes/…) ─────────────────────────────
 
-export const PARISH_SEARCH = { minLength: 2, maxLength: 60, maxResults: 10, maxTerms: 8 } as const;
+export const PARISH_SEARCH = {
+  minLength: 2,
+  maxLength: 60,
+  /** Searching everywhere ("I don't know my province"): the best few, never paged. */
+  maxResults: 10,
+  maxTerms: 8,
+  /** Within one province (or a region or continent's own parishes): pages, so every parish can be reached. */
+  pageSize: 20,
+  maxOffset: 10_000,
+} as const;
+
+/** Step 1 of the parish question (D-59): the province, or the region or continent a parish sits directly under. */
+export const UNIT_SEARCH = { minLength: 1, pageSize: 12, maxOffset: 1_000 } as const;
 
 /** A unit in a parish's chain, as the API returns it. */
 export type ChainUnit = { id: string; name: string };
@@ -163,6 +175,32 @@ export type ParishSearchResponse = {
   /** Nothing matched exactly, so these are the closest spellings ("Did you mean…?"). */
   fuzzy: boolean;
   /** How current the list is, when it comes from the RCCG directory API. */
+  directory?: DirectoryFreshness;
+};
+
+/**
+ * A place to choose a parish in (step 1 of the parish question, D-59): a province, or a region or
+ * continent with parishes directly under it (154 and 27 in release 2026.1).
+ */
+export type UnitDetails = {
+  id: string;
+  level: ChurchLevel;
+  name: string;
+  /** The unit itself and the units above it; null below it. */
+  chain: ParishChain;
+  /** The choices step 2 lists: active parishes directly in it, look-alikes once (D-55). */
+  parishes: number;
+};
+
+export type UnitSuggestion = UnitDetails & {
+  /** A province in the state the applicant gave. */
+  inState: boolean;
+};
+
+export type UnitSearchResponse = {
+  results: UnitSuggestion[];
+  /** Every unit the search matched (`results` is one page of them). */
+  total: number;
   directory?: DirectoryFreshness;
 };
 

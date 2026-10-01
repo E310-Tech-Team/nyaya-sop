@@ -43,8 +43,8 @@ export async function insertApplication(
        insert into applications (
          cohort_id, full_name, email, phone_e164, gender, age_range, state_of_residence, city,
          parish_name, parish_id, parish_status, parish_snapshot,
-         education_level, current_status, purpose_clarity, consent_version, submission_meta
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         education_level, current_status, purpose_clarity, consent_version, submission_meta, parish_place_snapshot
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19)
        on conflict (cohort_id, email) do nothing
        returning id, created_at
      ),
@@ -81,6 +81,7 @@ export async function insertApplication(
             : { kind: report.kind, reported_name: null, parish_id: report.parishId },
         ),
       ),
+      parish.place ? JSON.stringify(parish.place) : null,
     ],
   );
   return rows[0] ?? null;

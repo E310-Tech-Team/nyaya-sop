@@ -20,7 +20,7 @@ const PARISH_PENDING = {
 export default function PersonalInfoPage() {
   usePageTitle('Step 1 of 3: Personal Information');
   const navigate = useNavigate();
-  const { draft, updatePersonal, setHoneypot, setParish, parishCheck } = useApplication();
+  const { draft, updatePersonal, setHoneypot, setProvince, setParish, parishCheck } = useApplication();
   const [showErrors, setShowErrors] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const answers = draft.personal;
@@ -158,6 +158,8 @@ export default function PersonalInfoPage() {
               id="parishName"
               number="08"
               state={answers.stateOfResidence}
+              province={draft.province}
+              onProvince={setProvince}
               value={draft.parish}
               onChange={setParish}
               check={parishCheck}

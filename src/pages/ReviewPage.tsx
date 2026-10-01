@@ -5,7 +5,7 @@ import { FormActions, FormCard, StepHeader } from '../components/FormLayout';
 import { usePageTitle } from '../components/RouteEffects';
 import { site } from '../config/site';
 import { ApiError, submitApplication } from '../lib/api';
-import { chainRows, type ParishDraft } from '../lib/parish';
+import { chainRows, type ParishDraft, type ProvinceDraft } from '../lib/parish';
 import { isChainComplete } from '../shared/directory';
 import {
   AGE_RANGES,
@@ -64,8 +64,11 @@ function SummarySection({ title, editTo, rows }: { title: string; editTo: string
   );
 }
 
-/** The parish as the review shows it when the question used the directory: its units, level by level. */
-function parishSummary(parish: ParishDraft | null): ReactNode {
+/**
+ * The parish as the review shows it when the question used the directory: its units, level by level.
+ * A parish that isn't listed shows the province chosen for it (D-59).
+ */
+function parishSummary(parish: ParishDraft | null, province: ProvinceDraft | null): ReactNode {
   if (parish?.kind === 'listed') {
     return (
       <>
@@ -92,6 +95,12 @@ function parishSummary(parish: ParishDraft | null): ReactNode {
     return (
       <>
         <span className="block">{collapseWhitespace(parish.name)}</span>
+        {province?.kind === 'place' &&
+          chainRows(province.chain).map(([level, unit]) => (
+            <span key={level} className="block text-[13px] text-muted">
+              {level}: {unit}
+            </span>
+          ))}
         <span className="block text-[13px] text-muted">Not on our list yet: the Programme team will check it.</span>
       </>
     );
@@ -231,7 +240,7 @@ export default function ReviewPage() {
             ['Age range', labelFor(AGE_RANGES, personal.ageRange)],
             ['State of residence', personal.stateOfResidence],
             ['City/Town', collapseWhitespace(personal.city)],
-            ['RCCG parish', draft.parishMode === 'directory' ? parishSummary(draft.parish) : collapseWhitespace(personal.parishName) || 'Not provided'],
+            ['RCCG parish', draft.parishMode === 'directory' ? parishSummary(draft.parish, draft.province) : collapseWhitespace(personal.parishName) || 'Not provided'],
           ]}
         />
         <div aria-hidden="true" className="h-px w-full bg-line opacity-65" />

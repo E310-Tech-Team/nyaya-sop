@@ -238,6 +238,7 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
     );
     const current = a.parish_id ? await parishDetails(db, a.parish_id as string) : null;
     const snapshot = a.parish_snapshot as ({ parish: { id: string; name: string } } & Record<string, unknown>) | null;
+    const place = a.parish_place_snapshot as ({ unit: { id: string; name: string; level: string } } & Record<string, unknown>) | null;
     const notes = await db.query<{ id: string; body: string; created_at: Date; author: string | null }>(
       `select n.id, n.body, n.created_at, s.display_name as author from application_notes n
          left join staff_users s on s.id = n.author_id where n.application_id = $1 order by n.created_at`,
@@ -298,6 +299,8 @@ export async function applicantRoutes(app: FastifyInstance, services: Services) 
               lookalikes: Array.isArray(snapshot.lookalikes) ? snapshot.lookalikes.length : null,
             }
           : null,
+        /** "Not listed" after choosing a province (D-59): the place they chose, as the directory named it then. */
+        place: place ? { unit: place.unit, chain: Object.fromEntries(CHURCH_LEVELS.map((level) => [level, place[level] ?? null])) } : null,
         linkedBy: a.parish_linked_at ? { name: (a.parish_linked_by_name as string | null) ?? 'Former staff member', at: iso(a.parish_linked_at as Date) } : null,
         textReviewedAt: iso(a.parish_text_reviewed_at as Date | null),
         reports: reports.rows.map((report) => ({

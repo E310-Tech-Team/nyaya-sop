@@ -121,12 +121,13 @@ export type SubmissionMeta = {
  */
 export type ParishAnswer =
   | { kind: 'listed'; id: string; confirmed: boolean; detailsWrong?: boolean }
-  | { kind: 'not_listed'; name: string };
+  /** `unitId`: the province (or region or continent) they chose before saying it isn't listed (D-59). */
+  | { kind: 'not_listed'; name: string; unitId?: string };
 
 /** The parish answer after validation. */
 export type ParishChoice =
   | { kind: 'listed'; parishId: string; detailsWrong: boolean }
-  | { kind: 'not_listed'; name: string }
+  | { kind: 'not_listed'; name: string; unitId?: string }
   /**
    * The free-text question, used only while the directory is off (then the name is required).
    * `null` exists only on applications stored before the parish became compulsory.

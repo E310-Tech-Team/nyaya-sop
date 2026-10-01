@@ -6,7 +6,7 @@ import type {
   FieldErrors,
   SubmitApplicationResponse,
 } from '../shared/application';
-import type { ParishDetailsResponse, ParishSearchResponse } from '../shared/directory';
+import type { ParishDetailsResponse, ParishSearchResponse, UnitDetails, UnitSearchResponse } from '../shared/directory';
 import { noteServerBuild } from './pwa';
 
 export class ApiError extends Error {
@@ -79,3 +79,21 @@ export const searchParishes = (query: string, state: string | null, signal: Abor
 /** One parish as it stands now, to re-check a choice saved earlier. */
 export const getParish = (id: string, signal?: AbortSignal) =>
   apiRequest<ParishDetailsResponse>(`/parishes/${encodeURIComponent(id)}`, { signal, timeoutMs: 8_000 });
+
+/**
+ * Step 1 of the parish question (D-59): provinces, and the regions and continents with parishes in
+ * no province, by name or number. `state` only ranks them; `offset` pages through them.
+ */
+export const searchUnits = (query: string, state: string | null, offset: number, signal: AbortSignal) =>
+  apiRequest<UnitSearchResponse>(
+    `/parishes/units?${new URLSearchParams({ q: query, ...(state ? { state } : {}), ...(offset ? { offset: String(offset) } : {}) })}`,
+    { signal },
+  );
+
+/** Step 2: one place's parishes, those matching `query` or all of them (when empty), from `offset`. */
+export const searchPlaceParishes = (unit: string, query: string, offset: number, signal: AbortSignal) =>
+  apiRequest<ParishSearchResponse>(`/parishes/search?${new URLSearchParams({ unit, q: query, ...(offset ? { offset: String(offset) } : {}) })}`, { signal });
+
+/** A province (or region or continent) as it stands now, to re-check one saved earlier. */
+export const getUnit = (id: string, signal?: AbortSignal) =>
+  apiRequest<UnitDetails>(`/parishes/units/${encodeURIComponent(id)}`, { signal, timeoutMs: 8_000 });

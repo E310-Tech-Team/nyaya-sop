@@ -15,6 +15,7 @@ import {
   PARISH_SEARCH,
   parishKey,
   searchTerms,
+  UNIT_SEARCH,
   type ChainUnit,
   type ChurchLevel,
   type DirectoryFreshness,
@@ -22,6 +23,9 @@ import {
   type ParishDetailsResponse,
   type ParishSearchResponse,
   type ParishSuggestion,
+  type UnitDetails,
+  type UnitSearchResponse,
+  type UnitSuggestion,
 } from '../src/shared/directory';
 import type { Queryable } from './db';
 import { DirectoryApiError, type DirectoryNamespace } from './directory/api';
@@ -93,8 +97,24 @@ export async function lookalikeGroup(db: Queryable, parishId: string): Promise<s
 }
 
 /**
+ * Step 2 of the parish question (D-59): the parishes of one place, a page at a time. A province's
+ * are all those in it (a zone or area below it included); a region's or continent's, those in no
+ * province (or no region) below it, so every parish belongs to exactly one place.
+ */
+export type ParishSearchScope = { place?: { id: string; level: ChurchLevel }; offset?: number };
+
+/** Parish `alias` is in the place `$param` of level `level` (the cached chain columns, kept by the store). */
+function inPlace(alias: string, param: string, level: ChurchLevel | undefined): string {
+  if (level === 'province') return `${alias}.province_id = ${param}::uuid`;
+  if (level === 'region') return `${alias}.region_id = ${param}::uuid and ${alias}.province_id is null`;
+  if (level === 'continent') return `${alias}.continent_id = ${param}::uuid and ${alias}.region_id is null and ${alias}.province_id is null`;
+  return `${param}::uuid is null`;
+}
+
+/**
  * Active parishes matching every search term at the start of a word, in the name or in the
- * province or region. Best first: more of the typed words found in the name (numbers usually mean
+ * province or region. With `scope.place`, only that place's parishes, and `query` may be empty (the
+ * whole list, alphabetically); `scope.offset` pages through either. Best first: more of the typed words found in the name (numbers usually mean
  * a province, so they don't count here), a name that starts with the first term, whole-word
  * matches ("12" before "120"), the applicant's state, then name and province order ("Lagos
  * Province 3" before "12"). When nothing matches, the closest spellings instead (trigram
@@ -107,19 +127,22 @@ export async function searchParishes(
   state: string | null,
   limit: number,
   namespace: DirectoryNamespace | null,
+  scope: ParishSearchScope = {},
 ): Promise<ParishSearchResponse> {
   const terms = searchTerms(query);
-  if (!terms.length) return { results: [], total: 0, fuzzy: false };
+  if (!terms.length && !scope.place) return { results: [], total: 0, fuzzy: false };
 
   // Terms are A–Z and 0–9 only (searchTerms), so they are safe inside LIKE and regex patterns.
-  const params: unknown[] = [state, terms, limit, namespace];
+  // $5 is the place (or null): always used, so Postgres can tell its type.
+  const params: unknown[] = [state, terms, limit, namespace, scope.place?.id ?? null, scope.offset ?? 0];
+  const inUnit = `and ${inPlace('p', '$5', scope.place?.level)}`;
   const conditions = terms.map((term) => {
     params.push(`%${term}%`, `\\m${term}`);
     return `and p.search_text like $${params.length - 1} and p.search_text ~ $${params.length}`;
   });
   const { rows } = await db.query<SuggestionRow>(
     `with ${groupsOf(`select p.unit_id, p.name_key from parishes p
-                        where p.status = 'active' and p.external_namespace is not distinct from $4::text ${conditions.join(' ')}`, '$4')}
+                        where p.status = 'active' and p.external_namespace is not distinct from $4::text ${inUnit} ${conditions.join(' ')}`, '$4')}
      select p.id, p.display_name as name, ${CHAIN_COLUMNS},
             coalesce(u_province.state = $1::text, false) as in_state,
             g.lookalikes,
@@ -129,19 +152,29 @@ export async function searchParishes(
                p.name_key like (($2::text[])[1] || '%') desc,
                (select count(*) from unnest($2::text[]) as t(term) where p.search_text ~ ('\\m' || t.term || '\\M')) desc,
                in_state desc,
+               -- Names with their numbers in order ("Jesus House 2" before "10"): browsing a province reads like a list.
+               regexp_replace(p.name_key, '\\d+$', ''), coalesce(substring(p.name_key from '(\\d+)$')::numeric, 0),
                p.name_key, p.display_name,
                regexp_replace(coalesce(u_province.name_key, ''), '\\d+$', ''),
-               coalesce(substring(u_province.name_key from '(\\d+)$')::numeric, 0)
-      limit $3`,
+               coalesce(substring(u_province.name_key from '(\\d+)$')::numeric, 0),
+               p.id
+      limit $3 offset $6`,
     params,
   );
   if (rows.length) return { results: rows.map(suggestion), total: rows[0]!.total, fuzzy: false };
+  // A page past the end (the list changed between pages) is empty, not a reason to guess at
+  // spellings; it still says how many there are now.
+  if ((scope.offset ?? 0) > 0) {
+    const first = await searchParishes(db, query, state, 1, namespace, { ...scope, offset: 0 });
+    return { results: [], total: first.fuzzy ? 0 : first.total, fuzzy: false };
+  }
 
   const phrase = terms.join(' ');
   if (phrase.length < 3) return { results: [], total: 0, fuzzy: false };
   const close = await db.query<SuggestionRow>(
     `with ${groupsOf(`select p.unit_id, p.name_key from parishes p
-                        where p.status = 'active' and p.external_namespace is not distinct from $4::text and $2::text <% p.name_key`, '$4')}
+                        where p.status = 'active' and p.external_namespace is not distinct from $4::text
+                          ${inUnit} and $2::text <% p.name_key`, '$4')}
      select p.id, p.display_name as name, ${CHAIN_COLUMNS},
             coalesce(u_province.state = $1::text, false) as in_state,
             g.lookalikes,
@@ -151,9 +184,125 @@ export async function searchParishes(
       -- "Jesus House" for "jesuss house"); whole-name plus strict word similarity ranks them.
       order by similarity($2::text, p.name_key) + strict_word_similarity($2::text, p.name_key) desc, in_state desc, p.name_key, p.display_name
       limit $3`,
-    [state, phrase, limit, namespace],
+    [state, phrase, limit, namespace, scope.place?.id ?? null],
   );
   return { results: close.rows.map(suggestion), total: close.rows[0]?.total ?? 0, fuzzy: close.rows.length > 0 };
+}
+
+// ── Step 1: the province (D-59) ──────────────────────────────────────────────
+
+/** Where a parish can be chosen: provinces, and the regions and continents some parishes sit directly under. */
+const PLACE_LEVELS = `('province', 'region', 'continent')`;
+
+type PlaceRow = {
+  id: string;
+  level: ChurchLevel;
+  name: string;
+  external_id: string | null;
+  p_id: string | null;
+  p_level: ChurchLevel | null;
+  p_name: string | null;
+  g_id: string | null;
+  g_level: ChurchLevel | null;
+  g_name: string | null;
+};
+
+/** A unit and the two levels above it (province → region → continent), from parent_id. */
+const PLACE_COLUMNS = `u.id, u.level::text as level, u.display_name as name, u.external_id,
+  pu.id as p_id, pu.level::text as p_level, pu.display_name as p_name,
+  gu.id as g_id, gu.level::text as g_level, gu.display_name as g_name`;
+const PLACE_JOINS = `left join church_units pu on pu.id = u.parent_id left join church_units gu on gu.id = pu.parent_id`;
+
+function placeChain(row: PlaceRow): ParishChain {
+  const chain: ParishChain = { continent: null, region: null, province: null, zone: null, area: null };
+  chain[row.level] = { id: row.id, name: row.name };
+  if (row.p_id && row.p_level && row.p_name) chain[row.p_level] = { id: row.p_id, name: row.p_name };
+  if (row.g_id && row.g_level && row.g_name) chain[row.g_level] = { id: row.g_id, name: row.g_name };
+  return chain;
+}
+
+/**
+ * The choices step 2 lists for place `u` (look-alikes once, D-55): `$ns`'s active parishes in it,
+ * by the rule of `inPlace`. `$ns` is cast in each use.
+ */
+const placeParishes = (ns: string) =>
+  `(select count(distinct dp.unit_id::text || ':' || dp.name_key)::int from parishes dp
+     where dp.status = 'active' and dp.external_namespace is not distinct from ${ns}::text
+       and ((u.level = 'province' and ${inPlace('dp', 'u.id', 'province')})
+         or (u.level = 'region' and ${inPlace('dp', 'u.id', 'region')})
+         or (u.level = 'continent' and ${inPlace('dp', 'u.id', 'continent')})))`;
+
+/**
+ * Places with parishes (provinces, and the regions and continents with parishes in no lower place) whose name, or a name above them, has every term at
+ * the start of a word ("Lagos 12", "Region 13", "LP 12"). Best first: more of the typed words in the
+ * unit's own name ("Lagos 3" finds Lagos Province 3 before a Lagos province in Continent 3), whole
+ * words ("3" before "30"), the applicant's state, then names with their numbers in order ("Lagos
+ * Province 3" before "Lagos Province 12"). Only the entries of `namespace` (the API's environment),
+ * or of the old list when it is null.
+ */
+export async function searchUnits(
+  db: Queryable,
+  query: string,
+  state: string | null,
+  limit: number,
+  offset: number,
+  namespace: DirectoryNamespace | null,
+): Promise<UnitSearchResponse> {
+  const terms = searchTerms(query);
+  if (!terms.length) return { results: [], total: 0 };
+  // Terms are A–Z and 0–9 only (searchTerms), so they are safe inside regex patterns. One pattern
+  // per term, in parameters from $from on; the namespace is `ns` (cast in each use).
+  const patterns = terms.map((term) => `\\m${term}`);
+  const found = (ns: string, from: number) =>
+    `u.status = 'active' and u.external_namespace is not distinct from ${ns}::text and u.level in ${PLACE_LEVELS}
+     ${patterns.map((_, index) => `and (u.name_key || ' ' || coalesce(pu.name_key, '') || ' ' || coalesce(gu.name_key, '')) ~ $${from + index}`).join(' ')}
+     and ${placeParishes(ns)} > 0`;
+  const { rows } = await db.query<PlaceRow & { parishes: number; in_state: boolean }>(
+    `select ${PLACE_COLUMNS}, ${placeParishes('$4')} as parishes, coalesce(u.state = $1::text, false) as in_state
+       from church_units u ${PLACE_JOINS}
+      where ${found('$4', 6)}
+      order by (select count(*) from unnest($5::text[]) as t(term) where u.name_key ~ ('\\m' || t.term)) desc,
+               (select count(*) from unnest($5::text[]) as t(term) where u.name_key ~ ('\\m' || t.term || '\\M')) desc,
+               in_state desc,
+               regexp_replace(u.name_key, '\\d+$', ''),
+               coalesce(substring(u.name_key from '(\\d+)$')::numeric, 0),
+               u.name_key, u.id
+      limit $2 offset $3`,
+    [state, limit, offset, namespace, terms, ...patterns],
+  );
+  // Counted apart, so a page past the end still says how many there are.
+  const { rows: counted } = await db.query<{ total: number }>(
+    `select count(*)::int as total from church_units u ${PLACE_JOINS} where ${found('$1', 2)}`,
+    [namespace, ...patterns],
+  );
+  const results: UnitSuggestion[] = rows.map((row) => ({
+    id: row.id,
+    level: row.level,
+    name: row.name,
+    chain: placeChain(row),
+    parishes: row.parishes,
+    inState: row.in_state,
+  }));
+  return { results, total: counted[0]?.total ?? 0 };
+}
+
+export type ParishPlace = UnitDetails & { externalId: string | null };
+
+/**
+ * A unit an applicant may choose a parish in: active, in the directory in use, a province, region
+ * or continent, with active parishes in it (`inPlace`). Null otherwise (unknown, gone, empty).
+ */
+export async function unitPlace(db: Queryable, unitId: string, namespace: DirectoryNamespace | null): Promise<ParishPlace | null> {
+  if (!UUID_RE.test(unitId)) return null;
+  const { rows } = await db.query<PlaceRow & { parishes: number }>(
+    `select * from (
+       select ${PLACE_COLUMNS}, ${placeParishes('$2')} as parishes from church_units u ${PLACE_JOINS}
+        where u.id = $1 and u.status = 'active' and u.external_namespace is not distinct from $2::text and u.level in ${PLACE_LEVELS}) place
+      where place.parishes > 0`,
+    [unitId, namespace],
+  );
+  const row = rows[0];
+  return row ? { id: row.id, level: row.level, name: row.name, chain: placeChain(row), parishes: row.parishes, externalId: row.external_id } : null;
 }
 
 /** One parish as it stands now, or null. A merged parish names the one it was merged into. */
@@ -184,6 +333,9 @@ export async function parishDetails(db: Queryable, id: string): Promise<ParishDe
 }
 
 /** What the application stores about the parish (docs/05 §2). */
+/** The unit an applicant chose before saying their parish isn't listed, and the units above it (D-59). */
+export type PlaceSnapshot = { unit: ChainUnit & { level: ChurchLevel }; importId: string | null; externalId: string | null } & ParishChain;
+
 export type ParishLink = {
   status: 'listed' | 'reported' | 'legacy_text' | 'not_provided';
   parishId: string | null;
@@ -194,6 +346,8 @@ export type ParishLink = {
    * parish from the RCCG directory API, its canonical code in the environment's namespace.
    */
   snapshot: ({ parish: ChainUnit; importId: string | null; externalId: string | null; lookalikes?: string[] } & ParishChain) | null;
+  /** "I can't find my parish" after choosing a province (D-59): where they said it is, as the directory names it. */
+  place: PlaceSnapshot | null;
   /** For staff in Parish review: at most one of each kind. */
   reports: ParishReport[];
 };
@@ -209,6 +363,7 @@ export const PARISH_ERRORS = {
   inactive: 'That parish is no longer on our list. Search for it again, or tell us it isn’t listed.',
   merged: 'That parish’s details have changed. Search for it again and confirm it.',
   otherList: 'That parish is from an earlier list. Search for it again.',
+  placeGone: 'That province is no longer on our list. Choose your province again.',
 } as const;
 
 /** Unavailable: the RCCG directory couldn't confirm the parish just now, so nothing may be stored. */
@@ -228,10 +383,18 @@ export type ParishResolution = { ok: true; link: ParishLink } | { ok: false; err
 export async function resolveParish(services: Pick<Services, 'db' | 'directory' | 'config'>, choice: ParishChoice): Promise<ParishResolution> {
   const { db } = services;
   if (choice.kind === 'typed') {
-    return { ok: true, link: { status: choice.name ? 'legacy_text' : 'not_provided', parishId: null, name: choice.name, snapshot: null, reports: [] } };
+    return { ok: true, link: { status: choice.name ? 'legacy_text' : 'not_provided', parishId: null, name: choice.name, snapshot: null, place: null, reports: [] } };
   }
   if (choice.kind === 'not_listed') {
-    return { ok: true, link: { status: 'reported', parishId: null, name: choice.name, snapshot: null, reports: [{ kind: 'not_listed', name: choice.name }] } };
+    const link: ParishLink = { status: 'reported', parishId: null, name: choice.name, snapshot: null, place: null, reports: [{ kind: 'not_listed', name: choice.name }] };
+    if (!choice.unitId) return { ok: true, link };
+    // The province they chose first (D-59): checked against the list, and kept as the list names it.
+    // No parish is accepted, so a stale copy needs no live check: staff review every such answer.
+    const place = await unitPlace(db, choice.unitId, directoryNamespace(services));
+    if (!place) return { ok: false, error: PARISH_ERRORS.placeGone };
+    const { rows } = await db.query<{ id: string }>(`select id from directory_imports where status = 'applied' order by started_at desc limit 1`);
+    const unit = { id: place.id, name: place.name, level: place.level };
+    return { ok: true, link: { ...link, place: { unit, importId: rows[0]?.id ?? null, externalId: place.externalId, ...place.chain } } };
   }
   const parish = await parishDetails(db, choice.parishId);
   if (!parish) return { ok: false, error: PARISH_ERRORS.unknown };
@@ -289,6 +452,7 @@ export async function resolveParish(services: Pick<Services, 'db' | 'directory' 
         ...chosen.chain,
         ...(group.length > 1 ? { lookalikes: group } : {}),
       },
+      place: null,
       reports,
     },
   };
@@ -318,6 +482,37 @@ export async function directoryFreshness(services: Pick<Services, 'db' | 'direct
 export async function parishRoutes(app: FastifyInstance, services: Services) {
   const { db } = services;
 
+  /** A whole number from the query string, within [min, max]; `fallback` when missing or not a number. */
+  const whole = (value: unknown, fallback: number, min: number, max: number) => {
+    const number = typeof value === 'string' && value.trim() !== '' ? Math.trunc(Number(value)) : fallback;
+    return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : fallback;
+  };
+  const rankingState = (value: unknown) => (typeof value === 'string' && (NIGERIAN_STATES as readonly string[]).includes(value) ? value : null);
+
+  // Step 1 of the parish question (D-59): provinces, and the regions and continents with parishes directly under them.
+  app.get('/units', { config: { rateLimit: RATE_LIMIT } }, async (request, reply) => {
+    const namespace = directoryNamespace(services);
+    if (!(await parishDirectoryEnabled(db, namespace))) return sendError(reply, 404, 'NOT_FOUND', 'The parish list is not in use.');
+    const query = request.query as Record<string, unknown>;
+    const text = typeof query.q === 'string' ? query.q.trim() : '';
+    if (text.length < UNIT_SEARCH.minLength || text.length > PARISH_SEARCH.maxLength) {
+      return sendError(reply, 400, 'BAD_REQUEST', 'Type your province’s name or number.');
+    }
+    const limit = whole(query.limit, UNIT_SEARCH.pageSize, 1, UNIT_SEARCH.pageSize);
+    const offset = whole(query.offset, 0, 0, UNIT_SEARCH.maxOffset);
+    const found = await searchUnits(db, text, rankingState(query.state), limit, offset, namespace);
+    const directory = await directoryFreshness(services);
+    return directory ? { ...found, directory } : found;
+  });
+
+  // A saved draft's province, re-checked like its parish (D-59). Open like the parish lookup below.
+  app.get<{ Params: { id: string } }>('/units/:id', { config: { rateLimit: RATE_LIMIT } }, async (request, reply) => {
+    const place = await unitPlace(db, request.params.id, directoryNamespace(services));
+    if (!place) return sendError(reply, 404, 'NOT_FOUND', 'That province isn’t on the list.');
+    const details: UnitDetails = { id: place.id, level: place.level, name: place.name, chain: place.chain, parishes: place.parishes };
+    return details;
+  });
+
   app.get('/search', { config: { rateLimit: RATE_LIMIT } }, async (request, reply) => {
     // Searchable only once the directory is switched on: an imported list may still be under review.
     // (Looking a parish up by its ID stays open: IDs can't be guessed, and saved answers are re-checked.)
@@ -325,11 +520,22 @@ export async function parishRoutes(app: FastifyInstance, services: Services) {
     if (!(await parishDirectoryEnabled(db, namespace))) return sendError(reply, 404, 'NOT_FOUND', 'The parish list is not in use.');
     const query = request.query as Record<string, unknown>;
     const text = typeof query.q === 'string' ? query.q.trim() : '';
+    // Step 2 (D-59): one place's parishes, filtered by what's typed or all of them, a page at a time.
+    if (query.unit !== undefined) {
+      const place = typeof query.unit === 'string' ? await unitPlace(db, query.unit, namespace) : null;
+      if (!place) return sendError(reply, 404, 'NOT_FOUND', 'That province isn’t on the list.');
+      if (text.length > PARISH_SEARCH.maxLength) return sendError(reply, 400, 'BAD_REQUEST', `Type at most ${PARISH_SEARCH.maxLength} characters.`);
+      const limit = whole(query.limit, PARISH_SEARCH.pageSize, 1, PARISH_SEARCH.pageSize);
+      const offset = whole(query.offset, 0, 0, PARISH_SEARCH.maxOffset);
+      const found = await searchParishes(db, text, null, limit, namespace, { place, offset });
+      const directory = await directoryFreshness(services);
+      return directory ? { ...found, directory } : found;
+    }
     if (text.length < PARISH_SEARCH.minLength || text.length > PARISH_SEARCH.maxLength) {
       return sendError(reply, 400, 'BAD_REQUEST', `Type between ${PARISH_SEARCH.minLength} and ${PARISH_SEARCH.maxLength} characters.`);
     }
     // Only ranks the results. Query strings are never logged (server/app.ts).
-    const state = typeof query.state === 'string' && (NIGERIAN_STATES as readonly string[]).includes(query.state) ? query.state : null;
+    const state = rankingState(query.state);
     const limit = Math.min(Math.max(Math.trunc(Number(query.limit)) || PARISH_SEARCH.maxResults, 1), PARISH_SEARCH.maxResults);
     // Searched here, in the copy kept in step with the provider: fast, and within its rate limits.
     const found = await searchParishes(db, text, state, limit, namespace);

@@ -51,6 +51,8 @@ export const MESSAGES = {
   parishNameRequired: 'Enter the name of your parish',
   parishTextRequired: 'Enter the name of your RCCG parish to continue.',
   parishNameInvalid: `Enter your parish’s name (${LIMITS.parishName.min}–${LIMITS.parishName.max} characters)`,
+  parishUnitInvalid: 'That province is no longer on our list. Choose your province again.',
+  parishPlaceRequired: 'Choose your province first, or choose “I don’t know my province”.',
   educationRequired: 'Choose your highest level of education',
   statusRequired: 'Choose your current status',
   purposeRequired: 'Choose a number from 1 to 5',
@@ -184,7 +186,10 @@ export function validateParish(answer: unknown, required: boolean): { ok: true; 
     if (characters(name) < LIMITS.parishName.min || characters(name) > LIMITS.parishName.max || !HAS_LETTER.test(name)) {
       return { ok: false, error: MESSAGES.parishNameInvalid };
     }
-    return { ok: true, value: { kind: 'not_listed', name } };
+    // The province they chose first (D-59): a directory ID, checked against the list by the server.
+    if (value.unitId === undefined || value.unitId === null) return { ok: true, value: { kind: 'not_listed', name } };
+    if (typeof value.unitId !== 'string' || !UUID_RE.test(value.unitId)) return { ok: false, error: MESSAGES.parishUnitInvalid };
+    return { ok: true, value: { kind: 'not_listed', name, unitId: value.unitId.toLowerCase() } };
   }
   return { ok: false, error: MESSAGES.parishRequired };
 }
