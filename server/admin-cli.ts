@@ -18,11 +18,13 @@ import { parseArgs } from 'node:util';
 import { isValidEmail, normalizeEmail } from '../src/shared/validation';
 import { createServices } from './app';
 import { audit, SYSTEM } from './audit';
+import { clearMfa } from './auth/methods';
 import { revokeStaffSessions } from './auth/sessions';
 import { createStaffInvite, siteLink } from './auth/staff-routes';
 import { createAuthToken, voidStaffTokens } from './auth/tokens';
 import { ConfigError, loadConfig, loadDotEnv } from './config';
 import { createDb } from './db';
+import { staffSecurityEmail } from './email';
 import { migrate } from './migrate';
 
 loadDotEnv();
@@ -51,15 +53,14 @@ async function main() {
       console.log(result.url);
     } else if (command === 'reset-mfa') {
       const email = normalizeEmail(values.email ?? '');
-      const { rows } = await db.query<{ id: string }>(
-        `update staff_users set mfa_secret_enc = null, mfa_pending_secret_enc = null, mfa_enabled_at = null, mfa_last_step = null
-          where email = $1 returning id`,
-        [email],
-      );
+      const { rows } = await db.query<{ id: string }>('select id from staff_users where email = $1', [email]);
       if (!rows[0]) throw new Error('No staff account with that email.');
-      await db.query('delete from staff_recovery_codes where staff_id = $1', [rows[0].id]);
+      // Every method goes: passkeys, the app, email codes and recovery codes.
+      await clearMfa(db, rows[0].id);
       await revokeStaffSessions(db, rows[0].id);
+      await voidStaffTokens(db, rows[0].id, ['staff_password_reset']);
       await audit(db, SYSTEM, 'staff.mfa_reset', { type: 'staff', id: rows[0].id }, { via: 'cli' });
+      if (services.email.canSend) await services.email.send(staffSecurityEmail(email, 'methods_reset')).catch(() => undefined);
       console.log(`Two-step verification cleared for ${email}; all their sessions were signed out.`);
     } else if (command === 'reset-password') {
       const email = normalizeEmail(values.email ?? '');

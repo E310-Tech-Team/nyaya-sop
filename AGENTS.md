@@ -9,7 +9,7 @@ Expression-of-interest site: React SPA (Vite, installable PWA with a service wor
 
 ## Commands
 
-- `pnpm dev`: Vite on :5173 + API on :3000 (embedded PGlite database in `.data/pglite`, no setup; test email outbox at `/api/dev/outbox`). No service worker in dev: test PWA behaviour with `pnpm build` + the built server on `localhost`
+- `pnpm dev`: Vite on :5173 + API on :3000 (embedded PGlite database in `.data/pglite`, no setup; test email outbox at `/api/dev/outbox`, which shows staff email codes too). No service worker in dev: test PWA behaviour with `pnpm build` + the built server on `localhost`
 - `pnpm test`: Vitest. API tests use `createTestContext()` in `server/test-helpers.ts` (in-memory PGlite, the email outbox and a **fake push transport**: tests never reach a real push service or email provider)
 - `pnpm typecheck`: app + server, then the service worker (`tsconfig.sw.json`, WebWorker types)
 - `pnpm build` / `pnpm start` / `pnpm worker`: production build, server, separate worker
@@ -48,6 +48,11 @@ Expression-of-interest site: React SPA (Vite, installable PWA with a service wor
 
 - **The admin menu** lives in `src/admin/nav.ts` (`ADMIN_NAV`: order, labels, routes, the permissions that show each item, and its icon; `navFor(role)`), checked by `src/admin/nav.test.ts`. The icons are lucide-react, decorative (`aria-hidden`, the label names the link) and admin-only.
 - **Permissions** live in `src/shared/permissions.ts`. Every admin route uses `staffGuard(services, { permission })` (session → active → Origin/CSRF → MFA → permission); the UI's `useCan()` only hides controls. Add a row to the permission matrix test in `server/admin.test.ts` for new areas. Audit sensitive actions with `audit()` (identifiers and field names only).
+- **Staff sign-in methods** (D-58, [05](docs/05-Backend-Schema.md#staff-sign-in-methods-0013)): passkeys (`server/auth/passkeys.ts`, on `@simplewebauthn/server`), email codes (`email-codes.ts`), the app and recovery codes (`second-step.ts`); managing them in `staff-mfa-routes.ts` with the rules in `methods.ts`.
+  - Passkey challenges and email codes are single-use, bound to what asked for them (session, reset link, or nothing for passkey-only sign-in) and used up by the statement that checks them. Passkeys always require user verification; the relying party comes from `SITE_URL` (`relyingParty()`), never request headers where it's set. Take the attempt (`takeAttempt()`) before every check.
+  - Email codes never confirm a password reset, and confirm a change only on an account whose only method is email codes (`strongFor()`). Security changes need `stepUpFresh()`; removals go through the locking statements in `methods.ts` (the last method stays while required); every change goes through `changed()` (reset links voided, audit with method names only, the security email). Resets use `clearMfa()`.
+  - A statement that reads a row "before" with `FOR UPDATE` and then updates it must reference that CTE in the update's `WHERE`: a lock taken after the statement has updated the row finds nothing.
+  - Tests use `SoftAuthenticator` (`server/test-webauthn.ts`), never a real authenticator. `@simplewebauthn/browser` is imported only by `src/admin/passkeys.ts`, and ceremonies start first thing in a click handler with options fetched beforehand.
 - **Applicant-facing data:** only `published_status`/`published_message`. Never send notes, the internal `status` or reviewer details to `/api/account/*`.
 - State-changing requests from the browser go through `apiRequest(path, { method, csrf: 'staff' | 'applicant', json })` in `src/lib/api.ts`.
 - The account (`src/account/`) and admin (`src/admin/`) areas are lazy chunks: don't import them from public pages. They use the kit in `src/components/ui/` (`index.tsx`: `PageHeader` gives the `<h1>`; `when()` always names the time zone), built on the shadcn/ui primitives beside it.

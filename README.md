@@ -5,7 +5,7 @@ The expression-of-interest website for the **RCCG Young Adults & Youth School of
 - an **installable web app** (PWA) with an offline-friendly public site and honest install guidance per device;
 - **Web Push notifications** by topic, with consent kept separate from the application;
 - **applicant accounts** (passwordless email sign-in) to follow a published application status and read messages;
-- an **admin platform** at `/admin` for the Programme team: applicant review and publication, accounts, cohorts, notification campaigns, announcements, staff roles with two-step verification, settings and an audit history.
+- an **admin platform** at `/admin` for the Programme team: applicant review and publication, accounts, cohorts, notification campaigns, announcements, staff roles with two-step verification (passkeys, an authenticator app or email codes, or a passkey alone), settings and an audit history.
 
 - **Website:** React 19 + React Router, Tailwind CSS v4, built with Vite
 - **API:** Fastify 5 (Node 22) serving the built website and `/api/*`
@@ -54,7 +54,7 @@ src/                 React app
   shared/            Option lists + validation shared with the server (single source of truth)
   assets/            Images (WebP/SVG, content-hashed at build), including brand/ (the logo lockups)
 server/              Fastify API: app.ts, config.ts, db.ts, migrate.ts
-  auth/              Staff and applicant sessions, CSRF, staff sign-in with two-step verification
+  auth/              Staff and applicant sessions, CSRF, staff sign-in with two-step verification (passkeys, app, email codes)
   account/ admin/    Applicant account routes; admin routes (applicants, accounts, cohorts, campaigns, staff…)
   push/ jobs/        Web Push (SSRF-safe transport, VAPID, subscriptions); Postgres job queue and worker
   notifications/     Campaign audience, dispatch and delivery

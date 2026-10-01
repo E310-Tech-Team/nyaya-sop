@@ -1,11 +1,22 @@
 import { useSyncExternalStore } from 'react';
 import { ApiError, apiRequest, setCsrfToken } from '../lib/api';
 import { can, type Permission, type StaffRole } from '../shared/permissions';
+import type { StaffMfaSummary } from '../shared/platform';
 
 export type StaffSession = {
   staff: { id: string; email: string; displayName: string; role: StaffRole; mfaEnabled: boolean };
   permissions: Permission[];
-  mfa: { enabled: boolean; verified: boolean; required: boolean };
+  mfa: {
+    enabled: boolean;
+    verified: boolean;
+    required: boolean;
+    /** Which methods the account has (06 D-58). */
+    methods: StaffMfaSummary;
+    /** Whether this site can send email (email codes need it). */
+    emailAvailable: boolean;
+    /** Until when security changes are allowed without confirming again (a recent strong check). */
+    stepUpUntil: string | null;
+  };
   csrfToken: string;
 };
 

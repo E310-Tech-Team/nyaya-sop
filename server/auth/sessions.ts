@@ -48,6 +48,8 @@ export type StaffSessionRow = {
   staff_id: string;
   mfa_verified_at: Date | null;
   mfa_attempts: number;
+  /** When the session last passed a strong check (security changes need a recent one). */
+  step_up_at: Date | null;
   email: string;
   display_name: string;
   role: string;
@@ -67,7 +69,7 @@ export async function createStaffSession(db: Queryable, staffId: string, hours: 
 
 export async function loadStaffSession(db: Queryable, token: string, idleMinutes: number): Promise<StaffSessionRow | null> {
   const { rows } = await db.query<StaffSessionRow & { last_seen_at: Date }>(
-    `select s.id as session_id, s.staff_id, s.mfa_verified_at, s.mfa_attempts, s.last_seen_at,
+    `select s.id as session_id, s.staff_id, s.mfa_verified_at, s.mfa_attempts, s.step_up_at, s.last_seen_at,
             u.email, u.display_name, u.role::text as role, u.status::text as status, u.mfa_enabled_at
        from staff_sessions s
        join staff_users u on u.id = s.staff_id

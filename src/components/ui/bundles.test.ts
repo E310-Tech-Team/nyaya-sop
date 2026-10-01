@@ -34,7 +34,8 @@ function imports(file: { path: string; text: string }): string[] {
 
 // lib/utils.ts is the primitives' `cn` helper: public code may not import it (checked below).
 const isPublic = (path: string) => !/^(admin|account)\//.test(path) && !path.startsWith('components/ui/') && path !== 'lib/utils.ts';
-const ADMIN_LIBRARIES = /^(radix-ui|@radix-ui\/|class-variance-authority|tailwind-merge|clsx|lucide-react|recharts|react-day-picker|@tanstack\/)/;
+// @simplewebauthn: passkeys are for staff sign-in only (src/admin/passkeys.ts).
+const ADMIN_LIBRARIES = /^(radix-ui|@radix-ui\/|class-variance-authority|tailwind-merge|clsx|lucide-react|recharts|react-day-picker|@tanstack\/|@simplewebauthn\/)/;
 
 describe('bundle boundaries', () => {
   it('keeps public pages to the plain basics of the kit, and off the admin component libraries', () => {

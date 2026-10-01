@@ -174,6 +174,22 @@ export type DeviceSummary = {
 
 export type SessionSummary = { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean };
 
+/** Ways through a staff member's second step (06 D-58). */
+export type StaffMfaMethod = 'passkey' | 'totp' | 'recovery' | 'email';
+
+/** Which methods an account has (counts and flags only, never secrets). */
+export type StaffMfaSummary = { passkeys: number; app: boolean; emailCodes: boolean; recoveryCodes: number };
+
+/** A registered passkey as its owner sees it. `backedUp` is what the authenticator reported. */
+export type StaffPasskey = {
+  id: string;
+  nickname: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  backedUp: boolean;
+  deviceType: 'singleDevice' | 'multiDevice';
+};
+
 export type StaffSummary = {
   id: string;
   email: string;

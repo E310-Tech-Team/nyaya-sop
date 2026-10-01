@@ -22,6 +22,7 @@ import { platformRoutes } from './admin/platform';
 import { reportRoutes } from './admin/reports';
 import { recordEvent } from './analytics';
 import { staffGuard } from './auth/guards';
+import { staffMfaRoutes } from './auth/staff-mfa-routes';
 import { staffAuthRoutes } from './auth/staff-routes';
 import { hasStaticBuild, type AppConfig } from './config';
 import { Secrets } from './crypto';
@@ -313,6 +314,7 @@ export async function buildApp({
   // ── Admin API (every route checks a staff session, CSRF for changes, MFA and permission) ──
 
   await app.register((instance) => staffAuthRoutes(instance, services), { prefix: '/api/admin' });
+  await app.register((instance) => staffMfaRoutes(instance, services), { prefix: '/api/admin' });
   await app.register((instance) => applicantRoutes(instance, services), { prefix: '/api/admin/applicants' });
   await app.register((instance) => accountAdminRoutes(instance, services), { prefix: '/api/admin/accounts' });
   await app.register((instance) => cohortRoutes(instance, services), { prefix: '/api/admin/cohorts' });
