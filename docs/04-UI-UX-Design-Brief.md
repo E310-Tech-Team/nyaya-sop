@@ -44,6 +44,10 @@ The brand guideline ("School of Purpose 4.pdf") defines the logo, its meaning an
 
 - Where a link wraps the lockup, the link keeps its name ("School of Purpose: home") and the image has `alt=""`. Elsewhere its alternative text is "RCCG NYAYA School of Purpose".
 - Files: two 960×268 WebP lockups (about 20 KB each), content-hashed and precached by the service worker so headers keep their logo offline. Favicons and app icons: §7. All are resized from the masters by `python3 scripts/brand-assets.py`; the logo is never redrawn or recoloured.
+- **Footer credit** (below the tagline): the RCCG Young Adults & Youths emblem at 64 px, then "An initiative of RCCG National Young Adults and Youth Affairs".
+  - The words "An initiative of" use the footer's gold eyebrow style (as "Navigation"); the organisation's name uses the footer link colour.
+  - It's one sentence for screen readers. The emblem has `alt=""`, since the text names it.
+  - The emblem is the supplied logo with only its white page made transparent (`design/brand/README.md`, "Partner mark").
 - **Emails** keep a text header in burgundy ("RCCG NYAYA / SCHOOL OF PURPOSE") rather than a logo image. Remote images are often blocked, and fetching one would tell the server when someone opens a sign-in or password email.
 
 ### Tokens (implemented in `@theme`, usable as `bg-brand`, `text-muted`, `border-line-strong`, …)

@@ -5,6 +5,7 @@ import imgArrowRightCream from '../../assets/landing/arrow-right-cream.svg';
 import { site } from '../../config/site';
 import { useInstallState } from '../../lib/install';
 import { BrandLockup } from '../BrandLockup';
+import { RCCG_YAYA_EMBLEM } from './emblem';
 import { MenuButton, type MobileMenuControls } from './MobileMenu';
 import { CONTACT_LINK, MAIN_NAV } from './nav';
 import { StickyHeader } from './StickyHeader';
@@ -126,6 +127,14 @@ export function MarketingFooter() {
                 </a>
               </p>
             )}
+            {/* The text beside the emblem names it, so the image itself is decorative (alt=""). */}
+            <p className="flex items-center gap-[14px] font-sans font-normal leading-[20px] text-[14px] text-[rgba(243,240,230,0.85)]" style={opsz}>
+              <img src={RCCG_YAYA_EMBLEM.src} alt="" width={RCCG_YAYA_EMBLEM.width} height={RCCG_YAYA_EMBLEM.height} loading="lazy" decoding="async" className="h-[64px] w-auto shrink-0" />
+              <span className="text-balance">
+                <span className="block font-bold leading-[18px] text-[#b69b63] text-[12px] tracking-[1.2px] uppercase">An initiative of</span>
+                RCCG National Young Adults and Youth Affairs
+              </span>
+            </p>
           </div>
           <nav aria-label="Footer" className="flex flex-col gap-[20px] items-start w-[220px]">
             <p className="font-sans font-bold leading-[18px] text-[#b69b63] text-[12px] tracking-[1.2px] uppercase whitespace-nowrap" style={opsz}>Navigation</p>

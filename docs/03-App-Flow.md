@@ -114,7 +114,7 @@ A concise overview: the hero, "What to expect", one short preview per dedicated 
 | Journey preview (`#journey`) | The six stages at a glance: number, name and one fact each; stage 04 marked "Selected participants only" | See the full journey → `/journey` |
 | FAQ preview (`#faq`) | Three questions: who can apply, whether everyone is selected, what happens after submitting (native `<details>`); contact line if configured | See all questions → `/faq` |
 | Closing invitation | Isaiah 58:12 | Start my application → `/apply` |
-| Footer (`#contact`) | Organisation, contact email (if configured), footer nav | Links + Apply now |
+| Footer (`#contact`) | Organisation, the credit "An initiative of RCCG National Young Adults and Youth Affairs" with its emblem, contact email (if configured), footer nav | Links + Apply now |
 
 Programme wording on every page, the Welcome screen and the FAQ comes from [`src/config/programme.ts`](../src/config/programme.ts).
 
