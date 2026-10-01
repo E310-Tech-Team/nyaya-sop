@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Badge, Button, Input, LoadError, Loading, Notice, PageHeader, Panel, Select, TableScroll, errorMessage, td, th, when } from '../../components/ui';
 import { copyText } from '../../lib/clipboard';
 import { useAsync } from '../../lib/useAsync';
@@ -16,11 +16,20 @@ const ROLE_HELP: Record<StaffRole, string> = {
   read_only: 'The dashboard only.',
 };
 
-/** Shown once when an invitation couldn't be emailed: the owner shares it privately. */
-function InviteLink({ url }: { url: string }) {
+/**
+ * An invitation link, shown once: when it couldn't be emailed, or when an owner asked for one to
+ * share another way (`requested`, D-60, copied straight away where the browser allows). The owner
+ * passes it on privately; it's never shown again.
+ */
+function InviteLink({ url, name, requested = false }: { url: string; name: string; requested?: boolean }) {
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    // Asked for with "Copy a new invitation link": copy it at once. Some browsers only allow that
+    // during the click itself, so the button below stays for a second try.
+    if (requested) void copyText(url).then(setCopied);
+  }, [requested, url]);
   return (
-    <Notice tone="warning" title="Email isn’t set up, so share this invitation link privately">
+    <Notice tone="warning" title={requested ? `Share this link only with ${name}, privately` : 'We couldn’t email this invitation, so share this link privately'}>
       <p className="break-all font-mono text-[13px]">{url}</p>
       <div className="mt-2 flex items-center gap-3">
         <Button tone="secondary" onClick={async () => setCopied(await copyText(url))}>
@@ -30,14 +39,17 @@ function InviteLink({ url }: { url: string }) {
           {copied ? 'Copied.' : ''}
         </span>
       </div>
-      <p className="mt-2 text-[13px]">It works once and expires in 72 hours. It won’t be shown again.</p>
+      <p className="mt-2 text-[13px]">
+        Anyone with it can set up this account. It works once and expires in 72 hours, and any earlier link for {name} no longer works. It won’t be
+        shown again.
+      </p>
     </Notice>
   );
 }
 
 function InviteForm({ onDone }: { onDone: () => void }) {
   const [values, setValues] = useState<{ email: string; displayName: string; role: StaffRole }>({ email: '', displayName: '', role: 'reviewer' });
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [invite, setInvite] = useState<{ url: string; name: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,11 +58,12 @@ function InviteForm({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setProblem(null);
     setSent(null);
-    setInviteUrl(null);
+    setInvite(null);
+    const name = values.displayName.trim();
     try {
-      const result = await adminApi.inviteStaff({ ...values, email: values.email.trim(), displayName: values.displayName.trim() });
-      if (result.inviteUrl) setInviteUrl(result.inviteUrl);
-      else setSent(`Invitation emailed to ${values.email.trim()}.`);
+      const result = await adminApi.inviteStaff({ ...values, email: values.email.trim(), displayName: name });
+      if (result.inviteUrl) setInvite({ url: result.inviteUrl, name });
+      else setSent(`Invitation emailed to ${values.email.trim()}. To share it another way, choose “Copy a new invitation link” beside ${name} below.`);
       setValues({ email: '', displayName: '', role: 'reviewer' });
       onDone();
     } catch (caught) {
@@ -63,7 +76,7 @@ function InviteForm({ onDone }: { onDone: () => void }) {
     <form noValidate onSubmit={submit} className="flex flex-col gap-4">
       {problem && <Notice tone="error">{problem}</Notice>}
       {sent && <Notice tone="success">{sent}</Notice>}
-      {inviteUrl && <InviteLink url={inviteUrl} />}
+      {invite && <InviteLink url={invite.url} name={invite.name} />}
       <div className="grid gap-4 sm:grid-cols-3">
         <Input label="Name" value={values.displayName} onChange={(event) => setValues({ ...values, displayName: event.currentTarget.value })} />
         <Input label="Email address" type="email" value={values.email} onChange={(event) => setValues({ ...values, email: event.currentTarget.value })} />
@@ -80,14 +93,14 @@ function InviteForm({ onDone }: { onDone: () => void }) {
 
 function StaffActions({ row, isSelf, onChanged }: { row: StaffRow; isSelf: boolean; onChanged: () => void }) {
   const [role, setRole] = useState<StaffRole>(row.role);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const { busy, run, notice } = useAction();
+  const [invite, setInvite] = useState<{ url: string; requested: boolean } | null>(null);
+  const { busy, run, notice, setMessage } = useAction();
   if (isSelf) return <span className="font-sans text-[13px] text-muted">This is you. Another owner can change your account.</span>;
   const act = (key: string, action: () => Promise<unknown>, success: string) => void run(key, action, success).then((ok) => ok && onChanged());
   return (
     <div className="flex min-w-[260px] flex-col gap-2">
       {notice}
-      {inviteUrl && <InviteLink url={inviteUrl} />}
+      {invite && <InviteLink url={invite.url} name={row.displayName} requested={invite.requested} />}
       <div className="flex flex-wrap items-end gap-2">
         <Select label={`Role for ${row.displayName}`} value={role} options={ROLE_OPTIONS} onChange={(event) => setRole(event.currentTarget.value as StaffRole)} className="min-w-[170px]" />
         <Button tone="secondary" disabled={role === row.role} busy={busy === 'role'} onClick={() => act('role', () => adminApi.setStaffRole(row.id, role), 'Role changed. They’ve been signed out so it takes effect.')}>
@@ -105,18 +118,35 @@ function StaffActions({ row, isSelf, onChanged }: { row: StaffRow; isSelf: boole
           </Button>
         )}
         {row.status === 'invited' && (
-          <Button
-            tone="secondary"
-            busy={busy === 'invite'}
-            onClick={() =>
-              void run('invite', async () => {
-                const result = await adminApi.resendInvite(row.id);
-                if (result.inviteUrl) setInviteUrl(result.inviteUrl);
-              }, 'A new invitation link was created (the old one no longer works).')
-            }
-          >
-            New invitation link
-          </Button>
+          <>
+            <Button
+              tone="secondary"
+              busy={busy === 'invite'}
+              onClick={() => {
+                setInvite(null);
+                void run('invite', async () => {
+                  const result = await adminApi.resendInvite(row.id);
+                  if (result.inviteUrl) setInvite({ url: result.inviteUrl, requested: false });
+                  else setMessage({ tone: 'success', text: `A new invitation was emailed to ${row.email}. The earlier link no longer works.` });
+                });
+              }}
+            >
+              Email a new invitation
+            </Button>
+            <Button
+              tone="secondary"
+              busy={busy === 'copy'}
+              onClick={() => {
+                setInvite(null);
+                void run('copy', async () => {
+                  const result = await adminApi.staffInviteLink(row.id);
+                  setInvite({ url: result.inviteUrl, requested: true });
+                });
+              }}
+            >
+              Copy a new invitation link
+            </Button>
+          </>
         )}
         {row.lockedUntil && (
           <Button tone="secondary" busy={busy === 'unlock'} onClick={() => act('unlock', () => adminApi.unlockStaff(row.id), 'Unlocked. They can sign in again.')}>
@@ -132,6 +162,9 @@ function StaffActions({ row, isSelf, onChanged }: { row: StaffRow; isSelf: boole
           Sign out everywhere
         </Button>
       </div>
+      {row.status === 'invited' && (
+        <p className="font-sans text-[13px] text-muted">Not accepted yet. Each new invitation, emailed or copied, replaces the last one.</p>
+      )}
     </div>
   );
 }

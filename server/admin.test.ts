@@ -315,6 +315,56 @@ describe('staff management safeguards', () => {
     expect(invite.json().inviteUrl).toBeNull(); // emailed, so not shown
   });
 
+  it('gives an owner a new invitation link to share another way, replacing the emailed one (D-60)', async () => {
+    const owner = as('owner');
+    const email = 'share.by.hand@example.org';
+    const invited = await owner({ method: 'POST', url: '/api/admin/staff', payload: { email, displayName: 'Shared By Hand', role: 'reviewer' } });
+    const id = invited.json().id as string;
+    const emailedToken = /token=([A-Za-z0-9_-]+)/.exec(ctx.outbox.latest(email)!.text)![1]!;
+    const emailsTo = () => ctx.outbox.messages.filter((message) => message.to === email).length;
+    const check = (token: string) =>
+      ctx.app.inject({ method: 'POST', url: '/api/admin/setup/check', remoteAddress: nextVisitor(), headers: { origin: ORIGIN }, payload: { token } });
+    const share = (role: StaffRole, staffId = id) => as(role)({ method: 'POST', url: `/api/admin/staff/${staffId}/invite-link` });
+
+    // Owners only (staff.manage).
+    for (const role of roles.filter((role) => role !== 'owner')) expect({ role, status: (await share(role)).statusCode }).toEqual({ role, status: 403 });
+
+    const before = emailsTo();
+    const shared = await share('owner');
+    expect(shared.statusCode).toBe(200);
+    expect(shared.headers['cache-control']).toBe('no-store');
+    const link = shared.json().inviteUrl as string;
+    expect(link).toMatch(/\/admin\/setup\?token=[A-Za-z0-9_-]+$/);
+    const token = /token=([A-Za-z0-9_-]+)/.exec(link)![1]!;
+    // Shown to the owner, not emailed, and it replaces the emailed link: one link works at a time.
+    expect(emailsTo()).toBe(before);
+    expect((await check(emailedToken)).json().code).toBe('INVALID_TOKEN');
+    expect((await check(token)).statusCode).toBe(200);
+    // Audited, without the link.
+    const { rows } = await ctx.db.query(`select actor_id, target_id, details from audit_events where action = 'staff.invite_link_shown'`);
+    expect(rows).toEqual([{ actor_id: staffIds.owner, target_id: id, details: {} }]);
+
+    // A second link replaces the first.
+    const again = /token=([A-Za-z0-9_-]+)/.exec((await share('owner')).json().inviteUrl)![1]!;
+    expect((await check(token)).json().code).toBe('INVALID_TOKEN');
+    // Accepted with it, the invitation is over: nothing left to share.
+    const accepted = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/admin/setup/complete',
+      remoteAddress: nextVisitor(),
+      headers: { origin: ORIGIN },
+      payload: { token: again, password: 'a long shared-link password' },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect((await share('owner')).statusCode).toBe(404);
+    // No invitation to share for an active member, someone suspended before accepting, or an unknown ID.
+    expect((await share('owner', staffIds.reviewer)).statusCode).toBe(404);
+    const suspended = (await owner({ method: 'POST', url: '/api/admin/staff', payload: { email: 'share.suspended@example.org', displayName: 'Suspended', role: 'reviewer' } })).json().id as string;
+    await owner({ method: 'POST', url: `/api/admin/staff/${suspended}/suspend` });
+    expect((await share('owner', suspended)).statusCode).toBe(404);
+    expect((await share('owner', 'not-an-id')).statusCode).toBe(404);
+  });
+
   it('signs a staff member out everywhere when their role changes', async () => {
     const staff = await createStaff(ctx, { role: 'read_only' });
     const session = await staffSignIn(ctx, staff);
