@@ -1,6 +1,6 @@
 # 04 — UI/UX Design Brief
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-10-01
 **Brand source:** the brand guideline "School of Purpose 4.pdf" (logo lockups, rationale, palette), with the logo masters in [`design/brand/`](../design/brand/README.md) (§2).
 **Design source:** Figma Make project "Prototype Design". Compressed render of the desktop landing page: [`design/landing-reference.webp`](../design/landing-reference.webp). The 15 MB original, `design/landing-reference-figma.png`, is kept locally and git-ignored.
 **Implementation:** design tokens in [`src/index.css`](../src/index.css) `@theme` (colour, type) and `:root` (motion). The application screens use the shared components in `src/components/`. The homepage hero and the reused editorial sections (Vision & Mission, Doctrine, Blueprint, the Journey cascade) still use the Figma export's arbitrary values; the newer sections and the shared marketing chrome ([`src/components/marketing/`](../src/components/marketing/)) use the tokens. Programme wording shared across screens lives in [`src/config/programme.ts`](../src/config/programme.ts).
@@ -362,7 +362,7 @@ Target **WCAG 2.2 AA**. Status after the 2026-09-26 rebuild:
 
 **Account area.** Uses the marketing header and footer, on cream, with a pill tab bar (Overview · Application · Messages & notifications · Settings), "Signed in as …" and **Sign out**. Application statuses use calm badges: *Received* and *Not selected* neutral, *Under review* burgundy-tinted, *Shortlisted* and *Invited* green. A decision is never shown in alarm red. The Programme team's message sits in its own cream box.
 
-**Admin area.** Its own layout: a deep-burgundy (`brand-deep`) sidebar with the cream lockup and an "Admin" label, navigation filtered to the person's role, their name and role, and **Sign out**; on phones the sidebar becomes a top bar with a **Menu** toggle. Content sits on cream in white `Panel`s (cards: 16 px corners, a hairline border and a soft shadow). Conventions:
+**Admin area.** Its own layout: a deep-burgundy (`brand-deep`) sidebar with the cream lockup and an "Admin" label, navigation filtered to the person's role (each item an 18 px lucide icon beside its label, decorative and in the text colour, so it turns burgundy on the current page's white pill; the list and icons are in `src/admin/nav.ts`; **Menu**/**Close** and **Sign out** carry icons too, always with their words), their name and role, and **Sign out**; on phones the sidebar becomes a top bar with a **Menu** toggle. Content sits on cream in white `Panel`s (cards: 16 px corners, a hairline border and a soft shadow). Conventions:
 - Review statuses: *New* amber, *Under review* burgundy, *Shortlisted*/*Invited* green, the rest neutral.
 - Numbers use tabular figures; every time shows its zone (WAT by default).
 - Lists keep filters, sort and page in the URL. On phones the filters fold behind a **Filters (n on)** toggle.
