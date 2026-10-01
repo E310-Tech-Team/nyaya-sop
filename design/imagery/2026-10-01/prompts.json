@@ -1,0 +1,62 @@
+[
+  {
+    "id": "vision",
+    "prompt": "Use case: identity-preserve. Edit the supplied photograph only. Preserve EXACT existing identities, facial features, skin tones, facial expressions, hands, pose, camera angle, framing, aspect ratio, background, props and lighting. No new people, no new text. Photorealistic targeted wardrobe edit, not a new scene. Preserve all men and their clothes completely. Skirts must be opaque, modest midi/ankle length without slits, natural drape, comfortable fit, fully covering knees even seated; do not expand the frame to reveal hems. Replace the left woman's cream trousers visible below her navy blazer with a cream A-line skirt. Replace any visible dark trousers on the right woman with a dark skirt. Keep every original hairstyle completely unchanged. NO scarves, NO berets, NO fascinators, NO hats or other headwear. Change only women's trousers to matching modest skirts. Preserve faces and all other contents exactly.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "/about Vision & Mission",
+    "target": "src/assets/landing/vision-portrait.webp",
+    "master": "masters/vision-skirts.webp",
+    "editOf": "../2026-09-29/masters/vision.webp",
+    "source": "originals/exec-bf327ebb-e75b-40de-beb0-11660869fe45.png"
+  },
+  {
+    "id": "home-about",
+    "prompt": "Use case: identity-preserve. Edit the supplied photograph only. Preserve EXACT existing identities, facial features, skin tones, facial expressions, hands, pose, camera angle, framing, aspect ratio, background, props and lighting. No new people, no new text. Photorealistic targeted wardrobe edit, not a new scene. Preserve all men and their clothes completely. Skirts must be opaque, modest midi/ankle length without slits, natural drape, comfortable fit, fully covering knees even seated; do not expand the frame to reveal hems. Replace the woman's burgundy trousers with a matching tailored burgundy midi skirt, gently A-line, with no slit. Keep every original hairstyle completely unchanged. NO scarves, NO berets, NO fascinators, NO hats or other headwear. Change only women's trousers to matching modest skirts. Preserve faces and all other contents exactly.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "Homepage About preview (from 1280 px)",
+    "target": "src/assets/landing/home-about.webp",
+    "master": "masters/home-about-skirts.webp",
+    "editOf": "../2026-09-30/masters/home-about.webp",
+    "source": "originals/exec-7e960de8-aabc-4548-8a45-eb13e5a628f2.png"
+  },
+  {
+    "id": "journey-community",
+    "prompt": "Use case: identity-preserve. Edit the supplied photograph only. Preserve EXACT existing identities, facial features, skin tones, facial expressions, hands, pose, camera angle, framing, aspect ratio, background, props and lighting. No new people, no new text. Photorealistic targeted wardrobe edit, not a new scene. Preserve all men and their clothes completely. Skirts must be opaque, modest midi/ankle length without slits, natural drape, comfortable fit, fully covering knees even seated; do not expand the frame to reveal hems. Replace the centre-left woman's navy trousers under her navy blazer with a coordinated navy midi skirt. Replace the right woman's black trousers below her burgundy blouse with a black midi skirt. The cream dress stays untouched. Keep every original hairstyle completely unchanged. NO scarves, NO berets, NO fascinators, NO hats or other headwear. Change only women's trousers to matching modest skirts. Preserve faces and all other contents exactly.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "/journey stage 06",
+    "target": "src/assets/landing/journey-06-community.webp",
+    "master": "masters/journey-community-skirts.webp",
+    "editOf": "../2026-09-29/masters/journey-06-community.webp",
+    "source": "originals/exec-4db7ae58-5a6c-4ed4-8b79-038fddd1d59d.png"
+  },
+  {
+    "id": "programme-bootcamp",
+    "prompt": "Use case: identity-preserve. Edit the supplied photograph only. Preserve EXACT existing identities, facial features, skin tones, facial expressions, hands, pose, camera angle, framing, aspect ratio, background, props and lighting. No new people, no new text. Photorealistic targeted wardrobe edit, not a new scene. Preserve all men and their clothes completely. Skirts must be opaque, modest midi/ankle length without slits, natural drape, comfortable fit, fully covering knees even seated; do not expand the frame to reveal hems. Replace BOTH women's trousers: left cream trousers with a cream midi skirt, centre burgundy trousers with a burgundy midi skirt. Preserve their seated crossed-leg poses beneath natural continuous skirt fabric, covered knees, no trouser separation. Keep every original hairstyle completely unchanged. NO scarves, NO berets, NO fascinators, NO hats or other headwear. Change only women's trousers to matching modest skirts. Preserve faces and all other contents exactly.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "/programme Physical boot camp card",
+    "target": "src/assets/landing/programme-bootcamp.webp",
+    "master": "masters/programme-bootcamp-skirts.webp",
+    "editOf": "../2026-09-30/masters/programme-bootcamp.webp",
+    "source": "originals/exec-0e1f841c-10c0-4c51-8c04-6c09db6bb285.png"
+  },
+  {
+    "id": "programme-community",
+    "prompt": "Use case: identity-preserve. Edit the supplied photograph only. Preserve EXACT existing identities, facial features, skin tones, facial expressions, hands, pose, camera angle, framing, aspect ratio, background, props and lighting. No new people, no new text. Photorealistic targeted wardrobe edit, not a new scene. Preserve all men and their clothes completely. Skirts must be opaque, modest midi/ankle length without slits, natural drape, comfortable fit, fully covering knees even seated; do not expand the frame to reveal hems. Replace BOTH women's trousers with matching modest skirts: navy on left, burgundy on right. Preserve seated poses with continuous opaque fabric covering knees and natural drape. Keep every original hairstyle completely unchanged. NO scarves, NO berets, NO fascinators, NO hats or other headwear. Change only women's trousers to matching modest skirts. Preserve faces and all other contents exactly.",
+    "tool": "built-in image_gen",
+    "model": "Not exposed by tool",
+    "generatedOn": "2026-09-30",
+    "placement": "/programme Mentorship and community card",
+    "target": "src/assets/landing/programme-community.webp",
+    "master": "masters/programme-community-skirts.webp",
+    "editOf": "../2026-09-30/masters/programme-community.webp",
+    "source": "originals/exec-9ef1f9e6-6143-4666-9301-d102cdf8a4b0.png"
+  }
+]

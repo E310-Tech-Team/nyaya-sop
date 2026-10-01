@@ -18,27 +18,28 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 FIRST = ROOT / 'design' / 'imagery' / '2026-09-29' / 'masters'  # the original nine
 SECOND = ROOT / 'design' / 'imagery' / '2026-09-30' / 'masters'  # homepage previews and /programme cards
+THIRD = ROOT / 'design' / 'imagery' / '2026-10-01' / 'masters'  # five of the above, edited: skirts instead of trousers
 ASSETS = ROOT / 'src' / 'assets'
 QUALITY = 80
 
 # master -> (output under src/assets, longest edge in px)
 IMAGES = {
-    FIRST / 'vision.webp': ('landing/vision-portrait.webp', 1200),
+    THIRD / 'vision-skirts.webp': ('landing/vision-portrait.webp', 1200),
     FIRST / 'doctrine.webp': ('landing/doctrine-study-group.webp', 1200),
     FIRST / 'journey-01-apply.webp': ('landing/journey-01-apply.webp', 1200),
     FIRST / 'journey-02-virtual-training.webp': ('landing/journey-02-virtual-training.webp', 1200),
     FIRST / 'journey-03-merit-selection.webp': ('landing/journey-03-merit-selection.webp', 1200),
     FIRST / 'journey-04-boot-camp.webp': ('landing/journey-04-boot-camp.webp', 1200),
     FIRST / 'journey-05-mentorship.webp': ('landing/journey-05-mentorship.webp', 1200),
-    FIRST / 'journey-06-community.webp': ('landing/journey-06-community.webp', 1200),
+    THIRD / 'journey-community-skirts.webp': ('landing/journey-06-community.webp', 1200),
     # A circular cut-out with transparent corners, as the success page expects (up to 443 px wide).
     FIRST / 'success-portrait.webp': ('success/student-portrait.webp', 872),
-    SECOND / 'home-about.webp': ('landing/home-about.webp', 1200),
+    THIRD / 'home-about-skirts.webp': ('landing/home-about.webp', 1200),
     SECOND / 'home-programme.webp': ('landing/home-programme.webp', 1200),
     SECOND / 'programme-virtual.webp': ('landing/programme-virtual.webp', 1200),
     SECOND / 'programme-merit.webp': ('landing/programme-merit.webp', 1200),
-    SECOND / 'programme-bootcamp.webp': ('landing/programme-bootcamp.webp', 1200),
-    SECOND / 'programme-community.webp': ('landing/programme-community.webp', 1200),
+    THIRD / 'programme-bootcamp-skirts.webp': ('landing/programme-bootcamp.webp', 1200),
+    THIRD / 'programme-community-skirts.webp': ('landing/programme-community.webp', 1200),
 }
 PROTECTED = ('landing/hero-', 'landing/blueprint-', 'brand/')
 
