@@ -1,6 +1,6 @@
 # 03 — App Flow
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-01
 **Status:** Built. Every screen has its own URL (React Router 8): the homepage, the marketing pages (About, Programme, Journey, FAQ), the application, the install/notification/updates pages, the optional applicant account area and the admin platform. Answers persist across refresh and Back, and submissions go to the API. The site is an installable web app with a service worker ([§6](#6-offline-and-updates)).
 
 Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [04-UI-UX-Design-Brief](04-UI-UX-Design-Brief.md) · [05-Backend-Schema](05-Backend-Schema.md)
@@ -32,7 +32,7 @@ Defined in [`src/App.tsx`](../src/App.tsx).
 | `/account/application` | Published status, messages, linking an application | [ApplicationPage](../src/account/ApplicationPage.tsx) | signed-in applicant |
 | `/account/notifications` | Inbox, this device's notifications, the account's devices | [NotificationsPage](../src/account/NotificationsPage.tsx) | signed-in applicant |
 | `/account/settings` | Details, sessions, sign out everywhere, delete account | [SettingsPage](../src/account/SettingsPage.tsx) | signed-in applicant |
-| `/admin/login`, `/admin/setup?token=…`, `/admin/forgot`, `/admin/reset?token=…` | Staff sign-in (password + two-step verification), invitation set-up, password reset (link tokens leave the address bar once read) | [AuthPages](../src/admin/AuthPages.tsx) | — |
+| `/admin/login`, `/admin/setup?token=…`, `/admin/forgot`, `/admin/reset?token=…` | Staff sign-in (password + two-step verification, or a passkey alone), invitation set-up, password reset (link tokens leave the address bar once read) | [AuthPages](../src/admin/AuthPages.tsx) | — |
 | `/admin` … | Dashboard, Applicants (`/admin/applicants`, `/admin/applicants/:id`), Accounts (`/admin/accounts`, `/:id`), Reports and analytics (`/admin/reports`, `/organisation?unit=…&parish=…&level=…&include=applications&view=table&sort=…&dir=…&page=…`, `/over-time?interval=day`, `/decisions`, `/parish-answers`, `/cohorts`, each with the shared filters `cohort`, `from`, `to`, `status`, `published`, `unit`, `direct`, `without`, `parish`), Parish review (`/admin/parish-review?kind=…`), Parish directory (`/admin/directory?unit=…&parish=…`, `?tab=imports`, `?tab=changes`), Cohorts, Notifications (`/admin/campaigns`, `/new`, `/:id`), Announcements, Staff, Settings, Audit history, Your security | [AdminApp](../src/admin/AdminApp.tsx) and [`src/admin/pages/`](../src/admin/pages/) | signed-in staff with two-step verification; each page checks the role's permissions (the server enforces them) |
 | `*` | 404 | [NotFoundPage](../src/pages/NotFoundPage.tsx) | — |
 
@@ -373,7 +373,23 @@ The account shows **only published information**: the published status and its d
 
 ## 9. Admin platform
 
-**Signing in:** email + password → two-step verification (a code from an authenticator app, or a single-use recovery code). The first time: set up the authenticator (QR code or key), confirm a code, save 10 recovery codes (shown once). New staff join by a single-use invitation link (72 h) from an owner; the first owner comes from `admin.js create-owner` on the server ([DEPLOYMENT](DEPLOYMENT.md#first-admin)). Sessions end after 12 h, or 2 h idle.
+**Signing in** (D-58): email + password → two-step verification, by whichever ways the account has, strongest first: **a passkey** (the device asks for a fingerprint, face or PIN), **a code from an authenticator app**, **a code sent by email**, or a single-use **recovery code**. Or **a passkey alone**, with no password ("Sign in with a passkey" on the sign-in page). The first time: choose a passkey, an authenticator app (QR code or key, then a code) or email codes (a first code proves the inbox), then save 10 recovery codes (shown once). New staff join by a single-use invitation link (72 h) from an owner; the first owner comes from `admin.js create-owner` on the server ([DEPLOYMENT](DEPLOYMENT.md#first-admin)). Sessions end after 12 h, or 2 h idle.
+
+```mermaid
+flowchart TD
+    L[/admin/login/] -->|email + password| P{Two-step verification on?}
+    L -->|Sign in with a passkey| K[Passkey alone: fingerprint, face or PIN]
+    K --> IN[Signed in]
+    P -->|not yet, required| SETUP[Choose a first way: passkey, app or email codes] --> CODES[Save 10 recovery codes] --> IN
+    P -->|yes| STEP{Confirm it's you}
+    STEP -->|passkey| IN
+    STEP -->|app code| IN
+    STEP -->|"email me a code"| IN
+    STEP -->|recovery code| IN
+    STEP -->|5 wrong answers| LOCK[Account locked 15 min, doubling]
+```
+
+**Your security** lists the ways in. Adding, replacing or removing one, and new recovery codes, need **"Confirm it's you"** first (a passkey, the app or a recovery code; an email code only when email codes are the only way), which lasts five minutes; the last way can't be removed. Every change is emailed to the staff member. **Password reset** (the emailed link) is confirmed with a passkey, the app or a recovery code, never an email code.
 
 | Area | What it's for | Needs |
 |---|---|---|
@@ -387,10 +403,10 @@ The account shows **only published information**: the published status and its d
 | Cohorts | List with totals; create and edit (dates in a chosen zone, default Lagos); open/close | cohorts.manage |
 | Notifications | Campaign list with truthful counts; editor with preview and live audience counts; test sends to your own test devices; schedule now or later with a time zone; final confirmation; cancel; your test devices | campaigns.manage / send |
 | Announcements | Public (on `/updates`) and applicant notices (in account inboxes), draft → publish → archive | announcements.manage |
-| Staff | Invite (email, or a link to share when email is off), roles, suspend, reset two-step verification, unlock a locked sign-in, sign out everywhere | staff.manage (owners) |
+| Staff | Invite (email, or a link to share when email is off), roles, suspend, reset two-step verification (clears every way in: passkeys, the app, email codes, recovery codes; the staff member is told by email), unlock a locked sign-in, sign out everywhere | staff.manage (owners) |
 | Settings | Support email, applicant accounts on/off, public notification sign-ups on/off, **the parish question from the directory on/off** (only once a list is loaded) with the directory's readiness (active parishes, units, where the list came from, reviews waiting, corrections) and, with the RCCG directory API, its environment, the release in use, when the provider last confirmed it and when one was last applied, the last problem in words, and **Check now** (directory.manage); integration health without secrets | settings.manage (owners) |
 | Audit history | Who did what, when, filterable | audit.view |
-| Your security | Password, recovery codes, sessions | everyone |
+| Your security | Sign-in methods (passkeys: add, rename, remove; the authenticator app: set up, replace, remove; codes by email: on/off; recovery codes: replace), each change after "Confirm it's you"; password; sessions | everyone |
 
 ```mermaid
 sequenceDiagram

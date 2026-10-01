@@ -121,7 +121,7 @@ No default credentials exist anywhere. On the server:
 docker compose exec app node server-dist/admin.js create-owner --email you@yourchurch.org --name "Your Name"
 ```
 
-It prints a **single-use link, valid 72 hours**: treat it like a password. Open it, choose a password (12+ characters), then set up two-step verification (scan the QR code in an authenticator app, confirm a code, **save the 10 recovery codes**). Then invite colleagues from **Admin → Staff** (emailed, or a link to share privately when email is off).
+It prints a **single-use link, valid 72 hours**: treat it like a password. Open it, choose a password (12+ characters), then set up two-step verification (a passkey, an authenticator app or codes by email: D-58) and **save the 10 recovery codes**. Add a second way later under **Your security** (for example a passkey on your phone as well as your laptop). Then invite colleagues from **Admin → Staff** (emailed, or a link to share privately when email is off).
 
 ### A6. Smoke test
 
@@ -485,9 +485,11 @@ A job whose worker crashed is picked up again automatically when its lease (2 mi
 
 | Situation | Fix |
 |---|---|
-| Lost phone, has recovery codes | Sign in with a recovery code ("Use a recovery code"), then **Your security → Create new recovery codes**; an owner can reset their two-step verification so they enrol the new phone |
-| Lost phone and codes | Another owner: **Staff → Reset two-step verification**. The only owner: on the server, `docker compose exec app node server-dist/admin.js reset-mfa --email …` |
-| Forgotten password | `/admin/forgot` (needs email). Without email: `docker compose exec app node server-dist/admin.js reset-password --email …` prints a single-use 30-minute link; the reset still asks for their authenticator code |
+| Lost a passkey, phone or inbox, but has another way in | Sign in another way ("Another way:" under the second step), then **Your security → Confirm it's you** and remove the lost passkey or app, and add a new one |
+| Lost phone, has recovery codes | Sign in with a recovery code ("Use a recovery code"), then **Your security → Create new recovery codes** and set up the new phone (a passkey or the app) |
+| Lost every way in | Another owner: **Staff → Reset two-step verification** (clears passkeys, the app, email codes and recovery codes; the staff member is told by email). The only owner: on the server, `docker compose exec app node server-dist/admin.js reset-mfa --email …` |
+| Forgotten password | `/admin/forgot` (needs email). Without email: `docker compose exec app node server-dist/admin.js reset-password --email …` prints a single-use 30-minute link. The reset still asks for a passkey, an app code or a recovery code, never an email code (the link came by email). An account whose only way in is email codes uses a recovery code, or an owner resets its two-step verification first |
+| Passkeys after a change of address | Passkeys belong to `SITE_URL`'s domain: they stop working if the site moves to another domain, and a staging site needs its own. Before changing `SITE_URL`, make sure every staff member has another way in (the app, email codes or recovery codes) |
 | Locked out after wrong attempts | Wait (15 min, doubling up to 24 h), or an owner uses **Staff → Unlock sign-in**. Anyone who knows a staff email can cause a lock this way, so unlock only when you're sure it was a mistake or a nuisance, not someone who has the password |
 | Invitation expired | **Staff → New invitation link** |
 
@@ -596,7 +598,7 @@ Compose's Postgres image makes `POSTGRES_USER` a superuser, and the app and work
 | `DIRECTORY_API_KEY` | `./deploy/directory-key.sh production`, restart the app and worker, then revoke the old key with the provider ([RCCG directory API](#rccg-directory-api)) | None: the copy stays in use while you change it |
 | VAPID keys | Only if the private key leaked: `push-keys.js`, update `.env`, restart | Devices must re-subscribe: the app does it automatically for people who open it again with permission granted; others stop receiving |
 | `EDGE_PROXY_SECRET` | New value in the Vercel project and in the VPS's `.env`, redeploy Vercel, restart the app | None. Rotate it if a Vercel build from before 2026-09-30 ever ran with `API_ORIGIN` and the secret set (its middleware could be made to send the secret to another host) |
-| `APP_SECRET` | Only if leaked (or the server was compromised): new value in `.env`, restart, then as below | Everyone is signed out (CSRF tokens change). Staff authenticator secrets and push subscriptions encrypted with the old key can't be read: reset two-step verification for every staff member (`admin.js reset-mfa --email …` or Staff page) and run `update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'rejected' where status = 'active';` so devices show "turn on again" |
+| `APP_SECRET` | Only if leaked (or the server was compromised): new value in `.env`, restart, then as below | Everyone is signed out (CSRF tokens change). Staff authenticator secrets and push subscriptions encrypted with the old key can't be read, and recovery codes and email codes keyed from it stop working (passkeys keep working: they store only public keys): reset two-step verification for every staff member (`admin.js reset-mfa --email …` or Staff page) and run `update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'rejected' where status = 'active';` so devices show "turn on again" |
 | A staff member's password | They change it under **Your security** (other sessions are signed out) |
 
 ### Incident response
@@ -655,7 +657,7 @@ Physical-device testing (iPhone/iPad Home Screen install and push, Android Chrom
 - [ ] DNS points at the VPS; `https://DOMAIN` loads with a valid certificate (and `https://www.DOMAIN` redirects to it, if `www` has a DNS record)
 - [ ] `.env` has strong `POSTGRES_PASSWORD` and `APP_SECRET`, is `chmod 600`, and is backed up securely off the server
 - [ ] `/api/health` returns `ok`; `docker compose ps` shows the worker running
-- [ ] First owner created, two-step verification set up, recovery codes stored safely; a second owner invited
+- [ ] First owner created, two-step verification set up (ideally a passkey plus a second way), recovery codes stored safely; a second owner invited
 - [ ] Email configured and a sign-in link received (or accounts intentionally left off)
 - [ ] VAPID keys generated once, backed up, and a test notification received on a staff test device (or push intentionally left off)
 - [ ] A test application submitted, found in **Applicants**, and deleted
