@@ -5,7 +5,8 @@
 import { ApiError, apiRequest, type RequestOptions } from '../lib/api';
 import type { ChainUnit, ChurchLevel, ParishChain, ParishDetailsResponse, ParishSuggestion } from '../shared/directory';
 import type { StaffRole } from '../shared/permissions';
-import type { ApplicationStatus, NotificationTopic, SessionSummary } from '../shared/platform';
+import type { ApplicationStatus, NotificationTopic, SessionSummary, StaffMfaSummary, StaffPasskey } from '../shared/platform';
+import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from './passkeys';
 import { staffSessionEnded, type StaffSession } from './session';
 
 async function call<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -13,12 +14,14 @@ async function call<T>(path: string, options: RequestOptions = {}): Promise<T> {
   try {
     return await apiRequest<T>(`/admin${path}`, { ...options, csrf: unsafe ? 'staff' : undefined });
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401 && !path.startsWith('/login') && !path.startsWith('/mfa/verify')) staffSessionEnded();
+    // A 401 from signing in itself is a wrong answer, not an ended session.
+    if (error instanceof ApiError && error.status === 401 && !/^\/(login|mfa\/verify|passkey\/)/.test(path)) staffSessionEnded();
     throw error;
   }
 }
 const post = <T>(path: string, json?: unknown) => call<T>(path, { method: 'POST', json });
 const patch = <T>(path: string, json: unknown) => call<T>(path, { method: 'PATCH', json });
+const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
 const query = (params: Record<string, string | number | undefined | null>) => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
@@ -468,14 +471,38 @@ export type Dashboard = {
 
 export type LoginNext = 'mfa' | 'mfa_setup' | 'done';
 
+/** One answer to a second step: a passkey assertion, an app code, an email code or a recovery code. */
+export type SecondStepAnswer = { passkey?: unknown; code?: string; emailCode?: string; recoveryCode?: string };
+
+export type MfaMethods = { summary: StaffMfaSummary; passkeys: StaffPasskey[]; emailAvailable: boolean; stepUpUntil: string | null };
+
 export const adminApi = {
   // Signing in (server/auth/staff-routes.ts)
   session: () => call<StaffSession>('/session'),
   login: (email: string, password: string) => post<{ next: LoginNext; csrfToken: string }>('/login', { email, password }),
-  verifyMfa: (input: { code?: string; recoveryCode?: string }) => post<{ ok: true; recoveryCodesRemaining?: number; csrfToken?: string }>('/mfa/verify', input),
+  verifyMfa: (input: SecondStepAnswer) => post<{ ok: true; recoveryCodesRemaining?: number | null; csrfToken?: string }>('/mfa/verify', input),
+  sendEmailCode: () => post<{ message: string }>('/mfa/email/send'),
+  secondStepPasskeyOptions: () => post<PublicKeyCredentialRequestOptionsJSON>('/mfa/passkey/options'),
+  passkeySignInOptions: () => post<PublicKeyCredentialRequestOptionsJSON>('/passkey/sign-in/options'),
+  passkeySignIn: (passkey: unknown) => post<{ next: LoginNext; csrfToken: string }>('/passkey/sign-in', { passkey }),
+
+  // Your sign-in methods (server/auth/staff-mfa-routes.ts)
+  mfaMethods: () => call<MfaMethods>('/mfa/methods'),
+  stepUpPasskeyOptions: () => post<PublicKeyCredentialRequestOptionsJSON>('/mfa/step-up/options'),
+  stepUpEmail: () => post<{ message: string }>('/mfa/step-up/email'),
+  stepUp: (input: SecondStepAnswer) => post<{ stepUpUntil: string }>('/mfa/step-up', input),
+  passkeyRegistrationOptions: () => post<PublicKeyCredentialCreationOptionsJSON>('/mfa/passkeys/options'),
+  addPasskey: (passkey: unknown, nickname: string) =>
+    post<{ passkey: { id: string; nickname: string }; recoveryCodes?: string[]; csrfToken?: string }>('/mfa/passkeys', { passkey, nickname }),
+  renamePasskey: (passkeyId: string, nickname: string) => patch<{ ok: true }>(`/mfa/passkeys/${id(passkeyId)}`, { nickname }),
+  removePasskey: (passkeyId: string) => del<{ ok: true }>(`/mfa/passkeys/${id(passkeyId)}`),
   startEnrolment: () => post<{ otpauthUri: string; secret: string; qrDataUrl: string }>('/mfa/enrol/start'),
-  confirmEnrolment: (code: string) => post<{ recoveryCodes: string[]; csrfToken?: string }>('/mfa/enrol/confirm', { code }),
-  newRecoveryCodes: (code: string) => post<{ recoveryCodes: string[] }>('/mfa/recovery-codes', { code }),
+  confirmEnrolment: (code: string) => post<{ ok?: true; recoveryCodes?: string[]; csrfToken?: string }>('/mfa/enrol/confirm', { code }),
+  removeApp: () => del<{ ok: true }>('/mfa/app'),
+  startEmailCodes: () => post<{ message: string }>('/mfa/email-codes/start'),
+  confirmEmailCodes: (code: string) => post<{ ok?: true; recoveryCodes?: string[]; csrfToken?: string }>('/mfa/email-codes/confirm', { code }),
+  removeEmailCodes: () => del<{ ok: true }>('/mfa/email-codes'),
+  newRecoveryCodes: () => post<{ recoveryCodes: string[] }>('/mfa/recovery-codes'),
   logout: () => post<{ ok: true }>('/logout'),
   changePassword: (currentPassword: string, newPassword: string) => post<{ ok: true }>('/me/password', { currentPassword, newPassword }),
   mySessions: () => call<{ sessions: SessionSummary[] }>('/me/sessions'),
@@ -484,7 +511,8 @@ export const adminApi = {
   checkInvite: (token: string) => post<{ email: string; displayName: string }>('/setup/check', { token }),
   completeInvite: (token: string, password: string) => post<{ next: LoginNext; csrfToken: string }>('/setup/complete', { token, password }),
   forgotPassword: (email: string) => post<{ message: string }>('/password/forgot', { email }),
-  resetPassword: (input: { token: string; password: string; code?: string; recoveryCode?: string }) => post<{ ok: true }>('/password/reset', input),
+  resetPasskeyOptions: (token: string) => post<PublicKeyCredentialRequestOptionsJSON>('/password/reset/passkey', { token }),
+  resetPassword: (input: { token: string; password: string } & SecondStepAnswer) => post<{ ok: true }>('/password/reset', input),
 
   // Dashboard
   dashboard: (signal?: AbortSignal) => call<Dashboard>('/dashboard', { signal }),

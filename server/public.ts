@@ -62,7 +62,10 @@ export async function publicRoutes(app: FastifyInstance, services: Services) {
         .reverse()
         .map((m) => {
           const link = /(https?:\/\/\S+)/.exec(m.text)?.[1] ?? '';
-          return `<li><strong>${esc(m.subject)}</strong> → ${esc(m.to)} <small>${m.sentAt.toISOString()}</small><br><a href="${esc(link)}">${esc(link)}</a></li>`;
+          // A staff email code has no link: show the code (06 D-58).
+          const code = m.purpose === 'staff_email_code' ? (/\b(\d{6})\b/.exec(m.text)?.[1] ?? '') : '';
+          const body = code ? `<code data-code>${esc(code)}</code>` : `<a href="${esc(link)}">${esc(link)}</a>`;
+          return `<li><strong>${esc(m.subject)}</strong> → ${esc(m.to)} <small>${m.sentAt.toISOString()}</small><br>${body}</li>`;
         })
         .join('');
       return reply

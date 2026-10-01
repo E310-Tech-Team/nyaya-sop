@@ -1,6 +1,6 @@
 # 02 — Technical Requirements Document (TRD)
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-01
 **Architecture:** React single-page app (installable PWA with a service worker) + Fastify API, backed by **PostgreSQL**, with a **background worker** for notifications and clean-up, deployed on a **single VPS** behind Caddy (HTTPS).
 **Origin:** Figma Make export (2026-09-25), rebuilt as a standalone project on 2026-09-26. The Figma Make tooling has been removed.
 
@@ -29,16 +29,16 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md) · [05-Backend-Sch
 | Dev/test database | PGlite | 0.5 | PostgreSQL compiled to WASM, in-process: no install needed; loads the `pg_trgm` extension for parish search. **Single process only** (see §10) |
 | Web Push | `web-push` | 3.6 | Only for VAPID signing and aes128gcm encryption; requests go through our own SSRF-safe transport |
 | Email | `nodemailer` | 10.0 | SMTP; plus an in-memory test outbox for development and tests |
-| Two-step verification | `otpauth` (TOTP), `qrcode` | 9.5, 1.5 | RFC 6238 codes; QR code for enrolment rendered on the server as a data URL |
+| Two-step verification | `otpauth` (TOTP), `qrcode`, `@simplewebauthn/server` + `@simplewebauthn/browser` (passkeys) | 9.5, 1.5, 14.0 | RFC 6238 codes; QR code for enrolment rendered on the server as a data URL. Passkeys (WebAuthn): options and verification on the server, the ceremony in the browser (admin chunk only, D-58) |
 | Password hashing | Node `crypto.scrypt` | built in | N = 2¹⁵, r = 8, p = 3; format `scrypt$15$8$3$salt$key` |
 | Server build | esbuild | 0.28 | `scripts/build-server.mjs` → `server-dist/` (index, migrate, worker, admin, push-keys entry points) |
 | Tests | Vitest | 5.0 | See §9 |
 | Language | TypeScript | 5.9 | `strict`, `noUnused*`, `verbatimModuleSyntax`. `tsconfig.json` (app + server) and `tsconfig.sw.json` (service worker, WebWorker types) |
 | Formatter | oxfmt | 0.2 | `pnpm format` |
 
-**Dependency policy:** `dependencies` holds only what the **server needs at runtime** (Fastify and plugins, `pg`, `web-push`, `nodemailer`, `otpauth`, `qrcode`). Everything bundled into the browser and all build tooling is in `devDependencies`, so the production image installs only the server's packages.
+**Dependency policy:** `dependencies` holds only what the **server needs at runtime** (Fastify and plugins, `pg`, `web-push`, `nodemailer`, `otpauth`, `qrcode`, `@simplewebauthn/server`). Everything bundled into the browser and all build tooling is in `devDependencies`, so the production image installs only the server's packages.
 
-**Authentication: why not an auth framework.** The brief asked for a maintained auth library or identity integration. Staff and applicant authentication are built on maintained primitives instead: Node's scrypt, `otpauth`, `@fastify/cookie`, Postgres-stored sessions. The reasons: two separate populations (staff with password + TOTP and roles; applicants with email links only); the embedded PGlite database used for development and tests; and keeping every table in our own SQL migrations. The pieces a framework would provide are implemented and tested explicitly (§5, [05 §6](05-Backend-Schema.md#6-security-and-privacy)). An identity provider (e.g. Google Workspace SSO for staff) can be added later without changing the role model.
+**Authentication: why not an auth framework.** The brief asked for a maintained auth library or identity integration. Staff and applicant authentication are built on maintained primitives instead: Node's scrypt, `otpauth`, `@simplewebauthn/server` (passkeys), `@fastify/cookie`, Postgres-stored sessions. The reasons: two separate populations (staff with a password and a second step, or a passkey alone, and roles; applicants with email links only); the embedded PGlite database used for development and tests; and keeping every table in our own SQL migrations. The pieces a framework would provide are implemented and tested explicitly (§5, [05 §6](05-Backend-Schema.md#6-security-and-privacy)). An identity provider (e.g. Google Workspace SSO for staff) can be added later without changing the role model.
 
 ## 2. Architecture
 
@@ -131,7 +131,7 @@ public/         manifest.webmanifest, icons/, offline.html, favicons, og-image.j
 
 | Area | Implementation |
 |---|---|
-| Staff sign-in | Individual accounts; scrypt passwords (12–128 characters); TOTP second factor required in production (`STAFF_MFA_REQUIRED`), with 10 single-use recovery codes stored as keyed HMACs (from `APP_SECRET`); TOTP replay protection (last used time step); lockout after 5 failures (15 min, doubling, max 24 h), wrong codes (sign-in and reset) count too, every attempt counted atomically before it's checked; a new session once the second factor is passed; owners can unlock; generic error messages, and "forgot password" answers before looking the address up; per-IP rate limits |
+| Staff sign-in | Individual accounts; scrypt passwords (12–128 characters); two-step verification required in production (`STAFF_MFA_REQUIRED`) by a passkey, an authenticator app (TOTP, replay-protected) or email codes, or a passkey on its own (user verification required), with 10 single-use recovery codes; codes stored as keyed HMACs (from `APP_SECRET`); passkey challenges and email codes single-use and bound to what asked for them; security changes need a strong check from the last 5 minutes and are emailed to the staff member (D-58, [05](05-Backend-Schema.md#staff-sign-in-methods-0013)); lockout after 5 failures (15 min, doubling, max 24 h), wrong codes (sign-in and reset) count too, every attempt counted atomically before it's checked; a new session once the second factor is passed; owners can unlock; generic error messages, and "forgot password" answers before looking the address up; per-IP rate limits |
 | Staff roles | Owner, Programme admin, Reviewer, Communications, Read-only ([05 §6](05-Backend-Schema.md#roles-and-permissions)). Checked on **every** admin route; nobody can change their own role; the last owner can't be demoted or suspended; role changes sign the person out |
 | Applicant sign-in | Passwordless: single-use links valid 15 minutes, stored hashed, generic responses, per-IP and per-email throttles, and a button press on the landing page so email scanners can't use the link. Linking an application needs the verified email to match and an explicit confirmation |
 | Sessions | 256-bit random tokens in `HttpOnly`, `SameSite=Strict` cookies (`__Host-` prefix and `Secure` on HTTPS); only a SHA-256 hash is stored; absolute expiry and idle timeout; revocable per session and "everywhere" |

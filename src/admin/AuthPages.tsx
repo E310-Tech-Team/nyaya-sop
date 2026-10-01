@@ -1,12 +1,13 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useLocation } from 'react-router';
 import { BrandLockup } from '../components/BrandLockup';
 import { Button, Input, Loading, Notice, errorMessage } from '../components/ui';
 import { usePageTitle } from '../components/RouteEffects';
 import { ApiError, setCsrfToken } from '../lib/api';
-import { copyText } from '../lib/clipboard';
 import { useLinkToken } from '../lib/linkToken';
-import { adminApi } from './api';
+import { adminApi, type SecondStepAnswer } from './api';
+import { PasskeyButton, SecondStep, SetUpFirstMethod, WaysToAnswer, type Way } from './mfa';
+import { passkeysSupported } from './passkeys';
 import { loadStaffSession, useStaff } from './session';
 
 const PASSWORD_HINT = 'At least 12 characters. A few unrelated words make a strong, memorable password.';
@@ -29,174 +30,17 @@ function Shell({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Two-step verification setup: scan, confirm a code, then save the recovery codes (shown once). */
-export function MfaEnrolment({ onDone }: { onDone: () => void }) {
-  const [setup, setSetup] = useState<{ secret: string; qrDataUrl: string } | null>(null);
-  const [code, setCode] = useState('');
-  const [codes, setCodes] = useState<string[] | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const start = async () => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      setSetup(await adminApi.startEnrolment());
-    } catch (caught) {
-      setProblem(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const confirm = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setProblem(null);
-    try {
-      const result = await adminApi.confirmEnrolment(code.replace(/\s/g, ''));
-      setCsrfToken('staff', result.csrfToken); // enrolling starts a new session
-      setCodes(result.recoveryCodes);
-    } catch (caught) {
-      setProblem(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (codes) {
-    return (
-      <div className="flex flex-col gap-4">
-        <Notice tone="success" title="Two-step verification is on">
-          Save these recovery codes somewhere safe, away from your phone. Each one works once if you lose access to your authenticator
-          app. They won’t be shown again.
-        </Notice>
-        <ul className="grid grid-cols-2 gap-2 rounded-[10px] border border-line bg-cream p-4 font-mono text-[15px] text-ink">
-          {codes.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button tone="secondary" onClick={async () => setCopied(await copyText(codes.join('\n')))}>
-            Copy codes
-          </Button>
-          <span role="status" className="font-sans text-[13px] text-muted">
-            {copied ? 'Copied.' : ''}
-          </span>
-        </div>
-        <label className="flex items-start gap-3 font-sans text-[15px] text-ink">
-          <input type="checkbox" className="mt-[3px] size-[20px] accent-brand" checked={saved} onChange={(event) => setSaved(event.currentTarget.checked)} />
-          I’ve saved my recovery codes
-        </label>
-        <div>
-          <Button disabled={!saved} onClick={onDone}>
-            Continue
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!setup) {
-    return (
-      <div className="flex flex-col gap-4">
-        <p className="font-sans text-[15px] leading-[1.6] text-ink">
-          Admin accounts use a second step: a six-digit code from an authenticator app on your phone (for example Google Authenticator,
-          Microsoft Authenticator or 1Password), as well as your password.
-        </p>
-        {problem && <Notice tone="error">{problem}</Notice>}
-        <div>
-          <Button busy={busy} onClick={() => void start()}>
-            Set up two-step verification
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <form noValidate onSubmit={confirm} className="flex flex-col gap-4">
-      <p className="font-sans text-[15px] leading-[1.6] text-ink">1. In your authenticator app, add an account and scan this code.</p>
-      <img src={setup.qrDataUrl} alt="QR code to add School of Purpose to your authenticator app" className="size-[200px] self-center rounded-[8px] border border-line" />
-      <p className="font-sans text-[14px] leading-[1.6] text-muted">
-        Can’t scan it? Enter this key instead:{' '}
-        <code className="break-all rounded bg-cream px-1.5 py-0.5 font-mono text-[14px] text-ink">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</code>
-      </p>
-      <p className="font-sans text-[15px] leading-[1.6] text-ink">2. Enter the six-digit code the app shows.</p>
-      {problem && <Notice tone="error">{problem}</Notice>}
-      <Input
-        label="Six-digit code"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        maxLength={7}
-        value={code}
-        onChange={(event) => setCode(event.currentTarget.value)}
-        className="max-w-[220px]"
-      />
-      <div>
-        <Button type="submit" busy={busy} disabled={code.replace(/\s/g, '').length !== 6}>
-          Turn on two-step verification
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function MfaStep() {
-  const [useRecovery, setUseRecovery] = useState(false);
-  const [value, setValue] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setProblem(null);
-    try {
-      // Passing the second factor starts a new session (new cookie and CSRF token).
-      setCsrfToken('staff', (await adminApi.verifyMfa(useRecovery ? { recoveryCode: value.trim() } : { code: value.replace(/\s/g, '') })).csrfToken);
-      await loadStaffSession();
-    } catch (caught) {
-      setProblem(errorMessage(caught));
-      setBusy(false);
-      // Too many wrong codes ends the session: go back to the password step.
-      if (caught instanceof ApiError && caught.status === 401 && /sign in again/i.test(caught.message)) await loadStaffSession();
-    }
+/** Signing in with a passkey alone (06 D-58): it checks the fingerprint, face or PIN itself. */
+function PasskeySignIn() {
+  const signIn = async (passkey: unknown) => {
+    setCsrfToken('staff', (await adminApi.passkeySignIn(passkey)).csrfToken);
+    await loadStaffSession();
   };
   return (
-    <form noValidate onSubmit={submit} className="flex flex-col gap-4">
-      <p className="font-sans text-[15px] leading-[1.6] text-ink">
-        {useRecovery ? 'Enter one of your recovery codes. Each code works once.' : 'Enter the six-digit code from your authenticator app.'}
-      </p>
-      {problem && <Notice tone="error">{problem}</Notice>}
-      <Input
-        key={useRecovery ? 'recovery' : 'code'}
-        label={useRecovery ? 'Recovery code' : 'Six-digit code'}
-        inputMode={useRecovery ? 'text' : 'numeric'}
-        autoComplete="one-time-code"
-        autoFocus
-        value={value}
-        onChange={(event) => setValue(event.currentTarget.value)}
-        className="max-w-[260px]"
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" busy={busy} disabled={!value.trim()}>
-          Continue
-        </Button>
-        <button
-          type="button"
-          className="min-h-[40px] cursor-pointer font-sans text-[14px] font-bold text-brand underline underline-offset-4"
-          onClick={() => {
-            setUseRecovery((current) => !current);
-            setValue('');
-            setProblem(null);
-          }}
-        >
-          {useRecovery ? 'Use my authenticator app' : 'Use a recovery code'}
-        </button>
-      </div>
-      <p className="font-sans text-[13px] leading-[1.5] text-muted">Lost your phone and your recovery codes? Ask an owner to reset your two-step verification.</p>
-    </form>
+    <div className="flex flex-col gap-3 border-t border-line pt-5">
+      <p className="font-sans text-[14px] leading-[1.5] text-muted">Added a passkey to your account? You can sign in with it alone.</p>
+      <PasskeyButton label="Sign in with a passkey" tone="secondary" loadOptions={adminApi.passkeySignInOptions} onAnswer={signIn} />
+    </div>
   );
 }
 
@@ -214,14 +58,14 @@ export function LoginPage() {
   if (staff.step === 'mfa') {
     return (
       <Shell title="Two-step verification">
-        <MfaStep />
+        <SecondStep session={staff.session} />
       </Shell>
     );
   }
   if (staff.step === 'mfa-setup') {
     return (
       <Shell title="Set up two-step verification">
-        <MfaEnrolment onDone={() => void loadStaffSession()} />
+        <SetUpFirstMethod session={staff.session} onDone={() => void loadStaffSession()} />
       </Shell>
     );
   }
@@ -265,6 +109,7 @@ export function LoginPage() {
           </Link>
         </div>
       </form>
+      {passkeysSupported() && <PasskeySignIn />}
     </Shell>
   );
 }
@@ -362,7 +207,9 @@ export function ForgotPasswordPage() {
         <Notice tone="success">{message}</Notice>
       ) : (
         <form noValidate onSubmit={submit} className="flex flex-col gap-4">
-          <p className="font-sans text-[15px] leading-[1.6] text-ink">We’ll email you a single-use link. You’ll also need your two-step verification code.</p>
+          <p className="font-sans text-[15px] leading-[1.6] text-ink">
+            We’ll email you a single-use link. You’ll also need your passkey, your authenticator app or a recovery code.
+          </p>
           {problem && <Notice tone="error">{problem}</Notice>}
           <Input label="Email address" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.currentTarget.value)} />
           <div>
@@ -379,29 +226,47 @@ export function ForgotPasswordPage() {
   );
 }
 
-/** /admin/reset?token=…: a new password, confirmed with a current second-factor code. */
+/**
+ * /admin/reset?token=…: a new password, confirmed with a passkey, an app code or a recovery code
+ * (never an email code: the link came by email). The page can't see the account, so it offers a
+ * passkey only if the link's account has one.
+ */
 export function ResetPasswordPage() {
   const token = useLinkToken();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [code, setCode] = useState('');
-  const [useRecovery, setUseRecovery] = useState(false);
+  const [hasPasskey, setHasPasskey] = useState(true);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const passwordReady = password.length >= 12 && password === confirm;
+
+  const passkeyOptions = useCallback(async () => {
+    try {
+      return await adminApi.resetPasskeyOptions(token);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'NO_PASSKEY') setHasPasskey(false);
+      throw caught;
+    }
+  }, [token]);
+
+  const reset = async (answer: SecondStepAnswer) => {
+    await adminApi.resetPassword({ token, password, ...answer });
+    setDone(true);
+  };
+  const withoutSecondStep = async () => {
     setBusy(true);
     setProblem(null);
     try {
-      await adminApi.resetPassword({ token, password, ...(useRecovery ? { recoveryCode: code.trim() } : { code: code.replace(/\s/g, '') }) });
-      setDone(true);
+      await reset({});
     } catch (caught) {
       setProblem(errorMessage(caught));
     } finally {
       setBusy(false);
     }
   };
+  const ways: Way[] = hasPasskey && passkeysSupported() ? ['passkey', 'app', 'recovery'] : ['app', 'recovery'];
+
   return (
     <Shell title="Choose a new password">
       {done ? (
@@ -415,26 +280,37 @@ export function ResetPasswordPage() {
       ) : !token ? (
         <Notice tone="error">This reset link is incomplete. Copy the whole link from the email.</Notice>
       ) : (
-        <form noValidate onSubmit={submit} className="flex flex-col gap-4">
-          {problem && <Notice tone="error">{problem}</Notice>}
-          <PasswordPair password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
-          <Input
-            label={useRecovery ? 'Recovery code' : 'Six-digit code from your authenticator app'}
-            hint="Needed if two-step verification is on for your account."
-            inputMode={useRecovery ? 'text' : 'numeric'}
-            autoComplete="one-time-code"
-            value={code}
-            onChange={(event) => setCode(event.currentTarget.value)}
-          />
-          <button type="button" className="self-start font-sans text-[14px] font-bold text-brand underline underline-offset-4" onClick={() => setUseRecovery((value) => !value)}>
-            {useRecovery ? 'Use my authenticator app' : 'Use a recovery code'}
-          </button>
-          <div>
-            <Button type="submit" busy={busy} disabled={password.length < 12 || password !== confirm}>
-              Change password
-            </Button>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4">
+            <PasswordPair password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
           </div>
-        </form>
+          <section aria-labelledby="reset-confirm" className="flex flex-col gap-3 border-t border-line pt-4">
+            <h2 id="reset-confirm" className="font-sans text-[17px] font-bold text-ink">
+              Confirm it’s you
+            </h2>
+            <p className="font-sans text-[13px] leading-[1.5] text-muted">
+              {passwordReady ? 'With your passkey, a code from your authenticator app or a recovery code.' : 'Choose your new password first.'} A code sent by
+              email can’t confirm a reset: the link came by email too.
+            </p>
+            <WaysToAnswer
+              ways={ways}
+              passkeyOptions={passkeyOptions}
+              disabled={!passwordReady}
+              passkeyLabel="Change password with your passkey"
+              submitLabel="Change password"
+              onAnswer={reset}
+            />
+            {problem && <Notice tone="error">{problem}</Notice>}
+            <button
+              type="button"
+              disabled={!passwordReady || busy}
+              onClick={() => void withoutSecondStep()}
+              className="min-h-[40px] cursor-pointer self-start font-sans text-[13px] font-bold text-muted underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              My account doesn’t have two-step verification yet
+            </button>
+          </section>
+        </div>
       )}
     </Shell>
   );
