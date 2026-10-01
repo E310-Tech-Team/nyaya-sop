@@ -1,7 +1,7 @@
 # Imagery: policy, records and sources
 
-**Last updated:** 2026-09-30
-**Status:** The supporting photographs are **AI-generated** (the owner's decision of 2026-09-29, which replaces the earlier rule that only permission-cleared RCCG NYAYA photos could be used). Fifteen are in the site, one per placement: the original nine, and six added on 2026-09-30 so that no photo appears in two places (§6). The homepage hero, the brand artwork and the Biblical Blueprint paintings are unchanged.
+**Last updated:** 2026-10-01
+**Status:** The supporting photographs are **AI-generated** (the owner's decision of 2026-09-29, which replaces the earlier rule that only permission-cleared RCCG NYAYA photos could be used). Fifteen are in the site, one per placement: the original nine, and six added on 2026-09-30 so that no photo appears in two places (§6). On 2026-10-01 five of them were edited so that the women wear skirts instead of trousers (§7). The homepage hero, the brand artwork and the Biblical Blueprint paintings are unchanged.
 
 Related: [04 §7 Imagery](04-UI-UX-Design-Brief.md#7-imagery) · [06 Phase 10](06-Implementation-Plan.md#phase-10-supporting-imagery-done-2026-09-29) · [`scripts/imagery-assets.py`](../scripts/imagery-assets.py) · [`design/imagery/2026-09-29/prompts.json`](../design/imagery/2026-09-29/prompts.json)
 
@@ -15,6 +15,7 @@ Related: [04 §7 Imagery](04-UI-UX-Design-Brief.md#7-imagery) · [06 Phase 10](0
 - **Supporting photographs may be AI-generated**, photorealistic images:
   - fictional, clearly adult Nigerian young adults (about 18–30), with the natural diversity of Nigerian faces and a range of brown and dark skin tones, never one uniform look; no real or recognisable people and no public figures;
   - modest, well-fitted professional or smart-casual clothing (opaque fabrics, comfortable coverage), varied rather than uniforms; brand colours as accents, never as a skin grade;
+  - women in skirts or dresses that cover the knee, not trousers (the owner's request of 2026-10-01: §7);
   - contemporary Nigerian learning, professional and community settings; soft believable light; visible skin texture;
   - no readable text, logos, signage, invented RCCG branding, certificates or grades; screens face away.
 - **Never present a generated image as real.** Alt text describes the visible scene only. No captions such as "Our previous cohort" or "RCCG participants at the boot camp".
@@ -27,27 +28,27 @@ Related: [04 §7 Imagery](04-UI-UX-Design-Brief.md#7-imagery) · [06 Phase 10](0
 
 | File (`src/assets/…`) | Used on | Shows | Source |
 |---|---|---|---|
-| `landing/vision-portrait.webp` | `/about` Vision & Mission | Three young professionals planning around a laptop and notebook | AI-generated, 2026-09-29 |
+| `landing/vision-portrait.webp` | `/about` Vision & Mission | Three young professionals planning around a laptop and notebook | AI-generated, 2026-09-29; skirts edit, 2026-10-01 (§7) |
 | `landing/doctrine-study-group.webp` | `/programme` Doctrine | Three young adults discussing open books in a library | AI-generated, 2026-09-29 |
 | `landing/journey-01-apply.webp` | `/journey` stage 01 | A young woman at a laptop at home (screen away) | AI-generated, 2026-09-29 |
 | `landing/journey-02-virtual-training.webp` | `/journey` stage 02 | A young man in headphones taking notes during an online session | AI-generated, 2026-09-29 |
 | `landing/journey-03-merit-selection.webp` | `/journey` stage 03 | Two young professionals writing in notebooks | AI-generated, 2026-09-29 |
 | `landing/journey-04-boot-camp.webp` | `/journey` stage 04 | Five young adults in a planning exercise at a workshop table | AI-generated, 2026-09-29 |
 | `landing/journey-05-mentorship.webp` | `/journey` stage 05 | A mentor with two young professionals taking notes | AI-generated, 2026-09-29 |
-| `landing/journey-06-community.webp` | `/journey` stage 06 | Young professionals talking in small groups in a courtyard | AI-generated, 2026-09-29 |
+| `landing/journey-06-community.webp` | `/journey` stage 06 | Young professionals talking in small groups in a courtyard | AI-generated, 2026-09-29; skirts edit, 2026-10-01 (§7) |
 | `success/student-portrait.webp` | `/apply/success` | A smiling young man in a suit holding a laptop (circular cut-out) | AI-generated, 2026-09-29 |
-| `landing/home-about.webp` | Homepage About preview (from 1280 px) | Two young professionals talking as they walk through a courtyard | AI-generated, 2026-09-30 |
+| `landing/home-about.webp` | Homepage About preview (from 1280 px) | Two young professionals talking as they walk through a courtyard | AI-generated, 2026-09-30; skirts edit, 2026-10-01 (§7) |
 | `landing/home-programme.webp` | Homepage Programme preview (from 1280 px) | A young woman reading at a sunlit library desk | AI-generated, 2026-09-30 |
 | `landing/programme-virtual.webp` | `/programme` Virtual training card | A young woman in headphones at a laptop at her home desk | AI-generated, 2026-09-30 |
 | `landing/programme-merit.webp` | `/programme` Merit-based selection card | A young man with glasses writing in a notebook | AI-generated, 2026-09-30 |
-| `landing/programme-bootcamp.webp` | `/programme` Physical boot camp card | Three young professionals in a training-room discussion | AI-generated, 2026-09-30 |
-| `landing/programme-community.webp` | `/programme` Mentorship and community card | A mentor talking with two young professionals on a terrace | AI-generated, 2026-09-30 |
+| `landing/programme-bootcamp.webp` | `/programme` Physical boot camp card | Three young professionals in a training-room discussion | AI-generated, 2026-09-30; skirts edit, 2026-10-01 (§7) |
+| `landing/programme-community.webp` | `/programme` Mentorship and community card | A mentor talking with two young professionals on a terrace | AI-generated, 2026-09-30; skirts edit, 2026-10-01 (§7) |
 
 They replaced the Figma Make prototype's photos, which were generic stock-style or AI images with problems of their own: invented "Redemption City" and summit banners, invented name tags on a video call, a fake certificate and scorecard, and an Apple logo.
 
 ## 3. Workflow, crops and optimisation
 
-- **Masters:** `design/imagery/<date>/masters/*.webp` (2026-09-29: the original nine; 2026-09-30: the homepage previews and `/programme` cards), full resolution, WebP quality 92, committed. Each batch's `prompts.json` sits beside them. The generator's original PNGs are in `design/imagery/<date>/originals/` (gitignored) and in the tool's own output folder.
+- **Masters:** `design/imagery/<date>/masters/*.webp` (2026-09-29: the original nine; 2026-09-30: the homepage previews and `/programme` cards; 2026-10-01: five of those edited so that the women wear skirts, §7), full resolution, WebP quality 92, committed. Each batch's `prompts.json` sits beside them. The generator's original PNGs are in `design/imagery/<date>/originals/` (gitignored) and in the tool's own output folder.
 - **Site files:** `python3 scripts/imagery-assets.py` resizes each master to at most 1200 px on the long edge (the success portrait to 872 px, keeping its transparent circle) and writes WebP quality 80, method 6, under the existing file names, so no imports change.
 - **Crops happen in the browser** (`object-fit: cover`), with a focus (`object-position`) per slot so faces survive every crop:
 
@@ -77,8 +78,8 @@ All nine were generated on 2026-09-29 with the same tool, supplied by the owner 
 | Status | **AI-generated.** Fictional people; not RCCG participants, applicants or events |
 | Tool / model | Codex built-in image generator (`image_gen`); the tool does not name the model |
 | Created | 2026-09-29 |
-| Master | `design/imagery/2026-09-29/masters/vision.webp` (original: `exec-e2b18210-6f1e-4a39-9381-731863d8cec1.png`) |
-| Crop and optimisation | Focus `object-position: 50% 15%`. Master 1122×1402 (4:5, 157 KB). Site file 960×1200, 61 KB. Displayed as tall crops on phones and on desktop, and wide on tablets (up to 1.77:1): the focus keeps all three heads with some headroom. |
+| Master | `design/imagery/2026-10-01/masters/vision-skirts.webp`: the skirts edit (§7) of `design/imagery/2026-09-29/masters/vision.webp` (original: `exec-e2b18210-6f1e-4a39-9381-731863d8cec1.png`) |
+| Crop and optimisation | Focus `object-position: 50% 15%`. Master 1122×1402 (4:5; the edit 146 KB). Site file 960×1200, 60 KB. Displayed as tall crops on phones and on desktop, and wide on tablets (up to 1.77:1): the focus keeps all three heads with some headroom. |
 
 **Prompt:** not recorded by the generating tool (`prompts.json` has none for this image). The scene is described by the alt text above.
 
@@ -209,8 +210,8 @@ Landscape 3:2 photograph. A Nigerian female mentor aged around 45 in a modest mu
 | Status | **AI-generated.** Fictional people; not RCCG participants, applicants or events |
 | Tool / model | Codex built-in image generator (`image_gen`); the tool does not name the model |
 | Created | 2026-09-29 |
-| Master | `design/imagery/2026-09-29/masters/journey-06-community.webp` (original: `exec-f53b2171-0340-4178-9b6b-eba59bba6f4a.png`) |
-| Crop and optimisation | Focus `object-position: 50% 10%`. Master 1536×1024 (3:2, 234 KB). Site file 1200×800, 86 KB. |
+| Master | `design/imagery/2026-10-01/masters/journey-community-skirts.webp`: the skirts edit (§7) of `design/imagery/2026-09-29/masters/journey-06-community.webp` (original: `exec-f53b2171-0340-4178-9b6b-eba59bba6f4a.png`) |
+| Crop and optimisation | Focus `object-position: 50% 10%`. Master 1536×1024 (3:2; the edit 222 KB). Site file 1200×800, 84 KB. |
 
 <details><summary>Generation prompt (as recorded)</summary>
 
@@ -266,9 +267,31 @@ Six additional fictional Nigerian professional scenes were generated with the bu
 | programme-bootcamp.webp | Programme physical boot camp | Three young professionals seated together in a training-room discussion | 50% 30% |
 | programme-community.webp | Programme mentorship/community | A mentor talking with two young professionals on a garden terrace | 50% 30% |
 
+Three of them (`home-about`, `programme-bootcamp`, `programme-community`) were later edited so that the women wear skirts (§7).
+
 Existing Journey photos now appear only on Journey. Vision and Doctrine photos appear only on their dedicated pages. The existing AI disclosures continue to cover all placements. A regression check verifies that the 15 supporting-photo references are unique.
 
 **Review and browser check (2026-09-30):** all six passed the §1 review (natural hands and faces, modest varied tailoring, no readable text, logos or certificates; locs, twists, glasses and an older mentor widen the variety). In headless Chrome on a local production build at 320, 390, 600, 639, 700, 767, 768, 1280, 1440 and 1920 px, every photo appears on exactly one page, loads at full opacity, keeps every face in view and causes no overflow or layout shift. The `/programme` focus values were raised (22 to 30%) so heads keep their headroom in the widest card crops (about 3.6:1) and the boot camp badge clears the heads; at those widths the writing hands are trimmed instead. The boot camp photo is a calm seated discussion, a looser fit for a physical camp than the brief's "structured leadership workshop": a candidate for regeneration.
+
+## 7. Skirts instead of trousers (2026-10-01)
+
+The owner asked for the women in the supporting photographs to wear skirts instead of trousers, then revised the request so that nothing is added on their heads (no scarves, berets, fascinators or hats). Five photographs showed women in trousers. They were edited rather than regenerated, so the people, faces, poses, framing and light are the ones already reviewed in §5 and §6:
+
+| Site file | Placement | Change |
+|---|---|---|
+| `landing/vision-portrait.webp` | `/about` Vision & Mission | Cream trousers to a cream A-line skirt (left); dark trousers to a dark skirt (right) |
+| `landing/home-about.webp` | Homepage About preview | Burgundy trousers to a burgundy A-line midi skirt |
+| `landing/journey-06-community.webp` | `/journey` stage 06 | Navy and black trousers to navy and black midi skirts; the cream dress unchanged |
+| `landing/programme-bootcamp.webp` | `/programme` Physical boot camp card | Cream and burgundy trousers to cream and burgundy midi skirts (both women seated) |
+| `landing/programme-community.webp` | `/programme` Mentorship and community card | Navy and burgundy trousers to long navy and burgundy skirts |
+
+The other ten photographs show women only from the waist up, at desks and tables, so they are unchanged, as is the hero.
+
+- **Tool:** Codex's built-in image generator (`image_gen`; it doesn't name the model), as in §4 and §6. Each master was edited with an identity-preserving prompt: keep the faces, hairstyles, hands, poses, framing, background and light, leave the men's clothes alone, and turn only the women's trousers into opaque, modest midi or ankle-length skirts without slits that cover the knees even when seated. Generated late on 2026-09-30 (Lagos time), adopted on 2026-10-01.
+- **Records:** [`design/imagery/2026-10-01/prompts.json`](../design/imagery/2026-10-01/prompts.json) holds each prompt, the master it edited (`editOf`), the new master and the generator's original PNG (in the gitignored `originals/`). The edited masters are in `design/imagery/2026-10-01/masters/`. The masters they replace stay in their own batches, so pointing `scripts/imagery-assets.py` back at them undoes an edit. [`before-after.jpg`](../design/imagery/2026-10-01/before-after.jpg) shows each pair.
+- **Review (2026-10-01):** each edit was compared with its original at full size and pixel by pixel. The change is confined to the women's clothing below the waist. Elsewhere the pixels differ only by compression noise: in the top 45% of each frame, where the faces are, by 1.5 to 4.4 levels out of 255 on average. No headwear, text or logos were added. The skirts are opaque, without slits, and drape naturally over the chairs and in the walking pose. In three photos they run to the bottom of the frame (Vision, the About preview, Mentorship and community). In the other two they're midi length: the knees stay covered, and the lower legs show below the hem (the seated boot camp pair and the standing Journey group).
+- **Site files:** `scripts/imagery-assets.py` builds the five from the edited masters under their existing names and sizes, so imports, alt text (the scenes are unchanged), focus and layout stay as they were. Rebuilding all fifteen reproduces the committed files byte for byte. The footer's "About our images" note still holds.
+- **Browser check (2026-10-01),** on the local development server: at 1440 px, the `/about` Vision photo, the homepage About preview, the `/journey` stage 06 card and both `/programme` cards; at 390 px, `/about` and the `/programme` cards. Each edited photo loads in its slot with the same crop as before, faces keep their headroom, the boot camp badge clears the heads, and there's no horizontal overflow.
 
 ---
 
