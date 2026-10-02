@@ -587,6 +587,8 @@ export const adminApi = {
   resendInvite: (staffId: string) => post<{ emailed: boolean; inviteUrl: string | null }>(`/staff/${id(staffId)}/resend-invite`),
   /** A new invitation link for the owner to share another way (D-60); it replaces the emailed one. */
   staffInviteLink: (staffId: string) => post<{ inviteUrl: string }>(`/staff/${id(staffId)}/invite-link`),
+  /** Removes a staff member for good (D-61); `confirm` is their email address, typed. */
+  removeStaff: (staffId: string, confirm: string) => post<{ ok: true }>(`/staff/${id(staffId)}/remove`, { confirm }),
   revokeStaffSessions: (staffId: string) => post<{ ok: true }>(`/staff/${id(staffId)}/revoke-sessions`),
 
   // Settings and audit

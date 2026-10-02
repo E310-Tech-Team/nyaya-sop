@@ -73,8 +73,9 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
       created_at: Date;
       locked_until: Date | null;
     }>(
+      // Removed accounts (D-61) are kept for history, not listed.
       `select id, email, display_name, role::text as role, status::text as status, mfa_enabled_at, last_login_at, created_at, locked_until
-         from staff_users order by status, display_name`,
+         from staff_users where removed_at is null order by status, display_name`,
     );
     return {
       items: rows.map((row) => ({
@@ -111,16 +112,19 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     if (!isStaffRole(role)) errors.role = 'Choose a role.';
     if (Object.keys(errors).length) return sendError(reply, 400, 'VALIDATION_FAILED', 'Some details need attention.', { fieldErrors: errors as never });
     const result = await createStaffInvite(services, { email, displayName: displayName!, role: role as never, invitedBy: request.staff!.id });
-    if (result === 'exists') return sendError(reply, 409, 'CONFLICT', 'There is already a staff account for that email address.');
-    await audit(db, staffActor(request.staff!), 'staff.invited', { type: 'staff', id: result.staffId }, { role, emailed: result.emailed });
+    if (result === 'exists') {
+      return sendError(reply, 409, 'CONFLICT', 'There is already a staff account for that email address. To start again, remove it first, then invite them.');
+    }
+    await audit(db, staffActor(request.staff!), 'staff.invited', { type: 'staff', id: result.staffId }, { role, emailed: result.emailed, ...(result.reopened ? { reopened: true } : {}) });
     // The link is only shown when it couldn't be emailed; share it privately.
     return reply.code(201).send({ id: result.staffId, emailed: result.emailed, inviteUrl: result.emailed ? null : result.url });
   });
 
+  /** A staff member staff actions apply to: removed accounts (D-61) count as gone. */
   const target = async (id: string) => {
     if (!isUuid(id)) return null;
     const { rows } = await db.query<{ id: string; role: string; status: string; email: string }>(
-      'select id, role::text as role, status::text as status, email from staff_users where id = $1',
+      'select id, role::text as role, status::text as status, email from staff_users where id = $1 and removed_at is null',
       [id],
     );
     return rows[0] ?? null;
@@ -174,6 +178,49 @@ export async function platformRoutes(app: FastifyInstance, services: Services) {
     );
     if (!rows.length) return sendError(reply, 409, 'CONFLICT', 'That account isn’t suspended.');
     await audit(db, staffActor(request.staff!), 'staff.reactivated', { type: 'staff', id: staff.id });
+    return { ok: true };
+  });
+
+  /**
+   * Removes a staff member for good (D-61), in one statement: the password, two-step methods,
+   * sessions, links and test devices go, and their applications are unassigned. The account stays,
+   * closed and out of the staff list, so their name stays on what they did; inviting the same
+   * address again reopens it (`createStaffInvite`). Confirmed by typing their email address; never
+   * yourself, never the last active owner (locked like role changes).
+   */
+  app.post<{ Params: { id: string } }>('/staff/:id/remove', { preHandler: manageStaff }, async (request, reply) => {
+    const staff = await target(request.params.id);
+    if (!staff) return sendError(reply, 404, 'NOT_FOUND', 'Staff member not found.');
+    if (staff.id === request.staff!.id) return sendError(reply, 403, 'FORBIDDEN', 'You can’t remove yourself. Ask another owner.');
+    if (normalizeEmail(str(request.body, 'confirm', 254) ?? '') !== staff.email) {
+      return sendError(reply, 400, 'VALIDATION_FAILED', 'Type their email address to confirm.', {
+        fieldErrors: { confirm: 'Type their email address exactly as shown.' } as never,
+      });
+    }
+    const { rows } = await db.query(
+      `${OTHER_OWNERS_LOCKED},
+       target as (select id from staff_users
+                   where id = $1::uuid and removed_at is null and (role <> 'owner' or status <> 'active' or ${anotherOwner('$1::uuid')})
+                   for update),
+       keys as (delete from staff_passkeys where staff_id in (select id from target)),
+       codes as (delete from staff_recovery_codes where staff_id in (select id from target)),
+       mail as (delete from staff_email_codes where staff_id in (select id from target)),
+       challenges as (delete from staff_passkey_challenges where staff_id in (select id from target)),
+       sessions as (update staff_sessions set revoked_at = now() where staff_id in (select id from target) and revoked_at is null),
+       links as (update auth_tokens set used_at = now() where staff_id in (select id from target) and used_at is null),
+       devices as (update push_subscriptions set status = 'revoked', deactivated_at = now(), deactivated_reason = 'account_deleted', updated_at = now()
+                    where staff_id in (select id from target) and status = 'active'),
+       assigned as (update applications set assigned_reviewer_id = null where assigned_reviewer_id in (select id from target))
+       update staff_users
+          set status = 'suspended', suspended_at = coalesce(suspended_at, now()), removed_at = now(), password_hash = null,
+              mfa_secret_enc = null, mfa_pending_secret_enc = null, mfa_enabled_at = null, mfa_last_step = null,
+              email_codes_enabled_at = null, webauthn_user_id = null, failed_login_count = 0, locked_until = null
+        where id in (select id from target)
+        returning id`,
+      [staff.id],
+    );
+    if (!rows.length) return sendError(reply, 409, 'CONFLICT', 'There must always be at least one active owner.');
+    await audit(db, staffActor(request.staff!), 'staff.removed', { type: 'staff', id: staff.id }, { role: staff.role });
     return { ok: true };
   });
 
