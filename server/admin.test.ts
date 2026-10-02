@@ -109,6 +109,31 @@ describe('staff accounts (security audit)', () => {
     }
   });
 
+  it('keeps an active owner even when two owners remove each other at the same moment (D-61)', async () => {
+    const isolated = await createTestContext();
+    try {
+      const [a, b] = [await createStaff(isolated, { role: 'owner' }), await createStaff(isolated, { role: 'owner' })];
+      const [asA, asB] = [asUser(isolated.app, await staffSignIn(isolated, a)), asUser(isolated.app, await staffSignIn(isolated, b))];
+      const query = isolated.db.query.bind(isolated.db);
+      isolated.db.query = (async (text: string, params?: unknown[]) => {
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        return query(text, params);
+      }) as typeof isolated.db.query;
+      const results = await Promise.all([
+        asA({ method: 'POST', url: `/api/admin/staff/${b.id}/remove`, payload: { confirm: b.email } }),
+        asB({ method: 'POST', url: `/api/admin/staff/${a.id}/remove`, payload: { confirm: a.email } }),
+      ]).finally(() => (isolated.db.query = query));
+      // One removal goes through; the other is refused (or finds its owner already signed out).
+      const codes = results.map((res) => res.statusCode).sort();
+      expect(codes[0]).toBe(200);
+      expect([401, 409]).toContain(codes[1]);
+      const owners = await isolated.db.query<{ n: number }>(`select count(*)::int as n from staff_users where role = 'owner' and status = 'active'`);
+      expect(owners.rows[0]!.n).toBe(1);
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it('ends a suspended person’s invitation and reset links, and lets owners lift a sign-in lock', async () => {
     const invited = await as('owner')({ method: 'POST', url: '/api/admin/staff', payload: { email: 'links.end@example.org', displayName: 'Links End', role: 'reviewer' } });
     const token = /token=([A-Za-z0-9_-]+)/.exec(ctx.outbox.latest('links.end@example.org')!.text)![1]!;
@@ -313,6 +338,75 @@ describe('staff management safeguards', () => {
     expect(invite.statusCode).toBe(201);
     expect(invite.json().emailed).toBe(true);
     expect(invite.json().inviteUrl).toBeNull(); // emailed, so not shown
+  });
+
+  it('removes a staff member for good, keeps their name on what they did, and reopens the account when invited again (D-61)', async () => {
+    const owner = as('owner');
+    const member = await createStaff(ctx, { role: 'reviewer', email: 'leaving.reviewer@example.org' });
+    const asMember = asUser(ctx.app, await staffSignIn(ctx, member));
+    const applicationId = await submit('assigned.to.leaver@example.com');
+    expect((await owner({ method: 'POST', url: `/api/admin/applicants/${applicationId}/assign`, payload: { reviewerId: member.id } })).statusCode).toBe(200);
+    expect((await asMember({ method: 'POST', url: `/api/admin/applicants/${applicationId}/notes`, payload: { body: 'Called them back.' } })).statusCode).toBe(201);
+    const remove = (role: StaffRole, staffId: string, confirm: unknown) => as(role)({ method: 'POST', url: `/api/admin/staff/${staffId}/remove`, payload: { confirm } });
+
+    // Owners only; never yourself; their email address typed to confirm.
+    for (const role of roles.filter((role) => role !== 'owner')) expect({ role, status: (await remove(role, member.id, member.email)).statusCode }).toEqual({ role, status: 403 });
+    expect((await remove('owner', staffIds.owner, 'anything')).statusCode).toBe(403);
+    expect((await remove('owner', member.id, 'someone.else@example.org')).statusCode).toBe(400);
+    expect((await remove('owner', member.id, member.email.toUpperCase())).statusCode).toBe(200);
+
+    // Every way in has gone: their session, their password, their two-step verification.
+    expect((await asMember({ url: '/api/admin/session' })).statusCode).toBe(401);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/admin/login', remoteAddress: nextVisitor(), headers: { origin: ORIGIN }, payload: { email: member.email, password: member.password } });
+    expect(login.statusCode).toBeGreaterThanOrEqual(400);
+    const { rows: [row] } = await ctx.db.query<Record<string, unknown>>(
+      `select status::text as status, removed_at is not null as removed, password_hash, mfa_secret_enc, mfa_enabled_at from staff_users where id = $1`,
+      [member.id],
+    );
+    expect(row).toEqual({ status: 'suspended', removed: true, password_hash: null, mfa_secret_enc: null, mfa_enabled_at: null });
+    // Off the staff list, their application unassigned, and their note still theirs.
+    expect((await owner({ url: '/api/admin/staff' })).json().items.map((item: { id: string }) => item.id)).not.toContain(member.id);
+    expect((await ctx.db.query(`select assigned_reviewer_id from applications where id = $1`, [applicationId])).rows).toEqual([{ assigned_reviewer_id: null }]);
+    expect((await owner({ url: `/api/admin/applicants/${applicationId}` })).json().notes).toEqual([expect.objectContaining({ body: 'Called them back.', author: 'Test reviewer' })]);
+    // Audited; and a removed account is gone as far as every staff action is concerned.
+    const audited = await ctx.db.query(`select details from audit_events where action = 'staff.removed' and target_id = $1`, [member.id]);
+    expect(audited.rows).toEqual([{ details: { role: 'reviewer' } }]);
+    for (const action of ['suspend', 'reactivate', 'unlock', 'resend-invite', 'invite-link', 'reset-mfa', 'revoke-sessions']) {
+      expect({ action, status: (await owner({ method: 'POST', url: `/api/admin/staff/${member.id}/${action}` })).statusCode }).toEqual({ action, status: 404 });
+    }
+    expect((await remove('owner', member.id, member.email)).statusCode).toBe(404);
+    // A removed account can't be made to hold a password again.
+    await expect(ctx.db.query(`update staff_users set password_hash = 'x' where id = $1`, [member.id])).rejects.toMatchObject({ code: '23514' });
+
+    // Invited again: the same account, reopened as a new invitation with the details given now.
+    const again = await owner({ method: 'POST', url: '/api/admin/staff', payload: { email: member.email, displayName: 'Returning Reviewer', role: 'communications' } });
+    expect(again.statusCode).toBe(201);
+    expect(again.json()).toMatchObject({ id: member.id, emailed: true, inviteUrl: null });
+    expect((await owner({ url: '/api/admin/staff' })).json().items.find((item: { id: string }) => item.id === member.id)).toMatchObject({
+      displayName: 'Returning Reviewer',
+      role: 'communications',
+      status: 'invited',
+      mfaEnabled: false,
+      lastLoginAt: null,
+    });
+    expect((await ctx.db.query(`select details from audit_events where action = 'staff.invited' and target_id = $1`, [member.id])).rows).toEqual([
+      { details: { role: 'communications', emailed: true, reopened: true } },
+    ]);
+    const token = /token=([A-Za-z0-9_-]+)/.exec(ctx.outbox.latest(member.email)!.text)![1]!;
+    const accepted = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/admin/setup/complete',
+      remoteAddress: nextVisitor(),
+      headers: { origin: ORIGIN },
+      payload: { token, password: 'a brand new staff password' },
+    });
+    expect(accepted.statusCode).toBe(200);
+    // Their earlier note is still theirs, under the name they have now.
+    expect((await owner({ url: `/api/admin/applicants/${applicationId}` })).json().notes).toEqual([expect.objectContaining({ author: 'Returning Reviewer' })]);
+    // An account that hasn't been removed can't be invited over.
+    const taken = await owner({ method: 'POST', url: '/api/admin/staff', payload: { email: member.email, displayName: 'Someone', role: 'reviewer' } });
+    expect(taken.statusCode).toBe(409);
+    expect(taken.json().message).toMatch(/remove it first/);
   });
 
   it('gives an owner a new invitation link to share another way, replacing the emailed one (D-60)', async () => {

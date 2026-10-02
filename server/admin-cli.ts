@@ -45,7 +45,7 @@ async function main() {
       const name = values.name?.trim();
       if (!isValidEmail(email) || !name) throw new Error('Usage: create-owner --email you@example.org --name "Your Name"');
       const result = await createStaffInvite(services, { email, displayName: name, role: 'owner', invitedBy: null });
-      if (result === 'exists') throw new Error('A staff account with that email already exists (use the admin area, or reset-mfa).');
+      if (result === 'exists') throw new Error('A staff account with that email already exists (use the admin area, or reset-mfa). A removed account is reopened instead.');
       await audit(db, SYSTEM, 'staff.bootstrap_owner', { type: 'staff', id: result.staffId });
       console.log(`Owner invitation created for ${email}.`);
       console.log('Open this link within 72 hours to choose a password and set up two-step verification.');
@@ -67,7 +67,7 @@ async function main() {
       const { rows } = await db.query<{ id: string; status: string }>(`select id, status::text as status from staff_users where email = $1`, [email]);
       const staff = rows[0];
       if (!staff) throw new Error('No staff account with that email.');
-      if (staff.status !== 'active') throw new Error(`That account is ${staff.status}; reactivate it (or resend the invitation) first.`);
+      if (staff.status !== 'active') throw new Error(`That account is ${staff.status} (or removed); reactivate it, resend the invitation or invite it again first.`);
       await voidStaffTokens(db, staff.id, ['staff_password_reset']); // only the newest link works
       const token = await createAuthToken(db, 'staff_password_reset', email, 30, staff.id);
       await audit(db, SYSTEM, 'staff.password_reset_link', { type: 'staff', id: staff.id }, { via: 'cli' });
@@ -75,7 +75,9 @@ async function main() {
       console.log(siteLink(services, `/admin/reset?token=${token}`));
     } else if (command === 'list') {
       const { rows } = await db.query<{ email: string; role: string; status: string; mfa: boolean }>(
-        `select email, role::text as role, status::text as status, mfa_enabled_at is not null as mfa from staff_users order by role, email`,
+        `select email, role::text as role, case when removed_at is not null then 'removed' else status::text end as status,
+                mfa_enabled_at is not null as mfa
+           from staff_users order by role, email`,
       );
       for (const row of rows) console.log(`${row.role.padEnd(16)} ${row.status.padEnd(10)} mfa:${row.mfa ? 'on ' : 'off'} ${row.email}`);
       if (!rows.length) console.log('No staff accounts yet. Run create-owner.');

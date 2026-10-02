@@ -36,17 +36,24 @@ export const siteLink = (services: Services, path: string) =>
 export async function createStaffInvite(
   services: Services,
   input: { email: string; displayName: string; role: StaffRole; invitedBy: string | null },
-): Promise<{ staffId: string; url: string; emailed: boolean } | 'exists'> {
+): Promise<{ staffId: string; url: string; emailed: boolean; reopened: boolean } | 'exists'> {
+  // A removed account (D-61) is reopened as a new invitation, keeping its history; any other
+  // account with that address is refused.
+  const { rows: earlier } = await services.db.query<{ removed: boolean }>('select removed_at is not null as removed from staff_users where email = $1', [input.email]);
   const { rows } = await services.db.query<{ id: string }>(
     `insert into staff_users (email, display_name, role, invited_by) values ($1, $2, $3, $4)
-     on conflict (email) do nothing returning id`,
+     on conflict (email) do update
+        set display_name = excluded.display_name, role = excluded.role, invited_by = excluded.invited_by, status = 'invited',
+            removed_at = null, suspended_at = null, last_login_at = null, failed_login_count = 0, locked_until = null
+      where staff_users.removed_at is not null
+     returning id`,
     [input.email, input.displayName, input.role, input.invitedBy],
   );
   const staffId = rows[0]?.id;
   if (!staffId) return 'exists';
   const url = await inviteLink(services, staffId, input.email);
   const emailed = await trySend(services, staffInviteEmail(input.email, url, INVITE_HOURS));
-  return { staffId, url, emailed };
+  return { staffId, url, emailed, reopened: earlier[0]?.removed === true };
 }
 
 export async function inviteLink(services: Services, staffId: string, email: string): Promise<string> {
