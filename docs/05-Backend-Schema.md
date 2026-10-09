@@ -1,6 +1,6 @@
 # 05 — Backend Schema & API
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-09
 **Status:** **Built.** Self-hosted PostgreSQL 17 + a Fastify API + a background worker. Source of truth: [`server/migrations/`](../server/migrations/) (schema) and the route modules in [`server/`](../server/) (API).
 
 Related: [01-PRD §5 form content](01-PRD.md#5-form-content) · [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow.md) · [DEPLOYMENT](DEPLOYMENT.md)
@@ -40,6 +40,7 @@ flowchart LR
 | `0013_staff_passkeys_email_codes.sql` | more ways through staff two-step verification (D-58): passkeys and their single-use challenges, email codes, the method a session used and its last strong check ([below](#staff-sign-in-methods-0013)) |
 | `0014_parish_place.sql` | the parish question in two steps (D-59): `applications.parish_place_snapshot`, the province (or region or continent) chosen before saying the parish isn't listed, allowed only on `reported` answers. A column of its own, so the release before it still reads every `parish_snapshot` as a chosen parish ([below](#the-province-step-0014)) |
 | `0015_staff_removed.sql` | removing a staff member (D-61): `staff_users.removed_at`, with a check that a removed account is suspended, with no password and no two-step verification ([below](#staff-sign-in-methods-0013)) |
+| `0016_mentor_nominations.sql` | separate mentor nominations table and enum types for broad nominee age ranges and RCCG status |
 
 Existing applications stay valid: new columns have defaults (`published_status = 'submitted'`, no account, no reviewer), and a person can claim an older application after signing in with the same email ([03 §8](03-App-Flow.md#8-applicant-accounts)). Verified on real PostgreSQL 17 over existing data (2026-09-26).
 
@@ -160,6 +161,8 @@ erDiagram
 | `created_at` | timestamptz | |
 
 Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_id, email)`, `(account_id)` partial, `(email)`, `(assigned_reviewer_id)` partial, `(parish_id)` partial.
+
+**`mentor_nominations`** (0016; separate from applications): `id`, `nominator_name`, `nominee_name`, `region_location`, `nominee_phone_e164`, `nominee_email`, `nominee_age_range`, `job_role`, `experience`, `pillar_fit`, `nominee_rccg_status`, `why_fit`, `testimonial`, optional `social_profile`, and `created_at`. The phone is stored as E.164 and email lower-case. `pillar_fit` is text because the project has no confirmed pillar names (06, C9); it can contain one or more names supplied by the nominator. `nominee_age_range` and `nominee_rccg_status` use enums whose values match the shared form options. A Non-RCCG answer is stored and does not block submission. There is no public read/list endpoint.
 
 **`parish_reports`** (0007; for staff in Parish review, never shown to applicants): `application_id` FK cascade, `kind` (`not_listed` with the `reported_name` they typed, `details_wrong` with the listed `parish_id`, or `lookalike` (0012) with the parish a look-alike choice was linked to), `status` (pending, then `linked` to a listed parish, `added` to the directory and linked, `fixed` in the directory, or `rejected`: closed with no change), `resolved_parish_id`, `resolved_by`, `resolved_at`; one of each kind per application. Linking the application's parish (from Parish review or the applicant's page) resolves its pending reports; removing a staff link reopens a `not_listed` report.
 
@@ -361,6 +364,8 @@ Staff sign in with their email and password and then a second step, or with a **
 | `staff_challenge_purpose` (0013) | `sign_in` · `second_step` · `step_up` · `register` · `password_reset` |
 | `staff_email_code_purpose` (0013) | `second_step` · `step_up` · `enable` |
 | `push_subscription_status`, `campaign_status`, `delivery_status`, `job_status` | see the tables above |
+| `mentor_nominee_age_range` (0016) | `18_29` · `30_39` · `40_49` · `50_59` · `60_plus` |
+| `mentor_nominee_rccg_status` (0016) | `rccg_member` · `non_rccg` |
 | `church_level` | `continent` · `region` · `province` · `zone` · `area` (in this order; [`src/shared/directory.ts`](../src/shared/directory.ts)) |
 | `directory_status`, `directory_origin`, `directory_source`, `directory_import_status` | active/inactive/merged · import/staff · spreadsheet/api · planned/applied/reverted/failed |
 | `legacy_match_status` (0010) | `matched` · `ambiguous` · `unmatched` |
@@ -376,6 +381,7 @@ JSON everywhere, `Cache-Control: no-store`, `X-App-Build: <release id>`. Errors:
 | `GET /api/health` | — | DB check |
 | `GET /api/cohorts/current` | 120/min | Open cohort |
 | `POST /api/applications` | 20/10 min | Submit an application (also records `application_submitted`); the parish answer is described below |
+| `POST /api/mentor-nominations` | 20/10 min | Submit a mentor nomination to the separate `mentor_nominations` table; shared server validation and the same honeypot and per-visitor rate limit as applications; 201 `{submittedAt}`, 400 `VALIDATION_FAILED`. No public GET/list/read route |
 | `GET /api/config` | 120/min | `{accounts:{enabled}, push:{enabled, publicKey}, supportEmail, buildId, parishDirectory:{enabled}}` (the directory is enabled when switched on in Settings and the list has active parishes) |
 | `GET /api/parishes/search?q=&state=&limit=` | 240/min | The search everywhere ("I don't know my province"). 404 while the directory is switched off (an imported list may still be under review). Otherwise, active parishes whose name, province or region has every typed word at the start of a word (2–60 characters; "LP 12" = Lagos Province 12; "RCCG" and "Parish" ignored). Best first: words in the name, whole words, the applicant's `state`, then name and province order; the closest spellings (`fuzzy: true`) when nothing matches. `{results: [{id, name, chain, inState, lookalikes?}], total, fuzzy, directory?}`, at most 10; look-alikes come once, with their count ([§2](#look-alikes-0012)). Names and units only. With the RCCG directory API, only its entries in the configured environment, and `directory: {source: 'api', release, checkedAt, stale}` |
 | `GET /api/parishes/search?unit=&q=&offset=&limit=` | 240/min | Step 2 of the parish question (D-59): the parishes of one place ([§2](#the-province-step-0014)), those matching `q` (0–60 characters; empty lists them all) or every one, alphabetically with numbers in order. `{results, total, fuzzy, directory?}` as above, 20 a page (`limit` 1–20, `offset` 0–10,000, in choices; look-alikes once). 404 for a unit that isn't a place: unknown, inactive, without active parishes of its own, a zone or area, or from another list or environment |
@@ -432,6 +438,10 @@ See [§5 validation](#5-validation-rules) and the status table: 201 `{id, refere
 
 **The parish answer.** A form that uses the parish directory sends `parish`: `{kind: 'listed', id, confirmed: true, detailsWrong?}` or `{kind: 'not_listed', name, unitId?}` (`unitId`: the province chosen in step 1, D-59; an ID that isn't a UUID is a field error, and one that isn't a place of the directory in use is refused with "That province is no longer on our list. Choose your province again."; the place is stored in `parish_place_snapshot` from the directory, never from names the browser sends). The parish question is compulsory (D-52). While the directory is on, `parish` is the only answer: a body without it, or with typed text only, is refused with a field error ("Please search for and select your parish to continue."). While it's off, `parishName` is required (2–120 characters, with a letter) and stored as `legacy_text`. The server checks a listed parish is still active (a merged or deactivated one gets a field error asking the applicant to search again), fills in the chain itself from the parish ID, ignoring any names or IDs of units the browser sends, and stores the application and its parish reports in one statement. A parish with look-alikes is linked to its group's first parish, with the group in the snapshot and a `lookalike` report ([§2](#look-alikes-0012)). A listed parish the directory doesn't place under a continent is stored as the directory has it (nothing is filled in) with a `details_wrong` report for staff. With the RCCG directory API, the parish must be one of its entries in the configured environment, and is confirmed with the provider when the copy is stale ([freshness](#directory-api-0010)); the snapshot keeps its code (`externalId`).
 
+### `POST /api/mentor-nominations`
+
+Accepts the nomination form's fields only; no account, cohort or applicant consent is required. The server cleans text, checks required values, validates the email and phone, stores the phone as E.164, normalises the email, and verifies the age-range and RCCG-status enum values. RCCG status is informational: `non_rccg` is accepted. A filled honeypot returns a normal-looking 201 without storing a row. The response contains only `submittedAt`; nominations cannot be fetched publicly. The form and endpoint do not provide token-based access control: anyone with the unlisted URL can submit, and anyone the URL is forwarded to can access it. The URL is marked `noindex` and is not linked from public pages.
+
 ## 4. Jobs, campaigns and delivery
 
 **Queue** ([`server/jobs/queue.ts`](../server/jobs/queue.ts)): jobs are claimed with `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` and a lease (`locked_until`, 2 min, kept alive while running). A job whose worker dies is claimed again when its lease runs out, and the stale worker can no longer complete it. Retries back off exponentially (30 s, 1 min, 2 min… capped at 1 h, ±20 % jitter, never sooner than a push service's `Retry-After`). `dedupe_key` makes enqueueing idempotent. On shutdown, running jobs get up to 10–20 s and are then handed back without counting the attempt.
@@ -471,6 +481,8 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 | Notification link | one of: `/`, `/about`, `/programme`, `/journey`, `/faq`, `/updates`, `/install`, `/notifications`, `/account`, `/account/application`, `/account/notifications` (checked again by the service worker) |
 | Campaign | title ≤ 65, body ≤ 180, topic known, TTL 1 h–28 days, scheduled 1 min–90 days ahead |
 | Staff password | 12–128 characters |
+
+**Mentor nomination** (`src/shared/mentor-nomination.ts`, migration 0016): required nominator and nominee names, nominee location, valid contact details, a known broad age range and RCCG status, job role, experience, pillar fit, why-fit explanation and testimonial. Names and location are limited to 120 characters; experience to 1,200; pillar fit to 300; explanation and testimonial to 1,500. Social profile is optional (≤ 300). The project has no confirmed pillar names, so fit is free text. Both RCCG-status values are valid; status is stored, not used as a rejection rule.
 
 ## 6. Security and privacy
 
@@ -540,6 +552,7 @@ Publishing copies the current review status (and an optional message) to `publis
 | Notification deliveries; non-campaign messages | 180 days |
 | Turned-off push subscriptions | 180 days after deactivation (subscriptions past the expiry their browser gave are switched off by the clean-up) |
 | Applications, notes, status history, audit events, consent history | **Not yet decided** ([01-PRD Q11](01-PRD.md#8-open-questions)): kept until a retention period is agreed |
+| Mentor nominations, including nominee contact details | **Not yet decided**: no retention period or deletion interface is currently defined |
 
 **Deletion:** an applicant can delete their account (sessions and inbox go; applications stay, unlinked; devices stop, and their push address, keys and the hashes that would recognise the browser are erased at once: what remains is a revoked row with the push service's name, for campaign counts, beside an anonymous consent record). Staff can delete an account or an application from the admin area (typed confirmation, audited). Deleting an application also deletes its notes and history.
 

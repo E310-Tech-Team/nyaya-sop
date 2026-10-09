@@ -30,6 +30,11 @@
       "continue": true
     },
     {
+      "src": "^/mentor-nomination$",
+      "headers": { "X-Robots-Tag": "noindex, nofollow" },
+      "continue": true
+    },
+    {
       "src": "^/(?:admin|account)(?:/(?:[^/]+/)*[^/.]*)?$",
       "headers": { "X-Robots-Tag": "noindex, nofollow" },
       "continue": true

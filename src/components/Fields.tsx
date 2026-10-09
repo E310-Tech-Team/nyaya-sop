@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from 'react';
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 
 export function QuestionNumber({ n }: { n: string }) {
   return (
@@ -96,6 +96,30 @@ export function TextField({ id, number, label, required = true, hint, error, cla
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(hint && `${id}-hint`, error && `${id}-error`)}
         className={controlClass(!!error)}
+      />
+    </QuestionShell>
+  );
+}
+
+type TextAreaFieldProps = Omit<ShellProps, 'children'> &
+  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'id' | 'onChange' | 'value' | 'className'> & {
+    value: string;
+    onChange: (value: string) => void;
+  };
+
+export function TextAreaField({ id, number, label, required = true, hint, error, className, value, onChange, ...input }: TextAreaFieldProps) {
+  return (
+    <QuestionShell id={id} number={number} label={label} required={required} hint={hint} error={error} className={className}>
+      <textarea
+        {...input}
+        id={id}
+        name={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy(hint && `${id}-hint`, error && `${id}-error`)}
+        className={`${controlClass(!!error)} min-h-[120px] resize-y py-[13px] leading-[1.5]`}
       />
     </QuestionShell>
   );

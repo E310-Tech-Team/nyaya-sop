@@ -23,6 +23,23 @@ const configFor = (overrides: Record<string, string> = {}) =>
 const submit = (body: unknown, target: FastifyInstance = app) =>
   target.inject({ method: 'POST', url: '/api/applications', payload: body as object });
 
+const validMentorNomination = (overrides: Record<string, unknown> = {}) => ({
+  nominatorName: 'Adaeze Okafor',
+  nomineeName: 'Chidi Nwosu',
+  regionLocation: 'Lagos Region',
+  nomineePhone: '0801 234 5678',
+  nomineeEmail: 'chidi.nwosu@example.com',
+  ageRange: '30_39',
+  jobRole: 'Business owner',
+  experience: 'More than ten years building teams and mentoring young professionals.',
+  pillarFit: 'Marketplace leadership',
+  rccgStatus: 'non_rccg',
+  whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
+  testimonial: 'He is dependable, generous with his time and an excellent example to others.',
+  socialProfile: 'https://example.com/chidi',
+  ...overrides,
+});
+
 beforeAll(async () => {
   staticDir = await mkdtemp(join(tmpdir(), 'sop-static-'));
   await mkdir(join(staticDir, 'assets'));
@@ -41,7 +58,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.exec(`delete from applications; update cohorts set is_accepting_applications = true;`);
+  await db.exec(`delete from mentor_nominations; delete from applications; update cohorts set is_accepting_applications = true;`);
 });
 
 describe('migrations', () => {
@@ -234,6 +251,66 @@ describe('POST /api/applications', () => {
   });
 });
 
+describe('POST /api/mentor-nominations', () => {
+  it('persists every valid field, normalises contact details and accepts Non-RCCG status', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/mentor-nominations', payload: validMentorNomination() });
+    expect(res.statusCode).toBe(201);
+    expect(new Date(res.json().submittedAt).toString()).not.toBe('Invalid Date');
+
+    const { rows } = await db.query('select * from mentor_nominations');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      nominator_name: 'Adaeze Okafor',
+      nominee_name: 'Chidi Nwosu',
+      region_location: 'Lagos Region',
+      nominee_phone_e164: '+2348012345678',
+      nominee_email: 'chidi.nwosu@example.com',
+      nominee_age_range: '30_39',
+      job_role: 'Business owner',
+      experience: 'More than ten years building teams and mentoring young professionals.',
+      pillar_fit: 'Marketplace leadership',
+      nominee_rccg_status: 'non_rccg',
+      why_fit: 'Chidi has consistently guided young people and built successful teams in his field.',
+      testimonial: 'He is dependable, generous with his time and an excellent example to others.',
+      social_profile: 'https://example.com/chidi',
+    });
+    expect(rows[0]).toHaveProperty('created_at');
+  });
+
+  it('rejects invalid contact details and missing required nomination fields', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/mentor-nominations',
+      payload: validMentorNomination({ nomineeEmail: 'not-an-email', nomineePhone: '12', pillarFit: '', rccgStatus: 'other' }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: {
+        nomineeEmail: expect.any(String),
+        nomineePhone: expect.any(String),
+        pillarFit: expect.any(String),
+        rccgStatus: expect.any(String),
+      },
+    });
+    const { rows } = await db.query<{ count: number }>('select count(*)::int as count from mentor_nominations');
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it('discards honeypot submissions and exposes no public read or list endpoint', async () => {
+    const spam = await app.inject({
+      method: 'POST',
+      url: '/api/mentor-nominations',
+      payload: validMentorNomination({ website: 'https://spam.example' }),
+    });
+    expect(spam.statusCode).toBe(201);
+    const list = await app.inject('/api/mentor-nominations');
+    expect(list.statusCode).toBe(404);
+    const { rows } = await db.query<{ count: number }>('select count(*)::int as count from mentor_nominations');
+    expect(rows[0]?.count).toBe(0);
+  });
+});
+
 describe('GET /api/admin/applications.csv (retired Basic-auth export)', () => {
   it('no longer accepts Basic auth: it needs a signed-in staff session with export permission', async () => {
     const res = await app.inject({ url: '/api/admin/applications.csv', headers: { authorization: basic('admin', ADMIN_PASSWORD) } });
@@ -250,6 +327,13 @@ describe('website', () => {
     expect(res.headers['content-type']).toMatch(/^text\/html/);
     expect(res.headers['cache-control']).toBe('no-cache');
     expect(res.body).toContain('<div id="root">');
+  });
+
+  it('serves the direct mentor nomination route without indexing it', async () => {
+    const res = await app.inject('/mentor-nomination');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/^text\/html/);
+    expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
   });
 
   it('caches fingerprinted assets forever and 404s missing ones', async () => {

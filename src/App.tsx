@@ -12,6 +12,7 @@ import FaqPage from './pages/FaqPage';
 import InstallPage from './pages/InstallPage';
 import JourneyPage from './pages/JourneyPage';
 import LandingPage from './pages/LandingPage';
+import MentorNominationPage from './pages/MentorNominationPage';
 import NotFoundPage from './pages/NotFoundPage';
 import NotificationsPage from './pages/NotificationsPage';
 import PersonalInfoPage from './pages/PersonalInfoPage';
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="/apply/review" element={<RequireStep><ReviewPage /></RequireStep>} />
           </Route>
           <Route path="/apply/success" element={<SuccessPage />} />
+          <Route path="/mentor-nomination" element={<MentorNominationPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ApplicationProvider>

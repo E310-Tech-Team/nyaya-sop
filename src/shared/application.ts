@@ -221,7 +221,7 @@ export type ApiErrorCode =
 export type ApiErrorBody = {
   code: ApiErrorCode;
   message: string;
-  fieldErrors?: FieldErrors;
+  fieldErrors?: Partial<Record<string, string>>;
 };
 
 export function labelFor(

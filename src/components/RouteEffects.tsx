@@ -10,6 +10,17 @@ export function usePageTitle(title: string) {
   }, [title]);
 }
 
+/** Keeps this one-off, unlisted route out of search results. */
+export function useNoIndex() {
+  useEffect(() => {
+    const meta = document.createElement('meta');
+    meta.name = 'robots';
+    meta.content = 'noindex, nofollow';
+    document.head.append(meta);
+    return () => meta.remove();
+  }, []);
+}
+
 /**
  * On every route change (not hash changes): jump to the top and move focus to the
  * page's visible <h1 data-page-heading> so screen readers announce the new screen.

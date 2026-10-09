@@ -1,6 +1,6 @@
 # 04 — UI/UX Design Brief
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-09
 **Brand source:** the brand guideline "School of Purpose 4.pdf" (logo lockups, rationale, palette), with the logo masters in [`design/brand/`](../design/brand/README.md) (§2).
 **Design source:** Figma Make project "Prototype Design". Compressed render of the desktop landing page: [`design/landing-reference.webp`](../design/landing-reference.webp). The 15 MB original, `design/landing-reference-figma.png`, is kept locally and git-ignored.
 **Implementation:** design tokens in [`src/index.css`](../src/index.css) `@theme` (colour, type) and `:root` (motion). The application screens use the shared components in `src/components/`. The homepage hero and the reused editorial sections (Vision & Mission, Doctrine, Blueprint, the Journey cascade) still use the Figma export's arbitrary values; the newer sections and the shared marketing chrome ([`src/components/marketing/`](../src/components/marketing/)) use the tokens. Programme wording shared across screens lives in [`src/config/programme.ts`](../src/config/programme.ts).

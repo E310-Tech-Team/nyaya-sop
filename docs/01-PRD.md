@@ -3,7 +3,7 @@
 **Product:** School of Purpose (SOP): Purpose Boot Camp, Expression of Interest site
 **Owner organisation:** RCCG National Young Adults & Youth
 **Programme edition:** First Edition, "The Called Generation"
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-09
 **Current stage:** **Built and deployment-ready.** Applications are validated and stored in PostgreSQL. The site is an installable web app with optional notifications and applicant accounts, and the Programme team has an admin platform. Not yet deployed to a live domain; email and push keys are configured at deployment.
 
 > **Status labels used across these docs**
@@ -18,12 +18,13 @@ Related: [02-TRD](02-TRD.md) · [03-App-Flow](03-App-Flow.md) · [04-UI-UX-Desig
 
 ## 1. Overview
 
-This product is a website for the School of Purpose Purpose Boot Camp. It has two jobs:
+This product is a website for the School of Purpose Purpose Boot Camp. It has five jobs:
 
 1. **Inform and inspire:** a concise homepage and four dedicated pages (About, Programme, Journey, FAQ) present the programme's vision, mission, doctrine ("The Doctrine of Purpose"), the five biblical models ("The Biblical Blueprint"), how the programme runs and the multi-year participant journey.
 2. **Capture Expressions of Interest (EOIs):** a three-section application with a consent step and a review step. Submissions are stored in PostgreSQL.
 3. **Keep applicants informed (optional for them):** an installable app, programme announcements, opt-in push notifications by topic, and an account to follow a published application status and read messages. None of this is needed to browse or apply.
-4. **Run the intake:** an admin platform for the Programme team (review, publish decisions, cohorts, notifications, staff roles, audit history).
+4. **Mobilise mentors:** an unlisted, share-by-link nomination form, separate from the applicant application.
+5. **Run the intake:** an admin platform for the Programme team (review, publish decisions, cohorts, notifications, staff roles, audit history).
 
 This app covers **only the "Apply" stage** of the programme:
 
@@ -47,6 +48,7 @@ This app covers **only the "Apply" stage** of the programme:
 | G5 | Give the Programme team a clean, reviewable list of applicants | **Built**: admin platform with search, review, notes, assignment, explicit publication and audited CSV export |
 | G6 | Let applicants hear about their application and the programme without chasing | **Built**: optional account (published status + messages), inbox, opt-in notifications by topic with separate consent |
 | G7 | Work well on phones and weak connections | **Built**: installable app; public pages available offline once visited; honest offline messages |
+| G8 | Collect mentor nominations toward a target of 500 mentors across regions | **Built**: standalone, noindex form and a separate database record |
 
 ### Non-goals (current scope)
 
@@ -93,6 +95,7 @@ Payments · delivering training, grading, mentorship or community management · 
 | F24 | Announcements (public `/updates`, applicant inbox notices) and notification campaigns | **Built** |
 | F25 | Proportionate anonymous analytics (installs observed, app launches, opt-ins/outs, clicks) | **Built** ([05 §8](05-Backend-Schema.md#8-analytics-retention-and-deletion)) |
 | F26 | Parish directory: applicants choose their parish from the RCCG list; staff review parishes applicants couldn't find and earlier typed answers, and see applications by continent, region, province and parish. The list comes from the official RCCG directory API, kept current automatically (D-53); same-named parishes in one province are offered as one choice, and staff settle which one (D-55); the question asks for the province first, then the parish in it (D-59); where the API isn't configured, from an imported spreadsheet that staff can correct | **Live** (Phase 16): the RCCG directory API (release 2026.1), the look-alike choice (16.10) and the province-first question (16.11); the question is switched on (2026-10-01) |
+| F27 | Standalone mentor nomination: capture the nominator and nominee details, experience, pillar fit, RCCG status, fit explanation, testimonial and optional social profile | **Built**: `/mentor-nomination`; stores in a separate table through a rate-limited, validated POST; no public read/list route; noindex and not linked from public pages |
 
 ## 5. Form content
 
@@ -127,6 +130,12 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | # | Question | Options |
 |---|---|---|
 | 01 | How clear are you about your purpose at this stage of your life? | 1 Not clear at all · 2 Slightly clear · 3 Somewhat clear · 4 Very clear · 5 Extremely clear |
+
+### Standalone mentor nomination
+
+`/mentor-nomination` is a separate, unlisted form and is not part of the applicant flow. It presents “IT’S TIME TO BUILD” and the goal of 500 mentors across the regions. Required fields are the nominator’s name; nominee’s name, location, phone, email, broad age range, profession and experience; pillar fit; RCCG / Non-RCCG status; why the nominee is a good fit; and a short testimonial. The nominee’s social profile is optional. The status is stored for review and does not reject a nomination. “Nomination does not guarantee selection.”
+
+The project does not yet have confirmed names for its eight pillar communities (06, C9), so pillar fit is collected as free text rather than presenting invented options. The unlisted URL is not access control: anyone it is forwarded to can open it. It has no public read/list API and is marked `noindex`; nominations are stored separately from applications.
 
 ## 6. User stories
 
