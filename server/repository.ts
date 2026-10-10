@@ -1,4 +1,5 @@
 import type { NormalizedApplication, StoredGender } from '../src/shared/application';
+import type { NormalizedMentorNomination } from '../src/shared/mentor-nomination';
 import type { Queryable } from './db';
 import type { ParishLink } from './parishes';
 
@@ -85,6 +86,34 @@ export async function insertApplication(
     ],
   );
   return rows[0] ?? null;
+}
+
+/** Inserts one public mentor nomination. No public read/list operation is provided. */
+export async function insertMentorNomination(db: Queryable, nomination: NormalizedMentorNomination): Promise<{ created_at: Date }> {
+  const { rows } = await db.query<{ created_at: Date }>(
+    `insert into mentor_nominations (
+       nominator_name, nominee_name, region_location, nominee_phone_e164, nominee_email,
+       nominee_age_range, job_role, experience, pillar_fit, nominee_rccg_status,
+       why_fit, testimonial, social_profile
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     returning created_at`,
+    [
+      nomination.nominatorName,
+      nomination.nomineeName,
+      nomination.regionLocation,
+      nomination.nomineePhoneE164,
+      nomination.nomineeEmail,
+      nomination.ageRange,
+      nomination.jobRole,
+      nomination.experience,
+      nomination.pillarFit,
+      nomination.rccgStatus,
+      nomination.whyFit,
+      nomination.testimonial,
+      nomination.socialProfile,
+    ],
+  );
+  return rows[0]!;
 }
 
 export type ApplicationExportRow = {

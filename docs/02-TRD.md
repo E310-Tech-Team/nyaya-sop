@@ -1,6 +1,6 @@
 # 02 — Technical Requirements Document (TRD)
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-09
 **Architecture:** React single-page app (installable PWA with a service worker) + Fastify API, backed by **PostgreSQL**, with a **background worker** for notifications and clean-up, deployed on a **single VPS** behind Caddy (HTTPS).
 **Origin:** Figma Make export (2026-09-25), rebuilt as a standalone project on 2026-09-26. The Figma Make tooling has been removed.
 
@@ -25,7 +25,7 @@ Related: [01-PRD](01-PRD.md) · [03-App-Flow](03-App-Flow.md) · [05-Backend-Sch
 | Service worker | Hand-written (`src/sw/sw.ts`), bundled with esbuild | — | Caching policy in `src/sw/routing.ts` (pure, unit-tested). No Workbox |
 | API server | Fastify | 5.12 | `@fastify/static`, `@fastify/helmet` (headers/CSP), `@fastify/rate-limit`, `@fastify/cookie` |
 | Database driver | node-postgres (`pg`) | 8.23 | Pool, 15 s statement timeout |
-| Database | PostgreSQL | 17 | Production. Migrations in `server/migrations/*.sql` (0001–0008) |
+| Database | PostgreSQL | 17 | Production. Migrations in `server/migrations/*.sql` (0001–0016) |
 | Dev/test database | PGlite | 0.5 | PostgreSQL compiled to WASM, in-process: no install needed; loads the `pg_trgm` extension for parish search. **Single process only** (see §10) |
 | Web Push | `web-push` | 3.6 | Only for VAPID signing and aes128gcm encryption; requests go through our own SSRF-safe transport |
 | Email | `nodemailer` | 10.0 | SMTP; plus an in-memory test outbox for development and tests |
@@ -52,7 +52,7 @@ flowchart TB
         Caddy["Caddy 2<br/>HTTPS (Let's Encrypt), gzip/zstd"]
         subgraph App["app container: node server-dist/index.js"]
             Static["@fastify/static<br/>dist/ + SPA fallback"]
-            API["/api<br/>applications · accounts · push · admin"]
+            API["/api<br/>applications · mentor nominations · accounts · push · admin"]
         end
         Worker["worker container: node server-dist/worker.js<br/>campaign dispatch · push delivery · nightly clean-up · directory sync"]
         PG[("PostgreSQL 17<br/>data + job queue")]
@@ -74,7 +74,7 @@ flowchart TB
 - **Shared domain code:** [`src/shared/`](../src/shared/) holds option lists, validation, permissions, notification topics, the link allowlist and time-zone maths. The browser, the service worker and the server all import it.
 - **Background work** runs from a PostgreSQL job queue ([05 §4](05-Backend-Schema.md)), inside the web process (`WORKER_MODE=inline`, the default) or as a separate process (`WORKER_MODE=off` on the web server + `node server-dist/worker.js`; Docker Compose does this).
 - **RCCG directory API** ([05 §2](05-Backend-Schema.md#directory-api-0010), D-53): the parish directory's source when configured. The worker keeps a copy in PostgreSQL in step with the provider's releases (polling: the contract has no webhooks). The form searches that copy, and the API confirms a parish live only when the copy is stale. Server-side only: the key never reaches the browser, and the addresses are fixed per environment (production or sandbox).
-- **SPA fallback:** extension-less `GET` paths outside `/api` get `index.html` (with `X-Robots-Tag: noindex` under `/admin` and `/account`); missing asset files get a real 404.
+- **SPA fallback:** extension-less `GET` paths outside `/api` get `index.html` (with `X-Robots-Tag: noindex` under `/admin`, `/account` and `/mentor-nomination`); missing asset files get a real 404.
 
 ## 3. Progressive Web App
 

@@ -1,6 +1,6 @@
 # 03 — App Flow
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-09
 **Status:** Built. Every screen has its own URL (React Router 8): the homepage, the marketing pages (About, Programme, Journey, FAQ), the application, the install/notification/updates pages, the optional applicant account area and the admin platform. Answers persist across refresh and Back, and submissions go to the API. The site is an installable web app with a service worker ([§6](#6-offline-and-updates)).
 
 Related: [01-PRD](01-PRD.md) · [02-TRD](02-TRD.md) · [04-UI-UX-Design-Brief](04-UI-UX-Design-Brief.md) · [05-Backend-Schema](05-Backend-Schema.md)
@@ -24,6 +24,7 @@ Defined in [`src/App.tsx`](../src/App.tsx).
 | `/apply/purpose` | Section 3: Purpose & Self-Discovery | [PurposePage](../src/pages/PurposePage.tsx) | needs Section 2 valid |
 | `/apply/review` | Review & submit | [ReviewPage](../src/pages/ReviewPage.tsx) | needs all sections valid |
 | `/apply/success` | Confirmation (+ optional notification card and account prompt) | [SuccessPage](../src/pages/SuccessPage.tsx) | needs a submission receipt, else → `/` |
+| `/mentor-nomination` | Standalone, two-stage mentor nomination (“IT’S TIME TO BUILD”, goal: 500 mentors) | [MentorNominationPage](../src/pages/MentorNominationPage.tsx) | —; unlisted, noindex, intentionally not linked from public pages |
 | `/install` | Install the app (device-aware steps) | [InstallPage](../src/pages/InstallPage.tsx) | — |
 | `/notifications` | This device's notification settings | [NotificationsPage](../src/pages/NotificationsPage.tsx) | — (account topics need a signed-in applicant) |
 | `/updates` | Public announcements | [UpdatesPage](../src/pages/UpdatesPage.tsx) | — |
@@ -49,6 +50,8 @@ The account and admin areas are separate lazy-loaded bundles: people who only re
 **Old homepage links:** `/#about`, `/#programme`, `/#journey` and `/#faq` still work. Each id now belongs to the homepage preview of that page, and the homepage scrolls to it after the first render. `/#what-to-expect` is unchanged. `/#blueprint` no longer has a target on the homepage (the Blueprint moved to `/about`), so it opens at the top.
 
 **The server** returns `index.html` for any extension-less path, so every route can be bookmarked, refreshed and shared.
+
+**Mentor nomination link:** `/mentor-nomination` is shared directly and is not included in the landing page, navigation, footer or other public-page links. There is no sitemap in this project; the route also sends `X-Robots-Tag: noindex, nofollow` and adds a `noindex` meta tag. It is not token-protected: anyone the link is forwarded to can open it, so the URL must not be described as secure access control. The form submits to `POST /api/mentor-nominations`; no public read/list endpoint exists.
 
 ## 2. Navigation map
 

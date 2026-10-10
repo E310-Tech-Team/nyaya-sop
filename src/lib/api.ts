@@ -3,7 +3,6 @@ import type {
   ApiErrorCode,
   ApplicationPayload,
   CurrentCohortResponse,
-  FieldErrors,
   SubmitApplicationResponse,
 } from '../shared/application';
 import type { ParishDetailsResponse, ParishSearchResponse, UnitDetails, UnitSearchResponse } from '../shared/directory';
@@ -14,7 +13,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ApiErrorCode | 'NETWORK_ERROR' | 'TIMEOUT',
     message: string,
-    readonly fieldErrors?: FieldErrors,
+    readonly fieldErrors?: Partial<Record<string, string>>,
   ) {
     super(message);
     this.name = 'ApiError';

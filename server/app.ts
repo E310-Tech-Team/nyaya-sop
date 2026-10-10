@@ -12,6 +12,7 @@ import {
   type SubmitApplicationResponse,
 } from '../src/shared/application';
 import { MESSAGES, isHoneypotFilled, validateApplication } from '../src/shared/validation';
+import { validateMentorNomination } from '../src/shared/mentor-nomination';
 import { accountRoutes } from './account/routes';
 import { accountAdminRoutes, cohortRoutes } from './admin/accounts';
 import { applicantRoutes } from './admin/applicants';
@@ -36,7 +37,7 @@ import { publicRoutes } from './public';
 import { pushRoutes } from './push/routes';
 import { PushService } from './push/service';
 import { HttpsPushTransport, type PushTransport } from './push/transport';
-import { getCurrentCohort, insertApplication } from './repository';
+import { getCurrentCohort, insertApplication, insertMentorNomination } from './repository';
 import { directoryNamespace, type Services } from './services';
 import { backgroundIdle } from './background';
 
@@ -306,6 +307,25 @@ export async function buildApp({
     },
   );
 
+  app.post(
+    '/api/mentor-nominations',
+    { config: { rateLimit: { max: config.rateLimit.submitMax, timeWindow: config.rateLimit.submitWindowMs } } },
+    async (request, reply) => {
+      if (isHoneypotFilled(request.body)) {
+        return reply.code(201).send({ submittedAt: new Date().toISOString() });
+      }
+      const result = validateMentorNomination(request.body);
+      if (!result.ok) {
+        return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', {
+          fieldErrors: result.fieldErrors,
+        });
+      }
+
+      const row = await insertMentorNomination(db, result.value);
+      return reply.code(201).send({ submittedAt: new Date(row.created_at).toISOString() });
+    },
+  );
+
   await app.register((instance) => publicRoutes(instance, services), { prefix: '/api' });
   await app.register((instance) => parishRoutes(instance, services), { prefix: '/api/parishes' });
   await app.register((instance) => pushRoutes(instance, services), { prefix: '/api/push' });
@@ -359,7 +379,9 @@ export async function buildApp({
       extname(path) === '';
     // Deep links like /apply/review are client-side routes: hand them the app shell.
     if (isPage) {
-      if (/^\/(admin|account)(\/|$)/.test(path)) reply.header('x-robots-tag', 'noindex, nofollow');
+      if (/^\/(admin|account)(\/|$)/.test(path) || path === '/mentor-nomination') {
+        reply.header('x-robots-tag', 'noindex, nofollow');
+      }
       return reply.sendFile('index.html');
     }
     return sendError(reply, 404, 'NOT_FOUND', 'Not found.');

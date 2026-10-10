@@ -136,7 +136,7 @@ describe('vercel.json (website on Vercel)', () => {
   });
 
   it('keeps the admin and account areas out of search results, like the server', async () => {
-    for (const path of ['/admin', '/admin/applicants', '/account/settings', '/about', '/administrator']) {
+    for (const path of ['/admin', '/admin/applicants', '/account/settings', '/mentor-nomination', '/about', '/administrator']) {
       expect(serve(path).headers['x-robots-tag'], path).toBe((await ctx.app.inject(path)).headers['x-robots-tag']);
     }
   });
