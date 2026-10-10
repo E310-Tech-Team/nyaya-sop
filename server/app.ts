@@ -16,6 +16,7 @@ import { validateMentorNomination } from '../src/shared/mentor-nomination';
 import { accountRoutes } from './account/routes';
 import { accountAdminRoutes, cohortRoutes } from './admin/accounts';
 import { applicantRoutes } from './admin/applicants';
+import { nominationRoutes } from './admin/nominations';
 import { communicationRoutes } from './admin/communications';
 import { directoryRoutes } from './admin/directory';
 import { parishReviewRoutes } from './admin/parish-review';
@@ -337,6 +338,7 @@ export async function buildApp({
   await app.register((instance) => staffMfaRoutes(instance, services), { prefix: '/api/admin' });
   await app.register((instance) => applicantRoutes(instance, services), { prefix: '/api/admin/applicants' });
   await app.register((instance) => accountAdminRoutes(instance, services), { prefix: '/api/admin/accounts' });
+  await app.register((instance) => nominationRoutes(instance, services), { prefix: '/api/admin/nominations' });
   await app.register((instance) => cohortRoutes(instance, services), { prefix: '/api/admin/cohorts' });
   await app.register((instance) => communicationRoutes(instance, services), { prefix: '/api/admin' });
   await app.register((instance) => platformRoutes(instance, services), { prefix: '/api/admin' });

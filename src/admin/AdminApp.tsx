@@ -17,6 +17,7 @@ import CampaignsPage from './pages/Campaigns';
 import CohortsPage from './pages/Cohorts';
 import DashboardPage from './pages/Dashboard';
 import DirectoryPage from './pages/Directory';
+import NominationsPage, { NominationDetailPage } from './pages/Nominations';
 import ParishReviewPage from './pages/ParishReview';
 import CohortsReportPage from './reports/Cohorts';
 import DecisionsReportPage from './reports/Decisions';
@@ -42,6 +43,8 @@ export default function AdminApp() {
           <Route index element={<Allowed any={['dashboard.view']}><DashboardPage /></Allowed>} />
           <Route path="applicants" element={<Allowed any={['applications.view_all', 'applications.view_assigned']}><ApplicantsPage /></Allowed>} />
           <Route path="applicants/:id" element={<Allowed any={['applications.view_all', 'applications.view_assigned']}><ApplicantDetailPage /></Allowed>} />
+          <Route path="nominations" element={<Allowed any={['nominations.view']}><NominationsPage /></Allowed>} />
+          <Route path="nominations/:id" element={<Allowed any={['nominations.view']}><NominationDetailPage /></Allowed>} />
           <Route path="accounts" element={<Allowed any={['accounts.view']}><AccountsPage /></Allowed>} />
           <Route path="accounts/:id" element={<Allowed any={['accounts.view']}><AccountDetailPage /></Allowed>} />
           <Route path="cohorts" element={<Allowed any={['cohorts.manage', 'applications.view_all']}><CohortsPage /></Allowed>} />

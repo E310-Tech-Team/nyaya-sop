@@ -80,7 +80,7 @@ const lagosTime = new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
   hour12: false,
 });
-const formatTime = (date: Date) => lagosTime.format(date).replace(',', '');
+export const formatTime = (date: Date) => lagosTime.format(date).replace(',', '');
 
 const HEADER = [
   'Reference',
