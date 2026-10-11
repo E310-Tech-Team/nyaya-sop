@@ -37,6 +37,9 @@ export const PERMISSIONS = [
   'reports.view', // counts by continent, region, province and parish (1–4 shown as "fewer than 5" without applications.view_all)
   'directory.view', // the parish directory and its imports
   'directory.manage', // correcting the directory: add, rename, move, merge, split
+  'nominations.view', // mentor nominations, with nominees' contact details
+  'nominations.export',
+  'nominations.manage', // delete a nomination (a nominee's request to be removed)
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 

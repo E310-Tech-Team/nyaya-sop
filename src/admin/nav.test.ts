@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { STAFF_ROLES } from '../shared/permissions';
 import { ADMIN_NAV, navFor, PARISH_REVIEW } from './nav';
 
-// The menu as it was before the icons (2026-10-01): labels, routes, order and who sees each item
-// must not drift when the menu changes.
+// The menu's labels, routes, order and who sees each item (as before the icons, 2026-10-01, plus
+// Mentor nominations, 2026-10-11): they must not drift when the menu changes.
 const BEFORE: [label: string, to: string, any: string[], all: boolean][] = [
   ['Dashboard', '/admin', ['dashboard.view'], false],
   ['Applicants', '/admin/applicants', ['applications.view_all', 'applications.view_assigned'], false],
+  ['Mentor nominations', '/admin/nominations', ['nominations.view'], false],
   ['Accounts', '/admin/accounts', ['accounts.view'], false],
   ['Reports and analytics', '/admin/reports', ['reports.view'], false],
   ['Parish review', '/admin/parish-review', ['applications.view_all', 'applications.edit', 'directory.manage'], true],

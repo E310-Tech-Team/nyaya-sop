@@ -10,6 +10,7 @@ import {
   ChurchIcon,
   CircleUserRoundIcon,
   ClipboardCheckIcon,
+  HandshakeIcon,
   HistoryIcon,
   LayoutDashboardIcon,
   MegaphoneIcon,
@@ -37,6 +38,7 @@ export type AdminNavItem = {
 export const ADMIN_NAV: AdminNavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboardIcon, any: ['dashboard.view'] },
   { to: '/admin/applicants', label: 'Applicants', icon: UsersIcon, any: ['applications.view_all', 'applications.view_assigned'] },
+  { to: '/admin/nominations', label: 'Mentor nominations', icon: HandshakeIcon, any: ['nominations.view'] },
   { to: '/admin/accounts', label: 'Accounts', icon: CircleUserRoundIcon, any: ['accounts.view'] },
   { to: '/admin/reports', label: 'Reports and analytics', icon: ChartColumnIcon, any: ['reports.view'] },
   { to: '/admin/parish-review', label: 'Parish review', icon: ClipboardCheckIcon, any: PARISH_REVIEW, all: true },

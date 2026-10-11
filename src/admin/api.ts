@@ -4,6 +4,7 @@
  */
 import { ApiError, apiRequest, type RequestOptions } from '../lib/api';
 import type { ChainUnit, ChurchLevel, ParishChain, ParishDetailsResponse, ParishSuggestion } from '../shared/directory';
+import type { MentorAgeRange, RccgStatus } from '../shared/mentor-nomination';
 import type { StaffRole } from '../shared/permissions';
 import type { ApplicationStatus, NotificationTopic, SessionSummary, StaffMfaSummary, StaffPasskey } from '../shared/platform';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from './passkeys';
@@ -340,6 +341,32 @@ export type ReportsOverview = {
   topRegions: { id: string; name: string; applications: Count }[];
 };
 
+// ── Mentor nominations (server/admin/nominations.ts) ─────────────────────────
+
+export type NominationRow = {
+  id: string;
+  submittedAt: string;
+  nomineeName: string;
+  nomineeEmail: string;
+  /** Formatted for display ("0803 123 4567" for Nigerian numbers). */
+  nomineePhone: string;
+  regionLocation: string;
+  jobRole: string;
+  pillarFit: string;
+  ageRange: MentorAgeRange;
+  rccgStatus: RccgStatus;
+  nominatorName: string;
+};
+export type NominationDetail = NominationRow & {
+  nomineePhoneE164: string;
+  experience: string;
+  whyFit: string;
+  testimonial: string;
+  socialProfile: string | null;
+};
+/** `all`: every nomination, whatever the filters. */
+export type NominationList = Paged<NominationRow> & { all: number };
+
 export type AccountRow = { id: string; email: string; status: 'active' | 'suspended'; createdAt: string; lastLoginAt: string | null; applications: number; devices: number };
 export type AccountDetail = {
   id: string;
@@ -540,6 +567,10 @@ export const adminApi = {
   reviewers: (signal?: AbortSignal) => call<{ items: { id: string; name: string; role: StaffRole }[] }>('/reviewers', { signal }),
 
   // Accounts
+  nominations: (params: Record<string, string | number | undefined>, signal?: AbortSignal) => call<NominationList>(`/nominations${query(params)}`, { signal }),
+  nomination: (nominationId: string, signal?: AbortSignal) => call<NominationDetail>(`/nominations/${id(nominationId)}`, { signal }),
+  nominationsExportUrl: (params: Record<string, string | undefined>) => `/api/admin/nominations/export.csv${query(params)}`,
+  deleteNomination: (nominationId: string, confirm: string) => post<{ ok: true }>(`/nominations/${id(nominationId)}/delete`, { confirm }),
   accounts: (params: Record<string, string | number | undefined>, signal?: AbortSignal) => call<Paged<AccountRow>>(`/accounts${query(params)}`, { signal }),
   account: (accountId: string, signal?: AbortSignal) => call<AccountDetail>(`/accounts/${id(accountId)}`, { signal }),
   suspendAccount: (accountId: string) => post<{ ok: true }>(`/accounts/${id(accountId)}/suspend`),
