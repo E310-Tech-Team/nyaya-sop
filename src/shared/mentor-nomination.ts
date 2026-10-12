@@ -1,11 +1,26 @@
 import { cleanText, characters, isValidEmail, normalizeEmail, normalizePhone } from './validation';
 
 export const MENTOR_AGE_RANGES = [
-  { value: '18_29', label: '18–29' },
+  { value: '18_24', label: '18–24' },
+  { value: '25_29', label: '25–29' },
   { value: '30_39', label: '30–39' },
   { value: '40_49', label: '40–49' },
   { value: '50_59', label: '50–59' },
   { value: '60_plus', label: '60+' },
+] as const;
+
+export const EARLIER_MENTOR_AGE_RANGES = [{ value: '18_29', label: '18–29 (earlier form)' }] as const;
+export const STORED_MENTOR_AGE_RANGES = [...MENTOR_AGE_RANGES, ...EARLIER_MENTOR_AGE_RANGES] as const;
+
+export const PILLAR_FITS = [
+  { value: 'ministry_church_leadership', label: 'Ministry & Church Leadership' },
+  { value: 'family_social_development', label: 'Family & Social Development' },
+  { value: 'education_academia', label: 'Education & Academia' },
+  { value: 'business_finance_entrepreneurship', label: 'Business, Finance & Entrepreneurship' },
+  { value: 'politics_governance_public_service', label: 'Politics, Governance & Public Service' },
+  { value: 'media_communications', label: 'Media & Communications' },
+  { value: 'technology_innovation', label: 'Technology & Innovation' },
+  { value: 'creative_arts_entertainment', label: 'Creative Arts & Entertainment' },
 ] as const;
 
 export const RCCG_STATUSES = [
@@ -14,7 +29,13 @@ export const RCCG_STATUSES = [
 ] as const;
 
 export type MentorAgeRange = (typeof MENTOR_AGE_RANGES)[number]['value'];
+export type StoredMentorAgeRange = (typeof STORED_MENTOR_AGE_RANGES)[number]['value'];
+export type PillarFit = (typeof PILLAR_FITS)[number]['value'];
 export type RccgStatus = (typeof RCCG_STATUSES)[number]['value'];
+
+export function labelsForPillarFits(values: readonly string[]): string[] {
+  return values.map((value) => PILLAR_FITS.find((option) => option.value === value)?.label ?? value);
+}
 
 export type MentorNominationField =
   | 'nominatorName'
@@ -40,7 +61,7 @@ export type MentorNominationAnswers = {
   ageRange: string;
   jobRole: string;
   experience: string;
-  pillarFit: string;
+  pillarFit: string[];
   rccgStatus: string;
   whyFit: string;
   testimonial: string;
@@ -58,7 +79,7 @@ export type NormalizedMentorNomination = {
   ageRange: MentorAgeRange;
   jobRole: string;
   experience: string;
-  pillarFit: string;
+  pillarFit: string[];
   rccgStatus: RccgStatus;
   whyFit: string;
   testimonial: string;
@@ -72,6 +93,7 @@ export type MentorNominationValidation =
   | { ok: false; fieldErrors: MentorNominationFieldErrors };
 
 const AGE_RANGE_VALUES: readonly string[] = MENTOR_AGE_RANGES.map(({ value }) => value);
+const PILLAR_FIT_VALUES: readonly string[] = PILLAR_FITS.map(({ value }) => value);
 const RCCG_STATUS_VALUES: readonly string[] = RCCG_STATUSES.map(({ value }) => value);
 const hasLetter = /\p{L}/u;
 const stringValue = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -99,7 +121,7 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
     ageRange: stringValue(body.ageRange),
     jobRole: stringValue(body.jobRole),
     experience: stringValue(body.experience),
-    pillarFit: stringValue(body.pillarFit),
+    pillarFit: Array.isArray(body.pillarFit) ? body.pillarFit.filter((value): value is string => typeof value === 'string') : [],
     rccgStatus: stringValue(body.rccgStatus),
     whyFit: stringValue(body.whyFit),
     testimonial: stringValue(body.testimonial),
@@ -111,7 +133,7 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
     regionLocation: cleanText(fields.regionLocation),
     jobRole: cleanText(fields.jobRole),
     experience: cleanText(fields.experience),
-    pillarFit: cleanText(fields.pillarFit),
+    pillarFit: fields.pillarFit.map(cleanText),
     whyFit: cleanText(fields.whyFit),
     testimonial: cleanText(fields.testimonial),
     socialProfile: cleanText(fields.socialProfile),
@@ -142,8 +164,15 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
   if (characters(clean.experience) < 2 || characters(clean.experience) > TEXT_LIMITS.experience) {
     fieldErrors.experience = 'Describe the nominee’s experience (up to 1,200 characters).';
   }
-  if (characters(clean.pillarFit) < 2 || characters(clean.pillarFit) > TEXT_LIMITS.pillarFit) {
-    fieldErrors.pillarFit = 'Name at least one pillar or community (up to 300 characters).';
+  const legacyPillarFit = typeof body.pillarFit === 'string' ? cleanText(body.pillarFit) : '';
+  const pillarValues = clean.pillarFit;
+  const hasValidPillars =
+    pillarValues.length > 0 &&
+    pillarValues.length <= PILLAR_FITS.length &&
+    pillarValues.every((value) => PILLAR_FIT_VALUES.includes(value)) &&
+    new Set(pillarValues).size === pillarValues.length;
+  if (!hasValidPillars && !(legacyPillarFit.length >= 2 && characters(legacyPillarFit) <= TEXT_LIMITS.pillarFit)) {
+    fieldErrors.pillarFit = 'Select at least one pillar (up to eight).';
   }
   if (!RCCG_STATUS_VALUES.includes(fields.rccgStatus)) {
     fieldErrors.rccgStatus = 'Select the nominee’s RCCG status.';
@@ -164,6 +193,7 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
     ok: true,
     value: {
       ...clean,
+      pillarFit: hasValidPillars ? pillarValues : [legacyPillarFit],
       nomineePhoneE164: phone!,
       nomineeEmail: normalizeEmail(fields.nomineeEmail),
       ageRange: fields.ageRange as MentorAgeRange,

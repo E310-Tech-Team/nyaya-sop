@@ -4,7 +4,7 @@
  */
 import { ApiError, apiRequest, type RequestOptions } from '../lib/api';
 import type { ChainUnit, ChurchLevel, ParishChain, ParishDetailsResponse, ParishSuggestion } from '../shared/directory';
-import type { MentorAgeRange, RccgStatus } from '../shared/mentor-nomination';
+import type { StoredMentorAgeRange, RccgStatus } from '../shared/mentor-nomination';
 import type { StaffRole } from '../shared/permissions';
 import type { ApplicationStatus, NotificationTopic, SessionSummary, StaffMfaSummary, StaffPasskey } from '../shared/platform';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from './passkeys';
@@ -352,8 +352,8 @@ export type NominationRow = {
   nomineePhone: string;
   regionLocation: string;
   jobRole: string;
-  pillarFit: string;
-  ageRange: MentorAgeRange;
+  pillarFits: string[];
+  ageRange: StoredMentorAgeRange;
   rccgStatus: RccgStatus;
   nominatorName: string;
 };

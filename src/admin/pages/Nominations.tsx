@@ -4,7 +4,7 @@ import { Badge, Button, Input, LoadError, Loading, PageHeader, Pagination, Panel
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card';
 import { useAsync } from '../../lib/useAsync';
 import { labelFor } from '../../shared/application';
-import { MENTOR_AGE_RANGES, RCCG_STATUSES } from '../../shared/mentor-nomination';
+import { RCCG_STATUSES, STORED_MENTOR_AGE_RANGES } from '../../shared/mentor-nomination';
 import { adminApi, type NominationRow } from '../api';
 import { ConfirmByTyping } from '../parts';
 import { useCan } from '../session';
@@ -59,12 +59,12 @@ function NominationCard({ row }: { row: NominationRow }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-2">
-          <Badge>{labelFor(MENTOR_AGE_RANGES, row.ageRange)}</Badge>
+          <Badge>{labelFor(STORED_MENTOR_AGE_RANGES, row.ageRange)}</Badge>
           <Badge tone={row.rccgStatus === 'rccg_member' ? 'brand' : 'neutral'}>{labelFor(RCCG_STATUSES, row.rccgStatus)}</Badge>
         </div>
         <p className="font-sans text-[14px] leading-[1.5] text-ink [overflow-wrap:anywhere]">
           <span className="font-semibold text-muted">Pillar fit: </span>
-          {row.pillarFit}
+          {row.pillarFits.join(', ')}
         </p>
       </CardContent>
       <CardFooter className="font-sans text-[13px] text-muted">
@@ -141,7 +141,7 @@ export default function NominationsPage() {
           />
           <Button type="submit">Search</Button>
         </form>
-        <Select label="Age range" value={age} onChange={(event) => set({ age: event.currentTarget.value })} options={[{ value: '', label: 'All' }, ...MENTOR_AGE_RANGES]} />
+        <Select label="Age range" value={age} onChange={(event) => set({ age: event.currentTarget.value })} options={[{ value: '', label: 'All' }, ...STORED_MENTOR_AGE_RANGES]} />
         <Select label="RCCG status" value={rccg} onChange={(event) => set({ rccg: event.currentTarget.value })} options={[{ value: '', label: 'All' }, ...RCCG_STATUSES]} />
       </section>
 
@@ -214,7 +214,7 @@ export function NominationDetailPage() {
                   {data.nomineePhone}
                 </a>,
               ],
-              ['Age range', labelFor(MENTOR_AGE_RANGES, data.ageRange)],
+              ['Age range', labelFor(STORED_MENTOR_AGE_RANGES, data.ageRange)],
               ['Job role / profession', data.jobRole],
               ['Region / base / location', data.regionLocation],
               ['RCCG status', labelFor(RCCG_STATUSES, data.rccgStatus)],
@@ -225,7 +225,7 @@ export function NominationDetailPage() {
         <Panel title="Mentoring fit">
           <Details
             rows={[
-              ['Pillar fit', data.pillarFit],
+              ['Pillar fit', data.pillarFits.join(', ')],
               ['Experience', data.experience],
               ['Why they’re a good fit', data.whyFit],
               ['Testimonial', data.testimonial],

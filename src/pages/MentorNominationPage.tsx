@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { PrimaryButton } from '../components/Buttons';
 import { focusFirstInvalid } from '../components/ErrorSummary';
-import { Honeypot, SelectField, TextAreaField, TextField } from '../components/Fields';
+import { Honeypot, MultiSelectField, SelectField, TextAreaField, TextField } from '../components/Fields';
 import { Divider, FormCard, StepHeader } from '../components/FormLayout';
 import { useNoIndex, usePageTitle } from '../components/RouteEffects';
 import { SiteHeader } from '../components/SiteHeader';
@@ -9,6 +9,7 @@ import { ApiError, apiRequest } from '../lib/api';
 import { errorMessage, Notice } from '../components/ui/basic';
 import {
   MENTOR_AGE_RANGES,
+  PILLAR_FITS,
   RCCG_STATUSES,
   validateMentorNomination,
   type MentorNominationAnswers,
@@ -26,7 +27,7 @@ const EMPTY_ANSWERS: MentorNominationAnswers = {
   ageRange: '',
   jobRole: '',
   experience: '',
-  pillarFit: '',
+  pillarFit: [],
   rccgStatus: '',
   whyFit: '',
   testimonial: '',
@@ -349,12 +350,12 @@ export default function MentorNominationPage() {
                       error={errors.experience}
                     />
                     <Divider />
-                    <TextField
+                    <MultiSelectField
                       id="pillarFit"
                       number="09"
                       label="Pillar fit for the nominee"
-                      hint="Name at least one pillar or community the nominee could serve in. If more than one applies, separate names with commas."
-                      maxLength={300}
+                      hint="Select every pillar that applies."
+                      options={PILLAR_FITS}
                       value={answers.pillarFit}
                       onChange={(value) => update('pillarFit', value)}
                       error={errors.pillarFit}

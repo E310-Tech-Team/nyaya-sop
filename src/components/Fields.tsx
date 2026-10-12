@@ -167,6 +167,87 @@ export function SelectField({ id, number, label, required = true, hint, error, c
   );
 }
 
+type MultiSelectFieldProps = Omit<ShellProps, 'children'> & {
+  value: string[];
+  onChange: (value: string[]) => void;
+  options: readonly { readonly value: string; readonly label: string }[];
+  placeholder?: string;
+};
+
+export function MultiSelectField({
+  id,
+  number,
+  label,
+  required = true,
+  hint,
+  error,
+  className = '',
+  value,
+  onChange,
+  options,
+  placeholder = 'Select one or more',
+}: MultiSelectFieldProps) {
+  const selectedLabels = options.filter((option) => value.includes(option.value)).map((option) => option.label);
+  const describedByIds = describedBy(hint && `${id}-hint`, error && `${id}-error`);
+  return (
+    <fieldset className={`flex w-full min-w-0 flex-col gap-[13px] ${className}`} aria-describedby={describedByIds}>
+      <legend className="flex w-full items-start gap-[11px]">
+        <QuestionNumber n={number} />
+        <span className="flex flex-1 flex-col gap-[4px] pt-[4px]">
+          <span className="font-sans text-[15px] leading-[1.4] text-ink">
+            {label}
+            <RequiredMark required={required} />
+          </span>
+          {hint && (
+            <span id={`${id}-hint`} className="font-sans text-[12px] leading-[1.45] text-muted">
+              {hint}
+            </span>
+          )}
+        </span>
+      </legend>
+      <details className="group relative w-full min-w-0">
+        <summary
+          id={id}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedByIds}
+          className={`${controlClass(!!error)} flex cursor-pointer list-none items-center justify-between gap-3 pr-[15px] text-left [&::-webkit-details-marker]:hidden`}
+        >
+          <span className={`min-w-0 flex-1 truncate ${selectedLabels.length ? '' : 'text-muted'}`}>
+            {selectedLabels.length ? selectedLabels.join(', ') : placeholder}
+          </span>
+          <svg aria-hidden="true" viewBox="0 0 14 8" className="size-[12px] shrink-0 transition-transform group-open:rotate-180">
+            <path d="m1 1 6 6 6-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+          </svg>
+        </summary>
+        <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-[8px] border border-line-strong bg-white p-2 shadow-[0px_12px_30px_0px_rgba(45,9,20,0.16)]">
+          {options.map((option) => {
+            const checked = value.includes(option.value);
+            return (
+              <label
+                key={option.value}
+                className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-[6px] px-3 py-2 font-sans text-[14px] text-ink hover:bg-rose/25"
+              >
+                <input
+                  type="checkbox"
+                  name={id}
+                  value={option.value}
+                  checked={checked}
+                  onChange={() =>
+                    onChange(checked ? value.filter((selected) => selected !== option.value) : [...value, option.value])
+                  }
+                  className="size-4 shrink-0 accent-brand"
+                />
+                <span>{option.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </details>
+      <FieldError id={`${id}-error`} message={error} />
+    </fieldset>
+  );
+}
+
 type ChoiceOption<V> = { readonly value: V; readonly label: string };
 
 type ChoiceGroupProps<V extends string | number> = {

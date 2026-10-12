@@ -29,7 +29,7 @@ const nomination = (overrides: Record<string, unknown> = {}) => ({
   ageRange: '30_39',
   jobRole: 'Business owner',
   experience: 'More than ten years building teams and mentoring young professionals.',
-  pillarFit: 'Marketplace leadership',
+  pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
   rccgStatus: 'non_rccg',
   whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
   testimonial: 'He is dependable, generous with his time and an excellent example to others.',
@@ -84,7 +84,7 @@ describe('mentor nominations in the admin area', () => {
       nominatorName: 'Grace Bello',
       regionLocation: 'Lagos Region',
       jobRole: 'Business owner',
-      pillarFit: 'Marketplace leadership',
+      pillarFits: ['Business, Finance & Entrepreneurship', 'Technology & Innovation'],
     });
     // The long answers stay on the nomination's own page.
     expect(all.items[1]).not.toHaveProperty('testimonial');
@@ -118,7 +118,7 @@ describe('mentor nominations in the admin area', () => {
       nomineePhoneE164: '+2348012345678',
       regionLocation: 'Lagos Region',
       jobRole: 'Business owner',
-      pillarFit: 'Marketplace leadership',
+      pillarFits: ['Business, Finance & Entrepreneurship', 'Technology & Innovation'],
       ageRange: '30_39',
       rccgStatus: 'non_rccg',
       nominatorName: 'Adaeze Okafor',

@@ -32,7 +32,7 @@ const validMentorNomination = (overrides: Record<string, unknown> = {}) => ({
   ageRange: '30_39',
   jobRole: 'Business owner',
   experience: 'More than ten years building teams and mentoring young professionals.',
-  pillarFit: 'Marketplace leadership',
+  pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
   rccgStatus: 'non_rccg',
   whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
   testimonial: 'He is dependable, generous with his time and an excellent example to others.',
@@ -268,13 +268,30 @@ describe('POST /api/mentor-nominations', () => {
       nominee_age_range: '30_39',
       job_role: 'Business owner',
       experience: 'More than ten years building teams and mentoring young professionals.',
-      pillar_fit: 'Marketplace leadership',
+      pillar_fit: 'Business, Finance & Entrepreneurship, Technology & Innovation',
+      pillar_fits: ['business_finance_entrepreneurship', 'technology_innovation'],
       nominee_rccg_status: 'non_rccg',
       why_fit: 'Chidi has consistently guided young people and built successful teams in his field.',
       testimonial: 'He is dependable, generous with his time and an excellent example to others.',
       social_profile: 'https://example.com/chidi',
     });
     expect(rows[0]).toHaveProperty('created_at');
+  });
+
+  it('persists both newly split age ranges', async () => {
+    for (const ageRange of ['18_24', '25_29']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/mentor-nominations',
+        payload: validMentorNomination({ ageRange }),
+      });
+      expect(res.statusCode).toBe(201);
+    }
+
+    const { rows } = await db.query<{ nominee_age_range: string }>(
+      'select nominee_age_range::text from mentor_nominations order by created_at',
+    );
+    expect(rows.map((row) => row.nominee_age_range).sort()).toEqual(['18_24', '25_29']);
   });
 
   it('rejects invalid contact details and missing required nomination fields', async () => {

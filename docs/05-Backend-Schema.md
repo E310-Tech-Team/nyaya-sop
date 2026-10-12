@@ -41,6 +41,8 @@ flowchart LR
 | `0014_parish_place.sql` | the parish question in two steps (D-59): `applications.parish_place_snapshot`, the province (or region or continent) chosen before saying the parish isn't listed, allowed only on `reported` answers. A column of its own, so the release before it still reads every `parish_snapshot` as a chosen parish ([below](#the-province-step-0014)) |
 | `0015_staff_removed.sql` | removing a staff member (D-61): `staff_users.removed_at`, with a check that a removed account is suspended, with no password and no two-step verification ([below](#staff-sign-in-methods-0013)) |
 | `0016_mentor_nominations.sql` | separate mentor nominations table and enum types for broad nominee age ranges and RCCG status |
+| `0017_mentor_nomination_age_ranges.sql` | adds the 18–24 and 25–29 mentor age ranges while preserving the prior 18–29 enum value for existing nominations |
+| `0018_mentor_nomination_pillar_multi_select.sql` | adds `pillar_fits text[]`, backfills earlier `pillar_fit` answers and bounds new arrays to 1–8 choices; retains `pillar_fit` during the additive rollout |
 
 Existing applications stay valid: new columns have defaults (`published_status = 'submitted'`, no account, no reviewer), and a person can claim an older application after signing in with the same email ([03 §8](03-App-Flow.md#8-applicant-accounts)). Verified on real PostgreSQL 17 over existing data (2026-09-26).
 
@@ -162,7 +164,7 @@ erDiagram
 
 Indexes: `(cohort_id, created_at desc)`, `(cohort_id, status)`, unique `(cohort_id, email)`, `(account_id)` partial, `(email)`, `(assigned_reviewer_id)` partial, `(parish_id)` partial.
 
-**`mentor_nominations`** (0016; separate from applications): `id`, `nominator_name`, `nominee_name`, `region_location`, `nominee_phone_e164`, `nominee_email`, `nominee_age_range`, `job_role`, `experience`, `pillar_fit`, `nominee_rccg_status`, `why_fit`, `testimonial`, optional `social_profile`, and `created_at`. The phone is stored as E.164 and email lower-case. `pillar_fit` is text because the project has no confirmed pillar names (06, C9); it can contain one or more names supplied by the nominator. `nominee_age_range` and `nominee_rccg_status` use enums whose values match the shared form options. A Non-RCCG answer is stored and does not block submission. There is no public read/list endpoint.
+**`mentor_nominations`** (0016; separate from applications): `id`, `nominator_name`, `nominee_name`, `region_location`, `nominee_phone_e164`, `nominee_email`, `nominee_age_range`, `job_role`, `experience`, `pillar_fit`, `pillar_fits`, `nominee_rccg_status`, `why_fit`, `testimonial`, optional `social_profile`, and `created_at`. The phone is stored as E.164 and email lower-case. New submissions store the selected official pillar slugs in `pillar_fits text[]`; `pillar_fit` remains as a readable compatibility value while older application code may still be running. Migration 0018 backfills existing `pillar_fit` values into one-element arrays. The form offers all eight confirmed pillar names from [`src/shared/mentor-nomination.ts`](../src/shared/mentor-nomination.ts) and allows one or more. `nominee_age_range` and `nominee_rccg_status` use enums whose values match the shared form options; 0017 adds `18_24` and `25_29` alongside ranges from `30_39` onward. The former `18_29` remains available only to identify earlier submissions; it is not offered or accepted on new forms. A Non-RCCG answer is stored and does not block submission. There is no public read/list endpoint.
 
 **`parish_reports`** (0007; for staff in Parish review, never shown to applicants): `application_id` FK cascade, `kind` (`not_listed` with the `reported_name` they typed, `details_wrong` with the listed `parish_id`, or `lookalike` (0012) with the parish a look-alike choice was linked to), `status` (pending, then `linked` to a listed parish, `added` to the directory and linked, `fixed` in the directory, or `rejected`: closed with no change), `resolved_parish_id`, `resolved_by`, `resolved_at`; one of each kind per application. Linking the application's parish (from Parish review or the applicant's page) resolves its pending reports; removing a staff link reopens a `not_listed` report.
 
@@ -364,7 +366,7 @@ Staff sign in with their email and password and then a second step, or with a **
 | `staff_challenge_purpose` (0013) | `sign_in` · `second_step` · `step_up` · `register` · `password_reset` |
 | `staff_email_code_purpose` (0013) | `second_step` · `step_up` · `enable` |
 | `push_subscription_status`, `campaign_status`, `delivery_status`, `job_status` | see the tables above |
-| `mentor_nominee_age_range` (0016) | `18_29` · `30_39` · `40_49` · `50_59` · `60_plus` |
+| `mentor_nominee_age_range` (0016, 0017) | `18_24` · `25_29` · `30_39` · `40_49` · `50_59` · `60_plus`; `18_29` retained for earlier submissions |
 | `mentor_nominee_rccg_status` (0016) | `rccg_member` · `non_rccg` |
 | `church_level` | `continent` · `region` · `province` · `zone` · `area` (in this order; [`src/shared/directory.ts`](../src/shared/directory.ts)) |
 | `directory_status`, `directory_origin`, `directory_source`, `directory_import_status` | active/inactive/merged · import/staff · spreadsheet/api · planned/applied/reverted/failed |
@@ -483,7 +485,7 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 | Campaign | title ≤ 65, body ≤ 180, topic known, TTL 1 h–28 days, scheduled 1 min–90 days ahead |
 | Staff password | 12–128 characters |
 
-**Mentor nomination** (`src/shared/mentor-nomination.ts`, migration 0016): required nominator and nominee names, nominee location, valid contact details, a known broad age range and RCCG status, job role, experience, pillar fit, why-fit explanation and testimonial. Names and location are limited to 120 characters; experience to 1,200; pillar fit to 300; explanation and testimonial to 1,500. Social profile is optional (≤ 300). The project has no confirmed pillar names, so fit is free text. Both RCCG-status values are valid; status is stored, not used as a rejection rule.
+**Mentor nomination** (`src/shared/mentor-nomination.ts`, migrations 0016–0017): required nominator and nominee names, nominee location, valid contact details, a known age range (18–24, 25–29, 30–39, 40–49, 50–59 or 60+) and RCCG status, job role, experience, pillar fit, why-fit explanation and testimonial. Names and location are limited to 120 characters; experience to 1,200; pillar fit to 300; explanation and testimonial to 1,500. Social profile is optional (≤ 300). The project has no confirmed pillar names, so fit is free text. Both RCCG-status values are valid; status is stored, not used as a rejection rule.
 
 ## 6. Security and privacy
 
