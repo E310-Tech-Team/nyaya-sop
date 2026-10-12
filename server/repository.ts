@@ -1,5 +1,5 @@
 import type { NormalizedApplication, StoredGender } from '../src/shared/application';
-import type { NormalizedMentorNomination } from '../src/shared/mentor-nomination';
+import { labelsForPillarFits, type NormalizedMentorNomination } from '../src/shared/mentor-nomination';
 import type { Queryable } from './db';
 import type { ParishLink } from './parishes';
 
@@ -93,9 +93,9 @@ export async function insertMentorNomination(db: Queryable, nomination: Normaliz
   const { rows } = await db.query<{ created_at: Date }>(
     `insert into mentor_nominations (
        nominator_name, nominee_name, region_location, nominee_phone_e164, nominee_email,
-       nominee_age_range, job_role, experience, pillar_fit, nominee_rccg_status,
+       nominee_age_range, job_role, experience, pillar_fit, pillar_fits, nominee_rccg_status,
        why_fit, testimonial, social_profile
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      returning created_at`,
     [
       nomination.nominatorName,
@@ -106,6 +106,7 @@ export async function insertMentorNomination(db: Queryable, nomination: Normaliz
       nomination.ageRange,
       nomination.jobRole,
       nomination.experience,
+      labelsForPillarFits(nomination.pillarFit).join(', '),
       nomination.pillarFit,
       nomination.rccgStatus,
       nomination.whyFit,
