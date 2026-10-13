@@ -92,26 +92,27 @@ export async function insertApplication(
 export async function insertMentorNomination(db: Queryable, nomination: NormalizedMentorNomination): Promise<{ created_at: Date }> {
   const { rows } = await db.query<{ created_at: Date }>(
     `insert into mentor_nominations (
-       nominator_name, nominee_name, region_location, nominee_phone_e164, nominee_email,
+       nominator_name, nominee_name, nominee_state, region_location, church_denomination, nominee_phone_e164, nominee_email,
        nominee_age_range, job_role, experience, pillar_fit, pillar_fits, nominee_rccg_status,
-       why_fit, testimonial, social_profile
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       why_fit, testimonial
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      returning created_at`,
     [
       nomination.nominatorName,
       nomination.nomineeName,
+      nomination.nomineeState,
       nomination.regionLocation,
+      nomination.churchDenomination,
       nomination.nomineePhoneE164,
       nomination.nomineeEmail,
       nomination.ageRange,
       nomination.jobRole,
       nomination.experience,
-      labelsForPillarFits(nomination.pillarFit).join(', '),
-      nomination.pillarFit,
+      labelsForPillarFits([nomination.pillarFit]).join(', '),
+      [nomination.pillarFit],
       nomination.rccgStatus,
       nomination.whyFit,
       nomination.testimonial,
-      nomination.socialProfile,
     ],
   );
   return rows[0]!;

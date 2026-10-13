@@ -118,6 +118,30 @@ const submit = (parish: unknown) =>
     remoteAddress: nextVisitor(),
     payload: { ...validPayload({ email: `places.applicant${++applicant}@example.org` }), parish },
   });
+const submitNomination = (overrides: Record<string, unknown> = {}) =>
+  ctx.app.inject({
+    method: 'POST',
+    url: '/api/mentor-nominations',
+    remoteAddress: nextVisitor(),
+    payload: {
+      nominatorName: 'Adaeze Okafor',
+      nomineeName: 'Chidi Nwosu',
+      nomineeState: 'Lagos',
+      provinceId: '',
+      regionLocation: 'Lagos Region',
+      churchDenomination: 'Example Community Church',
+      nomineePhone: '0801 234 5678',
+      nomineeEmail: 'chidi.nwosu@example.com',
+      ageRange: '30_39',
+      jobRole: 'Business owner',
+      experience: 'More than ten years building teams and mentoring young professionals.',
+      pillarFit: 'business_finance_entrepreneurship',
+      rccgStatus: 'non_rccg',
+      whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
+      testimonial: 'He is dependable, generous with his time and an excellent example to others.',
+      ...overrides,
+    },
+  });
 const stored = async (applicationId: string) =>
   (
     await ctx.db.query<{
@@ -135,6 +159,50 @@ const applications = async () => (await ctx.db.query<{ n: number }>(`select coun
 const makeStale = () => ctx.db.query(`update directory_sync set checked_at = now() - interval '48 hours'`);
 
 describe('step 1: finding a province (GET /api/parishes/units)', () => {
+  it('can restrict place search results to provinces only', async () => {
+    const response = await get('/api/parishes/units?q=region&level=province');
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as UnitSearchResponse).results.every((unit) => unit.level === 'province')).toBe(true);
+    expect((await get('/api/parishes/units?q=region&level=zone')).statusCode).toBe(400);
+  });
+
+  describe('mentor nominations with RCCG provinces', () => {
+    it('stores the canonical province name for an RCCG nominee', async () => {
+      const provinceId = await unitId(FIXTURE.lagos3);
+      const response = await submitNomination({
+        provinceId,
+        regionLocation: '',
+        churchDenomination: '',
+        rccgStatus: 'rccg_member',
+      });
+      expect(response.statusCode).toBe(201);
+      const { rows } = await ctx.db.query<{
+        nominee_state: string | null;
+        region_location: string;
+        church_denomination: string | null;
+        social_profile: string | null;
+      }>(
+        `select nominee_state, region_location, church_denomination, social_profile from mentor_nominations`,
+      );
+      expect(rows).toEqual([
+        { nominee_state: 'Lagos', region_location: 'Lagos Province 3', church_denomination: null, social_profile: null },
+      ]);
+    });
+
+    it('rejects a selected directory place that is not a province', async () => {
+      const response = await submitNomination({
+        provinceId: await unitId(FIXTURE.region14),
+        regionLocation: '',
+        churchDenomination: '',
+        rccgStatus: 'rccg_member',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ code: 'VALIDATION_FAILED', fieldErrors: { provinceId: 'Select a current RCCG province.' } });
+      const { rows } = await ctx.db.query<{ count: number }>(`select count(*)::int as count from mentor_nominations`);
+      expect(rows[0]?.count).toBe(0);
+    });
+  });
+
   it('finds provinces by name and number, the applicant’s own words and state first', async () => {
     // "Lagos 3" is Lagos Province 3 first; Lagos Province 2 is in Continent 3, so it matches too, after it.
     expect(names(await units('lagos 3', 'Lagos'))).toEqual(['Lagos Province 3', 'Lagos Province 2']);

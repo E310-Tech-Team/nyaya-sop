@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { PrimaryButton } from '../components/Buttons';
 import { focusFirstInvalid } from '../components/ErrorSummary';
-import { Honeypot, MultiSelectField, SelectField, TextAreaField, TextField } from '../components/Fields';
+import { ChoiceGroup, Honeypot, SelectField, TextAreaField, TextField } from '../components/Fields';
 import { Divider, FormCard, StepHeader } from '../components/FormLayout';
+import { NomineeProvinceField } from '../components/NomineeProvinceField';
 import { useNoIndex, usePageTitle } from '../components/RouteEffects';
 import { SiteHeader } from '../components/SiteHeader';
 import { ApiError, apiRequest } from '../lib/api';
@@ -17,43 +18,52 @@ import {
   type MentorNominationFieldErrors,
   type MentorNominationPayload,
 } from '../shared/mentor-nomination';
+import { NIGERIAN_STATES } from '../shared/application';
 
 const EMPTY_ANSWERS: MentorNominationAnswers = {
   nominatorName: '',
   nomineeName: '',
+  nomineeState: '',
   regionLocation: '',
+  provinceId: '',
+  churchDenomination: '',
   nomineePhone: '',
   nomineeEmail: '',
   ageRange: '',
   jobRole: '',
   experience: '',
-  pillarFit: [],
+  pillarFit: '',
   rccgStatus: '',
   whyFit: '',
   testimonial: '',
-  socialProfile: '',
 };
 
 const NOMINATION_FIELDS: readonly MentorNominationField[] = [
   'nominatorName',
   'nomineeName',
+  'nomineeState',
+  'rccgStatus',
   'regionLocation',
+  'provinceId',
+  'churchDenomination',
   'nomineePhone',
   'nomineeEmail',
   'ageRange',
   'jobRole',
   'experience',
   'pillarFit',
-  'rccgStatus',
   'whyFit',
   'testimonial',
-  'socialProfile',
 ];
 
 const DETAILS_FIELDS = [
   'nominatorName',
   'nomineeName',
+  'nomineeState',
+  'rccgStatus',
   'regionLocation',
+  'provinceId',
+  'churchDenomination',
   'nomineePhone',
   'nomineeEmail',
   'ageRange',
@@ -149,6 +159,30 @@ export default function MentorNominationPage() {
     setServerError('');
   }
 
+  function updateRccgStatus(value: string) {
+    setAnswers((current) => ({ ...current, rccgStatus: value, regionLocation: '', provinceId: '', churchDenomination: '' }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.rccgStatus;
+      delete next.regionLocation;
+      delete next.provinceId;
+      delete next.churchDenomination;
+      return next;
+    });
+    setServerError('');
+  }
+
+  function updateNomineeState(value: string) {
+    setAnswers((current) => ({ ...current, nomineeState: value, provinceId: '' }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.nomineeState;
+      delete next.provinceId;
+      return next;
+    });
+    setServerError('');
+  }
+
   function continueToFit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validation = validateMentorNomination(answers);
@@ -222,6 +256,7 @@ export default function MentorNominationPage() {
               ? 'Share who is making this nomination and the nominee’s contact and professional details. A strong nominee is born again, of good conduct and character, resourceful and experienced, willing to mentor young people, a high achiever, an RCCG member and a good fit for at least one pillar. RCCG status is collected for review; a Non-RCCG answer is not an automatic rejection.'
               : 'Describe the nominee’s experience, pillar fit and the reasons you recommend them to guide, support and build the next generation.'
           }
+          showRequiredNote={false}
         />
 
         {submitted ? (
@@ -271,21 +306,71 @@ export default function MentorNominationPage() {
                       error={errors.nomineeName}
                     />
                     <Divider />
-                    <TextField
-                      id="regionLocation"
+                    <SelectField
+                      id="nomineeState"
                       number="03"
-                      label="Nominee’s region / base / location"
-                      autoComplete="address-level1"
-                      maxLength={120}
-                      value={answers.regionLocation}
-                      onChange={(value) => update('regionLocation', value)}
-                      error={errors.regionLocation}
+                      label="Nominee’s state of residence"
+                      placeholder="Select a Nigerian state"
+                      options={NIGERIAN_STATES}
+                      value={answers.nomineeState}
+                      onChange={updateNomineeState}
+                      error={errors.nomineeState}
                     />
                     <Divider />
+                    <ChoiceGroup
+                      name="rccgStatus"
+                      number="04"
+                      legend="Is the nominee an RCCG member?"
+                      hint="This is collected for the review team. A Non-RCCG answer does not automatically rule out a nomination."
+                      options={RCCG_STATUSES}
+                      value={answers.rccgStatus || null}
+                      onChange={updateRccgStatus}
+                      error={errors.rccgStatus}
+                    />
+                    <Divider />
+                    {answers.rccgStatus === 'rccg_member' ? (
+                      <NomineeProvinceField
+                        key={answers.nomineeState}
+                        id="provinceId"
+                        number="05"
+                        state={answers.nomineeState}
+                        value={answers.provinceId}
+                        onChange={(value) => update('provinceId', value)}
+                        error={errors.provinceId}
+                      />
+                    ) : answers.rccgStatus === 'non_rccg' ? (
+                      <TextAreaField
+                        id="regionLocation"
+                        number="05"
+                        label="Nominee’s full address"
+                        hint="Enter the nominee’s complete address, including the street and area."
+                        autoComplete="street-address"
+                        maxLength={500}
+                        value={answers.regionLocation}
+                        onChange={(value) => update('regionLocation', value)}
+                        error={errors.regionLocation}
+                      />
+                    ) : null}
+                    {answers.rccgStatus === 'non_rccg' && (
+                      <>
+                        <Divider />
+                        <TextField
+                          id="churchDenomination"
+                          number="06"
+                          label="Nominee’s church denomination (full name)"
+                          hint="Write the denomination’s full name, not an abbreviation."
+                          maxLength={200}
+                          value={answers.churchDenomination}
+                          onChange={(value) => update('churchDenomination', value)}
+                          error={errors.churchDenomination}
+                        />
+                      </>
+                    )}
+                    {answers.rccgStatus && <Divider />}
                     <div className="flex w-full flex-col gap-6 md:flex-row">
                       <TextField
                         id="nomineePhone"
-                        number="04"
+                        number="07"
                         label="Nominee’s phone number"
                         type="tel"
                         inputMode="tel"
@@ -299,7 +384,7 @@ export default function MentorNominationPage() {
                       />
                       <TextField
                         id="nomineeEmail"
-                        number="05"
+                        number="08"
                         label="Nominee’s email"
                         type="email"
                         inputMode="email"
@@ -316,7 +401,7 @@ export default function MentorNominationPage() {
                     <div className="flex w-full flex-col gap-6 md:flex-row">
                       <SelectField
                         id="ageRange"
-                        number="06"
+                        number="09"
                         label="Nominee’s age range"
                         placeholder="Select age range"
                         options={MENTOR_AGE_RANGES}
@@ -327,7 +412,7 @@ export default function MentorNominationPage() {
                       />
                       <TextField
                         id="jobRole"
-                        number="07"
+                        number="10"
                         label="Nominee’s job role / profession"
                         maxLength={120}
                         value={answers.jobRole}
@@ -341,7 +426,7 @@ export default function MentorNominationPage() {
                   <>
                     <TextAreaField
                       id="experience"
-                      number="08"
+                      number="11"
                       label="Nominee’s experience"
                       hint="Briefly describe relevant experience, achievements or resources."
                       maxLength={1200}
@@ -350,32 +435,21 @@ export default function MentorNominationPage() {
                       error={errors.experience}
                     />
                     <Divider />
-                    <MultiSelectField
+                    <SelectField
                       id="pillarFit"
-                      number="09"
-                      label="Pillar fit for the nominee"
-                      hint="Select every pillar that applies."
+                      number="12"
+                      label="Which pillar best fits the nominee?"
+                      hint="Open the list to see all eight official pillars. Selecting one closes the list."
+                      placeholder="Select one pillar"
                       options={PILLAR_FITS}
                       value={answers.pillarFit}
                       onChange={(value) => update('pillarFit', value)}
                       error={errors.pillarFit}
                     />
                     <Divider />
-                    <SelectField
-                      id="rccgStatus"
-                      number="10"
-                      label="Nominee’s RCCG / Non-RCCG status"
-                      placeholder="Select status"
-                      hint="This answer is for the review team and does not automatically disqualify a nominee."
-                      options={RCCG_STATUSES}
-                      value={answers.rccgStatus}
-                      onChange={(value) => update('rccgStatus', value)}
-                      error={errors.rccgStatus}
-                    />
-                    <Divider />
                     <TextAreaField
                       id="whyFit"
-                      number="11"
+                      number="13"
                       label="Why is this nominee a good fit?"
                       maxLength={1500}
                       value={answers.whyFit}
@@ -385,25 +459,13 @@ export default function MentorNominationPage() {
                     <Divider />
                     <TextAreaField
                       id="testimonial"
-                      number="12"
+                      number="14"
                       label="Short testimonial about the nominee"
                       hint="Share a brief example of the nominee’s character or impact."
                       maxLength={1500}
                       value={answers.testimonial}
                       onChange={(value) => update('testimonial', value)}
                       error={errors.testimonial}
-                    />
-                    <Divider />
-                    <TextField
-                      id="socialProfile"
-                      number="13"
-                      label="Nominee’s social media profile"
-                      required={false}
-                      hint="Optional: enter a public profile URL or username."
-                      maxLength={300}
-                      value={answers.socialProfile}
-                      onChange={(value) => update('socialProfile', value)}
-                      error={errors.socialProfile}
                     />
                   </>
                 )}

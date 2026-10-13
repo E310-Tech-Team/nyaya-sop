@@ -26,17 +26,19 @@ const submit = (body: unknown, target: FastifyInstance = app) =>
 const validMentorNomination = (overrides: Record<string, unknown> = {}) => ({
   nominatorName: 'Adaeze Okafor',
   nomineeName: 'Chidi Nwosu',
-  regionLocation: 'Lagos Region',
+  nomineeState: 'Lagos',
+  regionLocation: '12 Example Street, Lagos, Nigeria',
+  provinceId: '',
+  churchDenomination: 'Redeemed Christian Church of God',
   nomineePhone: '0801 234 5678',
   nomineeEmail: 'chidi.nwosu@example.com',
   ageRange: '30_39',
   jobRole: 'Business owner',
   experience: 'More than ten years building teams and mentoring young professionals.',
-  pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
+  pillarFit: 'business_finance_entrepreneurship',
   rccgStatus: 'non_rccg',
   whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
   testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-  socialProfile: 'https://example.com/chidi',
   ...overrides,
 });
 
@@ -262,18 +264,20 @@ describe('POST /api/mentor-nominations', () => {
     expect(rows[0]).toMatchObject({
       nominator_name: 'Adaeze Okafor',
       nominee_name: 'Chidi Nwosu',
-      region_location: 'Lagos Region',
+      nominee_state: 'Lagos',
+      region_location: '12 Example Street, Lagos, Nigeria',
+      church_denomination: 'Redeemed Christian Church of God',
       nominee_phone_e164: '+2348012345678',
       nominee_email: 'chidi.nwosu@example.com',
       nominee_age_range: '30_39',
       job_role: 'Business owner',
       experience: 'More than ten years building teams and mentoring young professionals.',
-      pillar_fit: 'Business, Finance & Entrepreneurship, Technology & Innovation',
-      pillar_fits: ['business_finance_entrepreneurship', 'technology_innovation'],
+      pillar_fit: 'Business, Finance & Entrepreneurship',
+      pillar_fits: ['business_finance_entrepreneurship'],
       nominee_rccg_status: 'non_rccg',
       why_fit: 'Chidi has consistently guided young people and built successful teams in his field.',
       testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-      social_profile: 'https://example.com/chidi',
+      social_profile: null,
     });
     expect(rows[0]).toHaveProperty('created_at');
   });
@@ -294,11 +298,31 @@ describe('POST /api/mentor-nominations', () => {
     expect(rows.map((row) => row.nominee_age_range).sort()).toEqual(['18_24', '25_29']);
   });
 
-  it('rejects invalid contact details and missing required nomination fields', async () => {
+  it('stores a Non-RCCG full address and denomination', async () => {
+    const location = `Suite 12, ${'Central District '.repeat(20)}Lagos`;
     const res = await app.inject({
       method: 'POST',
       url: '/api/mentor-nominations',
-      payload: validMentorNomination({ nomineeEmail: 'not-an-email', nomineePhone: '12', pillarFit: '', rccgStatus: 'other' }),
+      payload: validMentorNomination({ regionLocation: location, churchDenomination: 'A full church denomination name' }),
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await db.query<{ region_location: string; church_denomination: string }>(
+      `select region_location, church_denomination from mentor_nominations`,
+    );
+    expect(rows[0]).toEqual({ region_location: location, church_denomination: 'A full church denomination name' });
+  });
+
+  it('rejects invalid contact details, missing conditional fields and multiple pillars', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/mentor-nominations',
+      payload: validMentorNomination({
+        nomineeEmail: 'not-an-email',
+        nomineePhone: '12',
+        nomineeState: 'Atlantis',
+        pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
+        rccgStatus: 'other',
+      }),
     });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({
@@ -306,8 +330,21 @@ describe('POST /api/mentor-nominations', () => {
       fieldErrors: {
         nomineeEmail: expect.any(String),
         nomineePhone: expect.any(String),
+        nomineeState: expect.any(String),
         pillarFit: expect.any(String),
         rccgStatus: expect.any(String),
+      },
+    });
+    const missingNonRccgDetails = await app.inject({
+      method: 'POST',
+      url: '/api/mentor-nominations',
+      payload: validMentorNomination({ regionLocation: '', churchDenomination: '' }),
+    });
+    expect(missingNonRccgDetails.statusCode).toBe(400);
+    expect(missingNonRccgDetails.json()).toMatchObject({
+      fieldErrors: {
+        regionLocation: expect.any(String),
+        churchDenomination: expect.any(String),
       },
     });
     const { rows } = await db.query<{ count: number }>('select count(*)::int as count from mentor_nominations');

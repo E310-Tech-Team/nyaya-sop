@@ -83,9 +83,14 @@ export const getParish = (id: string, signal?: AbortSignal) =>
  * Step 1 of the parish question (D-59): provinces, and the regions and continents with parishes in
  * no province, by name or number. `state` only ranks them; `offset` pages through them.
  */
-export const searchUnits = (query: string, state: string | null, offset: number, signal: AbortSignal) =>
+export const searchUnits = (query: string, state: string | null, offset: number, signal: AbortSignal, level?: 'province') =>
   apiRequest<UnitSearchResponse>(
-    `/parishes/units?${new URLSearchParams({ q: query, ...(state ? { state } : {}), ...(offset ? { offset: String(offset) } : {}) })}`,
+    `/parishes/units?${new URLSearchParams({
+      q: query,
+      ...(state ? { state } : {}),
+      ...(offset ? { offset: String(offset) } : {}),
+      ...(level ? { level } : {}),
+    })}`,
     { signal },
   );
 

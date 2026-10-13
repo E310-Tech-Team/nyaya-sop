@@ -259,8 +259,8 @@ type ChoiceGroupProps<V extends string | number> = {
   value: V | '' | null;
   onChange: (value: V) => void;
   error?: string;
-  /** 'tiles' = radio list; 'scale' = numbered 1–5 scale. */
-  variant?: 'tiles' | 'scale';
+  /** 'tiles' = radio list; 'grid' = responsive radio cards; 'scale' = numbered 1–5 scale. */
+  variant?: 'tiles' | 'grid' | 'scale';
 };
 
 /** A radio group built on native inputs (keyboard + screen reader support for free), styled as tiles. */
@@ -283,7 +283,11 @@ export function ChoiceGroup<V extends string | number>({ name, number, legend, h
           )}
         </span>
       </legend>
-      <div className={`clear-both flex w-full flex-col ${variant === 'scale' ? 'gap-[11px]' : 'gap-[10px]'}`}>
+      <div
+        className={`clear-both w-full ${
+          variant === 'grid' ? 'grid grid-cols-1 gap-[10px] sm:grid-cols-2' : `flex flex-col ${variant === 'scale' ? 'gap-[11px]' : 'gap-[10px]'}`
+        }`}
+      >
         {options.map((option) => {
           const checked = value === option.value;
           const inputId = `${name}-${option.value}`;
@@ -293,7 +297,11 @@ export function ChoiceGroup<V extends string | number>({ name, number, legend, h
               htmlFor={inputId}
               // Selection eases in over the form duration; the focus outline stays instant.
               className={`group flex w-full cursor-pointer items-center rounded-[8px] border text-left transition-[border-color,background-color,box-shadow] duration-(--duration-form) has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-3 has-[:focus-visible]:outline-brand ${
-                variant === 'scale' ? 'min-h-[72px] gap-[14px] px-[14px] py-[13px]' : 'min-h-[50px] gap-[11px] px-[14px] py-[12px]'
+                variant === 'scale'
+                  ? 'min-h-[72px] gap-[14px] px-[14px] py-[13px]'
+                  : variant === 'grid'
+                    ? 'min-h-[64px] gap-[11px] px-[14px] py-[12px]'
+                    : 'min-h-[50px] gap-[11px] px-[14px] py-[12px]'
               } ${
                 checked
                   ? 'border-brand bg-[rgba(132,29,38,0.06)] shadow-[0_0_0_2px_rgba(132,29,38,0.15)]'

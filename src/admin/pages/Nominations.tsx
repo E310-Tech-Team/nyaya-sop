@@ -54,7 +54,8 @@ function NominationCard({ row }: { row: NominationRow }) {
           </Link>
         </CardTitle>
         <CardDescription>
-          {row.jobRole} · {row.regionLocation}
+          {row.jobRole} · {row.nomineeState ? `${row.nomineeState} · ` : ''}
+          {row.rccgStatus === 'rccg_member' ? 'Province' : 'Address'}: {row.regionLocation}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -134,7 +135,7 @@ export default function NominationsPage() {
         >
           <Input
             label="Search"
-            hint="Nominee, email, location, role, pillar or who nominated them"
+            hint="Nominee, email, state, address, denomination, role, pillar or who nominated them"
             value={search}
             onChange={(event) => setSearch(event.currentTarget.value)}
             className="min-w-[220px] flex-1"
@@ -215,8 +216,10 @@ export function NominationDetailPage() {
                 </a>,
               ],
               ['Age range', labelFor(STORED_MENTOR_AGE_RANGES, data.ageRange)],
+              ['State of residence', data.nomineeState],
               ['Job role / profession', data.jobRole],
-              ['Region / base / location', data.regionLocation],
+              [data.rccgStatus === 'rccg_member' ? 'RCCG province' : 'Full address', data.regionLocation],
+              ['Church denomination', data.churchDenomination],
               ['RCCG status', labelFor(RCCG_STATUSES, data.rccgStatus)],
               ['Social media profile', <SocialProfile key="social" value={data.socialProfile} />],
             ]}

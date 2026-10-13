@@ -350,7 +350,9 @@ export type NominationRow = {
   nomineeEmail: string;
   /** Formatted for display ("0803 123 4567" for Nigerian numbers). */
   nomineePhone: string;
+  nomineeState: string | null;
   regionLocation: string;
+  churchDenomination: string | null;
   jobRole: string;
   pillarFits: string[];
   ageRange: StoredMentorAgeRange;
