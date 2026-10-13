@@ -4,17 +4,19 @@ import { validateMentorNomination } from './mentor-nomination';
 const validNomination = (overrides: Record<string, unknown> = {}) => ({
   nominatorName: ' Adaeze Okafor ',
   nomineeName: 'Chidi Nwosu',
-  regionLocation: ' Lagos Region ',
+  nomineeState: 'Lagos',
+  regionLocation: ' 12 Example Street, Lagos, Nigeria ',
+  provinceId: '',
+  churchDenomination: '  Redeemed Christian Church of God ',
   nomineePhone: '0801 234 5678',
   nomineeEmail: 'CHIDI.NWOSU@example.com',
   ageRange: '30_39',
   jobRole: 'Business owner',
   experience: 'More than ten years building teams and mentoring young professionals.',
-  pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
+  pillarFit: 'business_finance_entrepreneurship',
   rccgStatus: 'non_rccg',
   whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
   testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-  socialProfile: '',
   ...overrides,
 });
 
@@ -25,19 +27,44 @@ describe('validateMentorNomination', () => {
       value: {
         nominatorName: 'Adaeze Okafor',
         nomineeName: 'Chidi Nwosu',
-        regionLocation: 'Lagos Region',
+        nomineeState: 'Lagos',
+        regionLocation: '12 Example Street, Lagos, Nigeria',
+        provinceId: null,
+        churchDenomination: 'Redeemed Christian Church of God',
         nomineePhoneE164: '+2348012345678',
         nomineeEmail: 'chidi.nwosu@example.com',
         ageRange: '30_39',
         jobRole: 'Business owner',
         experience: 'More than ten years building teams and mentoring young professionals.',
-        pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
+        pillarFit: 'business_finance_entrepreneurship',
         rccgStatus: 'non_rccg',
         whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
         testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-        socialProfile: null,
       },
     });
+  });
+
+  it('requires state and the matching conditional location details', () => {
+    const rccg = validateMentorNomination(
+      validNomination({ rccgStatus: 'rccg_member', regionLocation: '', churchDenomination: '', provinceId: 'province-id' }),
+    );
+    expect(rccg).toMatchObject({
+      ok: true,
+      value: { nomineeState: 'Lagos', provinceId: 'province-id', regionLocation: '', churchDenomination: null },
+    });
+
+    const missingProvince = validateMentorNomination(validNomination({ rccgStatus: 'rccg_member', regionLocation: '' }));
+    expect(missingProvince).toMatchObject({ ok: false, fieldErrors: { provinceId: expect.any(String) } });
+
+    const missingNonRccgDetails = validateMentorNomination(validNomination({ regionLocation: '', churchDenomination: '' }));
+    expect(missingNonRccgDetails).toMatchObject({
+      ok: false,
+      fieldErrors: { regionLocation: expect.any(String), churchDenomination: expect.any(String) },
+    });
+    const missingState = validateMentorNomination(validNomination({ nomineeState: '' }));
+    expect(missingState).toMatchObject({ ok: false, fieldErrors: { nomineeState: expect.any(String) } });
+    const invalidState = validateMentorNomination(validNomination({ nomineeState: 'Atlantis' }));
+    expect(invalidState).toMatchObject({ ok: false, fieldErrors: { nomineeState: expect.any(String) } });
   });
 
   it('rejects malformed bodies and invalid selectable answers', () => {
@@ -58,7 +85,7 @@ describe('validateMentorNomination', () => {
   });
 
   it('requires meaningful pillar, fit and testimonial answers', () => {
-    const result = validateMentorNomination(validNomination({ pillarFit: [], whyFit: 'yes', testimonial: 'ok' }));
+    const result = validateMentorNomination(validNomination({ pillarFit: '', whyFit: 'yes', testimonial: 'ok' }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.fieldErrors.pillarFit).toBeDefined();
@@ -67,9 +94,10 @@ describe('validateMentorNomination', () => {
     }
   });
 
-  it('accepts multiple official pillars and rejects unknown or repeated choices', () => {
-    expect(validateMentorNomination(validNomination({ pillarFit: ['education_academia', 'media_communications'] })).ok).toBe(true);
-    for (const pillarFit of [['made_up_pillar'], ['media_communications', 'media_communications']]) {
+  it('accepts one official pillar and rejects unknown or multiple choices', () => {
+    expect(validateMentorNomination(validNomination({ pillarFit: 'education_academia' })).ok).toBe(true);
+    expect(validateMentorNomination(validNomination({ pillarFit: ['media_communications'] })).ok).toBe(true);
+    for (const pillarFit of ['made_up_pillar', ['business_finance_entrepreneurship', 'technology_innovation']]) {
       const result = validateMentorNomination(validNomination({ pillarFit }));
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.fieldErrors.pillarFit).toBeDefined();

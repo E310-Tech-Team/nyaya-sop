@@ -23,23 +23,49 @@ afterEach(async () => {
 const nomination = (overrides: Record<string, unknown> = {}) => ({
   nominatorName: 'Adaeze Okafor',
   nomineeName: 'Chidi Nwosu',
+  nomineeState: 'Lagos',
   regionLocation: 'Lagos Region',
+  provinceId: '',
+  churchDenomination: 'Example Community Church',
   nomineePhone: '0801 234 5678',
   nomineeEmail: 'chidi.nwosu@example.com',
   ageRange: '30_39',
   jobRole: 'Business owner',
   experience: 'More than ten years building teams and mentoring young professionals.',
-  pillarFit: ['business_finance_entrepreneurship', 'technology_innovation'],
+  pillarFit: 'business_finance_entrepreneurship',
   rccgStatus: 'non_rccg',
   whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
   testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-  socialProfile: '',
   ...overrides,
 });
 const nominate = async (overrides: Record<string, unknown> = {}) => {
   const res = await ctx.app.inject({ method: 'POST', url: '/api/mentor-nominations', remoteAddress: nextVisitor(), payload: nomination(overrides) });
   expect(res.statusCode).toBe(201);
   const { rows } = await ctx.db.query<{ id: string }>('select id from mentor_nominations order by created_at desc limit 1');
+  return rows[0]!.id;
+};
+const nominateHistoricalRccg = async (overrides: Record<string, unknown> = {}) => {
+  const record = nomination({ regionLocation: 'Lagos Province 3', rccgStatus: 'rccg_member', ...overrides });
+  const { rows } = await ctx.db.query<{ id: string }>(
+    `insert into mentor_nominations (
+       nominator_name, nominee_name, region_location, nominee_phone_e164, nominee_email, nominee_age_range,
+       job_role, experience, pillar_fit, pillar_fits, nominee_rccg_status, why_fit, testimonial
+     ) values ($1, $2, $3, '+2348012345678', $4, $5::mentor_nominee_age_range, $6, $7, 'Business, Finance & Entrepreneurship',
+       array['business_finance_entrepreneurship'], $8::mentor_nominee_rccg_status, $9, $10)
+     returning id`,
+    [
+      record.nominatorName,
+      record.nomineeName,
+      record.regionLocation,
+      record.nomineeEmail,
+      record.ageRange,
+      record.jobRole,
+      record.experience,
+      record.rccgStatus,
+      record.whyFit,
+      record.testimonial,
+    ],
+  );
   return rows[0]!.id;
 };
 const list = async (query = '') => {
@@ -70,8 +96,15 @@ describe('mentor nominations in the admin area', () => {
   it('lists them newest first, with search, filters and pages', async () => {
     expect(await list()).toMatchObject({ total: 0, all: 0, items: [] });
     await nominate({ nomineeName: 'Chidi Nwosu' });
-    await nominate({ nomineeName: 'Funke Adeyemi', nomineeEmail: 'funke@example.com', ageRange: '40_49', rccgStatus: 'rccg_member', nominatorName: 'Grace Bello' });
-    await nominate({ nomineeName: 'Tunde Ojo', nomineeEmail: 'tunde@example.com', regionLocation: 'Abuja', pillarFit: 'Media and creative arts' });
+    await nominateHistoricalRccg({ nomineeName: 'Funke Adeyemi', nomineeEmail: 'funke@example.com', ageRange: '40_49', nominatorName: 'Grace Bello' });
+    await nominate({
+      nomineeName: 'Tunde Ojo',
+      nomineeEmail: 'tunde@example.com',
+      nomineeState: 'FCT (Abuja)',
+      regionLocation: 'Abuja',
+      churchDenomination: 'Independent Chapel',
+      pillarFit: 'creative_arts_entertainment',
+    });
 
     const all = await list();
     expect(names(all)).toEqual(['Tunde Ojo', 'Funke Adeyemi', 'Chidi Nwosu']);
@@ -82,9 +115,11 @@ describe('mentor nominations in the admin area', () => {
       ageRange: '40_49',
       rccgStatus: 'rccg_member',
       nominatorName: 'Grace Bello',
-      regionLocation: 'Lagos Region',
+      nomineeState: null,
+      regionLocation: 'Lagos Province 3',
+      churchDenomination: null,
       jobRole: 'Business owner',
-      pillarFits: ['Business, Finance & Entrepreneurship', 'Technology & Innovation'],
+      pillarFits: ['Business, Finance & Entrepreneurship'],
     });
     // The long answers stay on the nomination's own page.
     expect(all.items[1]).not.toHaveProperty('testimonial');
@@ -94,6 +129,8 @@ describe('mentor nominations in the admin area', () => {
     expect(names(await list('?q=abuja'))).toEqual(['Tunde Ojo']);
     expect(names(await list('?q=creative'))).toEqual(['Tunde Ojo']);
     expect(names(await list('?q=funke%40example'))).toEqual(['Funke Adeyemi']);
+    expect(names(await list('?q=independent'))).toEqual(['Tunde Ojo']);
+    expect(names(await list('?q=abuja'))).toEqual(['Tunde Ojo']);
     // LIKE wildcards are only characters.
     expect(await list('?q=%25')).toMatchObject({ total: 0, all: 3, items: [] });
     // Filters, together and apart; values the form doesn't offer are ignored.
@@ -106,7 +143,7 @@ describe('mentor nominations in the admin area', () => {
   });
 
   it('shows one in full and records that it was opened', async () => {
-    const id = await nominate({ socialProfile: 'https://www.linkedin.com/in/chidi' });
+    const id = await nominate();
     const res = await as.programme_admin({ url: `/api/admin/nominations/${id}` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -116,16 +153,18 @@ describe('mentor nominations in the admin area', () => {
       nomineeEmail: 'chidi.nwosu@example.com',
       nomineePhone: '0801 234 5678',
       nomineePhoneE164: '+2348012345678',
+      nomineeState: 'Lagos',
       regionLocation: 'Lagos Region',
+      churchDenomination: 'Example Community Church',
       jobRole: 'Business owner',
-      pillarFits: ['Business, Finance & Entrepreneurship', 'Technology & Innovation'],
+      pillarFits: ['Business, Finance & Entrepreneurship'],
       ageRange: '30_39',
       rccgStatus: 'non_rccg',
       nominatorName: 'Adaeze Okafor',
       experience: 'More than ten years building teams and mentoring young professionals.',
       whyFit: 'Chidi has consistently guided young people and built successful teams in his field.',
       testimonial: 'He is dependable, generous with his time and an excellent example to others.',
-      socialProfile: 'https://www.linkedin.com/in/chidi',
+      socialProfile: null,
     });
     expect(await audited('nomination.viewed')).toEqual([{ actor_id: ids.programme_admin, target_id: id, details: {} }]);
     for (const missing of ['00000000-0000-4000-8000-000000000000', 'not-an-id']) {
@@ -143,10 +182,12 @@ describe('mentor nominations in the admin area', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     const lines = res.body.replace(/^﻿/, '').trim().split('\r\n');
     expect(lines[0]).toBe(
-      '"Submitted (WAT)","Nominee","Nominee email","Nominee phone","Age range","Job role / profession","Region / base / location","RCCG status","Pillar fit","Experience","Why a good fit","Testimonial","Social media profile","Nominated by","Reference"',
+      '"Submitted (WAT)","Nominee","Nominee email","Nominee phone","Nominee state of residence","Age range","Job role / profession","RCCG province / base / location","Church denomination","RCCG status","Pillar fit","Experience","Why a good fit","Testimonial","Social media profile","Nominated by","Reference"',
     );
     expect(lines).toHaveLength(2); // the filter applies
-    expect(lines[1]).toContain('"Funke Adeyemi","funke@example.com","0801 234 5678","40–49","\'=HYPERLINK(""http://example.org"")"');
+    expect(lines[1]).toContain(
+      '"Funke Adeyemi","funke@example.com","0801 234 5678","Lagos","40–49","\'=HYPERLINK(""http://example.org"")"',
+    );
     expect(await audited('nominations.exported')).toEqual([{ actor_id: ids.owner, target_id: null, details: { rows: 1, filters: ['age'] } }]);
   });
 

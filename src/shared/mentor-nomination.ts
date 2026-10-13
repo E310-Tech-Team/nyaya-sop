@@ -1,3 +1,4 @@
+import { NIGERIAN_STATES } from './application';
 import { cleanText, characters, isValidEmail, normalizeEmail, normalizePhone } from './validation';
 
 export const MENTOR_AGE_RANGES = [
@@ -40,7 +41,10 @@ export function labelsForPillarFits(values: readonly string[]): string[] {
 export type MentorNominationField =
   | 'nominatorName'
   | 'nomineeName'
+  | 'nomineeState'
   | 'regionLocation'
+  | 'provinceId'
+  | 'churchDenomination'
   | 'nomineePhone'
   | 'nomineeEmail'
   | 'ageRange'
@@ -49,23 +53,24 @@ export type MentorNominationField =
   | 'pillarFit'
   | 'rccgStatus'
   | 'whyFit'
-  | 'testimonial'
-  | 'socialProfile';
+  | 'testimonial';
 
 export type MentorNominationAnswers = {
   nominatorName: string;
   nomineeName: string;
+  nomineeState: string;
   regionLocation: string;
+  provinceId: string;
+  churchDenomination: string;
   nomineePhone: string;
   nomineeEmail: string;
   ageRange: string;
   jobRole: string;
   experience: string;
-  pillarFit: string[];
+  pillarFit: string;
   rccgStatus: string;
   whyFit: string;
   testimonial: string;
-  socialProfile: string;
 };
 
 export type MentorNominationPayload = MentorNominationAnswers & { website?: string };
@@ -73,17 +78,19 @@ export type MentorNominationPayload = MentorNominationAnswers & { website?: stri
 export type NormalizedMentorNomination = {
   nominatorName: string;
   nomineeName: string;
+  nomineeState: string;
   regionLocation: string;
+  provinceId: string | null;
+  churchDenomination: string | null;
   nomineePhoneE164: string;
   nomineeEmail: string;
   ageRange: MentorAgeRange;
   jobRole: string;
   experience: string;
-  pillarFit: string[];
+  pillarFit: string;
   rccgStatus: RccgStatus;
   whyFit: string;
   testimonial: string;
-  socialProfile: string | null;
 };
 
 export type MentorNominationFieldErrors = Partial<Record<MentorNominationField, string>>;
@@ -100,13 +107,13 @@ const stringValue = (value: unknown) => (typeof value === 'string' ? value : '')
 
 const TEXT_LIMITS = {
   name: 120,
-  regionLocation: 120,
+  nomineeState: 40,
+  regionLocation: 500,
+  churchDenomination: 200,
   jobRole: 120,
   experience: 1200,
-  pillarFit: 300,
   whyFit: 1500,
   testimonial: 1500,
-  socialProfile: 300,
 } as const;
 
 /** Validates an untrusted nomination body and returns the exact values safe to persist. */
@@ -115,28 +122,35 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
   const fields: MentorNominationAnswers = {
     nominatorName: stringValue(body.nominatorName),
     nomineeName: stringValue(body.nomineeName),
+    nomineeState: stringValue(body.nomineeState),
     regionLocation: stringValue(body.regionLocation),
+    provinceId: stringValue(body.provinceId),
+    churchDenomination: stringValue(body.churchDenomination),
     nomineePhone: stringValue(body.nomineePhone),
     nomineeEmail: stringValue(body.nomineeEmail),
     ageRange: stringValue(body.ageRange),
     jobRole: stringValue(body.jobRole),
     experience: stringValue(body.experience),
-    pillarFit: Array.isArray(body.pillarFit) ? body.pillarFit.filter((value): value is string => typeof value === 'string') : [],
+    pillarFit: Array.isArray(body.pillarFit)
+      ? body.pillarFit.length === 1 && typeof body.pillarFit[0] === 'string'
+        ? body.pillarFit[0]
+        : ''
+      : stringValue(body.pillarFit),
     rccgStatus: stringValue(body.rccgStatus),
     whyFit: stringValue(body.whyFit),
     testimonial: stringValue(body.testimonial),
-    socialProfile: stringValue(body.socialProfile),
   };
   const clean = {
     nominatorName: cleanText(fields.nominatorName),
     nomineeName: cleanText(fields.nomineeName),
+    nomineeState: cleanText(fields.nomineeState),
     regionLocation: cleanText(fields.regionLocation),
+    churchDenomination: cleanText(fields.churchDenomination),
     jobRole: cleanText(fields.jobRole),
     experience: cleanText(fields.experience),
-    pillarFit: fields.pillarFit.map(cleanText),
+    pillarFit: cleanText(fields.pillarFit),
     whyFit: cleanText(fields.whyFit),
     testimonial: cleanText(fields.testimonial),
-    socialProfile: cleanText(fields.socialProfile),
   };
   const fieldErrors: MentorNominationFieldErrors = {};
 
@@ -146,8 +160,8 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
     else if (characters(value) > TEXT_LIMITS.name) fieldErrors[field] = 'Names must be 120 characters or fewer.';
   }
 
-  if (characters(clean.regionLocation) < 2 || characters(clean.regionLocation) > TEXT_LIMITS.regionLocation) {
-    fieldErrors.regionLocation = 'Enter a region, base or location (up to 120 characters).';
+  if (!(NIGERIAN_STATES as readonly string[]).includes(fields.nomineeState)) {
+    fieldErrors.nomineeState = 'Select the nominee’s state of residence in Nigeria.';
   }
 
   const phone = normalizePhone(fields.nomineePhone);
@@ -164,18 +178,26 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
   if (characters(clean.experience) < 2 || characters(clean.experience) > TEXT_LIMITS.experience) {
     fieldErrors.experience = 'Describe the nominee’s experience (up to 1,200 characters).';
   }
-  const legacyPillarFit = typeof body.pillarFit === 'string' ? cleanText(body.pillarFit) : '';
-  const pillarValues = clean.pillarFit;
-  const hasValidPillars =
-    pillarValues.length > 0 &&
-    pillarValues.length <= PILLAR_FITS.length &&
-    pillarValues.every((value) => PILLAR_FIT_VALUES.includes(value)) &&
-    new Set(pillarValues).size === pillarValues.length;
-  if (!hasValidPillars && !(legacyPillarFit.length >= 2 && characters(legacyPillarFit) <= TEXT_LIMITS.pillarFit)) {
-    fieldErrors.pillarFit = 'Select at least one pillar (up to eight).';
+  const pillarInput = clean.pillarFit;
+  const isOfficialPillar = PILLAR_FIT_VALUES.includes(pillarInput);
+  if (!isOfficialPillar) {
+    fieldErrors.pillarFit = 'Select one pillar.';
   }
   if (!RCCG_STATUS_VALUES.includes(fields.rccgStatus)) {
     fieldErrors.rccgStatus = 'Select the nominee’s RCCG status.';
+  }
+  if (fields.rccgStatus === 'rccg_member') {
+    if (!fields.provinceId.trim()) fieldErrors.provinceId = 'Select the nominee’s RCCG province.';
+    if (fields.regionLocation.trim()) fieldErrors.regionLocation = 'An address is only needed for a Non-RCCG nominee.';
+    if (fields.churchDenomination.trim()) fieldErrors.churchDenomination = 'A church denomination is only needed for a Non-RCCG nominee.';
+  } else if (fields.rccgStatus === 'non_rccg') {
+    if (characters(clean.regionLocation) < 5 || characters(clean.regionLocation) > TEXT_LIMITS.regionLocation) {
+      fieldErrors.regionLocation = 'Enter the nominee’s full address (5–500 characters).';
+    }
+    if (fields.provinceId) fieldErrors.provinceId = 'A province is only needed for an RCCG nominee.';
+    if (characters(clean.churchDenomination) < 2 || characters(clean.churchDenomination) > TEXT_LIMITS.churchDenomination) {
+      fieldErrors.churchDenomination = 'Enter the nominee’s church denomination in full (up to 200 characters).';
+    }
   }
   if (characters(clean.whyFit) < 20 || characters(clean.whyFit) > TEXT_LIMITS.whyFit) {
     fieldErrors.whyFit = 'Explain why the nominee is a good fit (20–1,500 characters).';
@@ -183,22 +205,20 @@ export function validateMentorNomination(input: unknown): MentorNominationValida
   if (characters(clean.testimonial) < 10 || characters(clean.testimonial) > TEXT_LIMITS.testimonial) {
     fieldErrors.testimonial = 'Enter a short testimonial (10–1,500 characters).';
   }
-  if (characters(clean.socialProfile) > TEXT_LIMITS.socialProfile) {
-    fieldErrors.socialProfile = 'The social media profile must be 300 characters or fewer.';
-  }
-
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
   return {
     ok: true,
     value: {
       ...clean,
-      pillarFit: hasValidPillars ? pillarValues : [legacyPillarFit],
+      nomineeState: clean.nomineeState,
+      pillarFit: pillarInput,
+      provinceId: fields.rccgStatus === 'rccg_member' ? fields.provinceId.trim() : null,
+      churchDenomination: fields.rccgStatus === 'non_rccg' ? clean.churchDenomination : null,
       nomineePhoneE164: phone!,
       nomineeEmail: normalizeEmail(fields.nomineeEmail),
       ageRange: fields.ageRange as MentorAgeRange,
       rccgStatus: fields.rccgStatus as RccgStatus,
-      socialProfile: clean.socialProfile || null,
     },
   };
 }

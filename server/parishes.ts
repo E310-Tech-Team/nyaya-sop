@@ -247,6 +247,7 @@ export async function searchUnits(
   limit: number,
   offset: number,
   namespace: DirectoryNamespace | null,
+  level?: 'province',
 ): Promise<UnitSearchResponse> {
   const terms = searchTerms(query);
   if (!terms.length) return { results: [], total: 0 };
@@ -255,6 +256,7 @@ export async function searchUnits(
   const patterns = terms.map((term) => `\\m${term}`);
   const found = (ns: string, from: number) =>
     `u.status = 'active' and u.external_namespace is not distinct from ${ns}::text and u.level in ${PLACE_LEVELS}
+     ${level ? `and u.level = '${level}'` : ''}
      ${patterns.map((_, index) => `and (u.name_key || ' ' || coalesce(pu.name_key, '') || ' ' || coalesce(gu.name_key, '')) ~ $${from + index}`).join(' ')}
      and ${placeParishes(ns)} > 0`;
   const { rows } = await db.query<PlaceRow & { parishes: number; in_state: boolean }>(
@@ -495,12 +497,15 @@ export async function parishRoutes(app: FastifyInstance, services: Services) {
     if (!(await parishDirectoryEnabled(db, namespace))) return sendError(reply, 404, 'NOT_FOUND', 'The parish list is not in use.');
     const query = request.query as Record<string, unknown>;
     const text = typeof query.q === 'string' ? query.q.trim() : '';
+    if (query.level !== undefined && query.level !== 'province') {
+      return sendError(reply, 400, 'BAD_REQUEST', 'Choose a supported place level.');
+    }
     if (text.length < UNIT_SEARCH.minLength || text.length > PARISH_SEARCH.maxLength) {
       return sendError(reply, 400, 'BAD_REQUEST', 'Type your province’s name or number.');
     }
     const limit = whole(query.limit, UNIT_SEARCH.pageSize, 1, UNIT_SEARCH.pageSize);
     const offset = whole(query.offset, 0, 0, UNIT_SEARCH.maxOffset);
-    const found = await searchUnits(db, text, rankingState(query.state), limit, offset, namespace);
+    const found = await searchUnits(db, text, rankingState(query.state), limit, offset, namespace, query.level);
     const directory = await directoryFreshness(services);
     return directory ? { ...found, directory } : found;
   });

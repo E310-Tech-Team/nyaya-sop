@@ -28,7 +28,9 @@ type NominationRow = {
   created_at: Date;
   nominator_name: string;
   nominee_name: string;
+  nominee_state: string | null;
   region_location: string;
+  church_denomination: string | null;
   nominee_phone_e164: string;
   nominee_email: string;
   nominee_age_range: StoredMentorAgeRange;
@@ -46,8 +48,8 @@ const isAgeRange = (value: unknown): value is StoredMentorAgeRange => STORED_MEN
 const isRccgStatus = (value: unknown): value is RccgStatus => RCCG_STATUSES.some((option) => option.value === value);
 
 /**
- * The filters as SQL: the words typed (in the nominee's name, email, location, role or pillar fit,
- * or the nominator's name), an age range and an RCCG status. Unknown values are ignored.
+ * The filters as SQL: the words typed (in the nominee's name, email, state, location, denomination,
+ * role or pillar fit, or the nominator's name), an age range and an RCCG status. Unknown values are ignored.
  */
 function whereFor(query: Filters) {
   const params: unknown[] = [];
@@ -57,7 +59,8 @@ function whereFor(query: Filters) {
     params.push(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     const p = `$${params.length}::text`;
     conditions.push(
-      `(lower(n.nominee_name) like ${p} or n.nominee_email like ${p} or lower(n.region_location) like ${p}
+      `(lower(n.nominee_name) like ${p} or n.nominee_email like ${p} or lower(coalesce(n.nominee_state, '')) like ${p}
+      or lower(n.region_location) like ${p} or lower(coalesce(n.church_denomination, '')) like ${p}
       or lower(n.job_role) like ${p} or lower(coalesce(array_to_string(n.pillar_fits, ' '), n.pillar_fit)) like ${p}
       or lower(n.nominator_name) like ${p})`,
     );
@@ -73,7 +76,8 @@ function whereFor(query: Filters) {
   return { where: conditions.length ? `where ${conditions.join(' and ')}` : '', params };
 }
 
-const COLUMNS = `n.id, n.created_at, n.nominator_name, n.nominee_name, n.region_location, n.nominee_phone_e164, n.nominee_email,
+const COLUMNS = `n.id, n.created_at, n.nominator_name, n.nominee_name, n.nominee_state, n.region_location, n.church_denomination,
+  n.nominee_phone_e164, n.nominee_email,
   n.nominee_age_range::text as nominee_age_range, n.job_role, n.experience, n.pillar_fit, n.pillar_fits,
   n.nominee_rccg_status::text as nominee_rccg_status, n.why_fit, n.testimonial, n.social_profile`;
 
@@ -81,9 +85,11 @@ const summary = (row: NominationRow) => ({
   id: row.id,
   submittedAt: iso(row.created_at),
   nomineeName: row.nominee_name,
+  nomineeState: row.nominee_state,
   nomineeEmail: row.nominee_email,
   nomineePhone: formatPhone(row.nominee_phone_e164),
   regionLocation: row.region_location,
+  churchDenomination: row.church_denomination,
   jobRole: row.job_role,
   pillarFits: labelsForPillarFits(row.pillar_fits ?? [row.pillar_fit]),
   ageRange: row.nominee_age_range,
@@ -124,9 +130,11 @@ export async function nominationRoutes(app: FastifyInstance, services: Services)
           'Nominee',
           'Nominee email',
           'Nominee phone',
+          'Nominee state of residence',
           'Age range',
           'Job role / profession',
-          'Region / base / location',
+          'RCCG province / base / location',
+          'Church denomination',
           'RCCG status',
           'Pillar fit',
           'Experience',
@@ -141,9 +149,11 @@ export async function nominationRoutes(app: FastifyInstance, services: Services)
           row.nominee_name,
           row.nominee_email,
           formatPhone(row.nominee_phone_e164),
+          row.nominee_state,
           labelFor(STORED_MENTOR_AGE_RANGES, row.nominee_age_range),
           row.job_role,
           row.region_location,
+          row.church_denomination,
           labelFor(RCCG_STATUSES, row.nominee_rccg_status),
           labelsForPillarFits(row.pillar_fits ?? [row.pillar_fit]).join(', '),
           row.experience,
@@ -171,6 +181,8 @@ export async function nominationRoutes(app: FastifyInstance, services: Services)
     return {
       ...summary(row),
       nomineePhoneE164: row.nominee_phone_e164,
+      nomineeState: row.nominee_state,
+      churchDenomination: row.church_denomination,
       experience: row.experience,
       whyFit: row.why_fit,
       testimonial: row.testimonial,

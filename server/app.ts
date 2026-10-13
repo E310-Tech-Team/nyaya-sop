@@ -33,7 +33,7 @@ import { cameViaEdgeProxy, edgeProxyCheck } from './edge-proxy';
 import { createDirectoryApi } from './directory/api';
 import { createEmailTransport, type EmailTransport } from './email';
 import { sendError } from './http';
-import { parishDirectoryEnabled, parishRoutes, resolveParish } from './parishes';
+import { parishDirectoryEnabled, parishRoutes, resolveParish, unitPlace } from './parishes';
 import { publicRoutes } from './public';
 import { pushRoutes } from './push/routes';
 import { PushService } from './push/service';
@@ -322,7 +322,27 @@ export async function buildApp({
         });
       }
 
-      const row = await insertMentorNomination(db, result.value);
+      let nomination = result.value;
+      if (nomination.rccgStatus === 'rccg_member') {
+        const namespace = directoryNamespace(services);
+        if (!(await parishDirectoryEnabled(db, namespace))) {
+          return sendError(reply, 503, 'DIRECTORY_UNAVAILABLE', 'The RCCG province list is temporarily unavailable. Please try again later.');
+        }
+        if (!nomination.provinceId) {
+          return sendError(reply, 400, 'VALIDATION_FAILED', 'Select a current RCCG province.', {
+            fieldErrors: { provinceId: 'Select a current RCCG province.' },
+          });
+        }
+        const province = await unitPlace(db, nomination.provinceId, namespace);
+        if (!province || province.level !== 'province') {
+          return sendError(reply, 400, 'VALIDATION_FAILED', 'Select a current RCCG province.', {
+            fieldErrors: { provinceId: 'Select a current RCCG province.' },
+          });
+        }
+        nomination = { ...nomination, regionLocation: province.name };
+      }
+
+      const row = await insertMentorNomination(db, nomination);
       return reply.code(201).send({ submittedAt: new Date(row.created_at).toISOString() });
     },
   );
