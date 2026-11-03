@@ -29,7 +29,7 @@ Defined in [`src/App.tsx`](../src/App.tsx).
 | `/notifications` | This device's notification settings | [NotificationsPage](../src/pages/NotificationsPage.tsx) | — (account topics need a signed-in applicant) |
 | `/updates` | Public announcements | [UpdatesPage](../src/pages/UpdatesPage.tsx) | — |
 | `/account/sign-in`, `/account/verify?token=…` | Applicant sign-in by emailed link (the token leaves the address bar once read) | [SignIn](../src/account/SignIn.tsx) | off (with an explanation) when email isn't configured |
-| `/account` | Account overview | [OverviewPage](../src/account/OverviewPage.tsx) | signed-in applicant, else the sign-in form in place |
+| `/account` | Applicant dashboard: each linked application's progress (Received → Under review → Shortlisted → Invited, no stepper for Not selected or Withdrawn), the team's message and what happens next; a to-do list (link or send the application, notifications on this device, unread messages); latest messages; latest programme updates; the six journey stages | [OverviewPage](../src/account/OverviewPage.tsx), [ApplicationProgress](../src/account/ApplicationProgress.tsx), logic in [dashboard.ts](../src/account/dashboard.ts) | signed-in applicant, else the sign-in form in place |
 | `/account/application` | Published status, messages, linking an application | [ApplicationPage](../src/account/ApplicationPage.tsx) | signed-in applicant |
 | `/account/notifications` | Inbox, this device's notifications, the account's devices | [NotificationsPage](../src/account/NotificationsPage.tsx) | signed-in applicant |
 | `/account/settings` | Details, sessions, sign out everywhere, delete account | [SettingsPage](../src/account/SettingsPage.tsx) | signed-in applicant |

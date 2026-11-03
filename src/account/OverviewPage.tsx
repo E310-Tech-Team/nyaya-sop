@@ -1,70 +1,117 @@
 import { Link } from 'react-router';
-import { usePushDevice } from '../components/notifications/usePushDevice';
+import { usePushDevice, type PushDevice } from '../components/notifications/usePushDevice';
 import { Badge, ButtonLink, LoadError, Loading, Panel, when } from '../components/ui';
+import { JOURNEY } from '../config/programme';
 import { useAccount } from '../lib/account';
 import { useAsync } from '../lib/useAsync';
 import { AccountFrame } from './AccountApp';
 import { accountApi } from './api';
-import { STATUS_TONE } from './status';
+import { ApplicationProgress } from './ApplicationProgress';
+import { checklist, type ChecklistItem, type NotificationReadiness } from './dashboard';
 
-function NotificationSummary() {
-  const device = usePushDevice({ signedIn: true });
-  const text =
-    !device.serverEnabled
-      ? 'Notifications aren’t available on this site yet.'
-      : device.support.kind === 'install-required'
-        ? 'On iPhone and iPad, add School of Purpose to your Home Screen to get notifications.'
-        : device.support.kind === 'unsupported'
-          ? 'Notifications aren’t available in this browser.'
-          : device.status?.kind === 'enabled'
-            ? `On for this device (${device.status.server.topics.length} ${device.status.server.topics.length === 1 ? 'topic' : 'topics'}).`
-            : device.status?.kind === 'denied'
-              ? 'Blocked in this browser’s settings.'
-              : device.status
-                ? 'Off for this device.'
-                : 'Checking…';
-  return <p className="font-sans text-[15px] text-ink">{text}</p>;
+const PREVIEW_COUNT = 3;
+const link = 'font-bold text-brand underline underline-offset-4';
+
+/** What this device can do, or undefined while it's still being checked. A block is not nagged about. */
+function readiness(device: PushDevice): NotificationReadiness | undefined {
+  if (!device.configLoaded) return undefined;
+  if (!device.serverEnabled || device.support.kind === 'unsupported') return 'unavailable';
+  if (device.support.kind === 'install-required') return 'install-required';
+  if (!device.status) return undefined;
+  if (device.status.kind === 'enabled') return 'on';
+  return device.status.kind === 'denied' ? 'unavailable' : 'off';
 }
 
+function ChecklistRow({ item }: { item: ChecklistItem }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span
+        aria-hidden="true"
+        className={
+          item.done
+            ? 'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-white'
+            : 'mt-0.5 size-5 shrink-0 rounded-full border-2 border-gold bg-white'
+        }
+      >
+        {item.done && (
+          <svg viewBox="0 0 16 16" className="size-3" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      <span className="font-sans text-[15px] leading-[1.5] text-ink">
+        <span className="sr-only">{item.done ? 'Done: ' : 'To do: '}</span>
+        {item.to && !item.done ? (
+          <Link to={item.to} className={link}>
+            {item.label}
+          </Link>
+        ) : (
+          <span className={item.done ? 'text-muted' : undefined}>{item.label}</span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+/** /account: the applicant dashboard. Shows only published statuses and confirmed programme copy. */
 export default function AccountOverviewPage() {
   const account = useAccount();
   const email = account.status === 'signed-in' ? account.account.email : '';
   const applications = useAsync((signal) => accountApi.applications(signal), []);
   const inbox = useAsync((signal) => accountApi.inbox(signal), []);
+  const updates = useAsync((signal) => accountApi.announcements(signal), []);
+  const device = usePushDevice({ signedIn: true });
+
+  const todo = checklist({
+    claimed: applications.data?.claimed.length,
+    claimable: applications.data?.claimable.length,
+    unread: inbox.data?.unread,
+    notifications: readiness(device),
+  });
+  const allDone = todo.length > 0 && todo.every((item) => item.done);
 
   return (
-    <AccountFrame title="Overview" documentTitle="Your account">
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Panel title="Your application" actions={<ButtonLink to="/account/application">View</ButtonLink>}>
+    <AccountFrame title="Dashboard" documentTitle="Your account">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <Panel title="Your application" className="md:col-span-2" actions={<ButtonLink to="/account/application">Details</ButtonLink>}>
           {applications.error ? (
             <LoadError error={applications.error} onRetry={applications.reload} />
           ) : !applications.data ? (
             <Loading />
           ) : applications.data.claimed.length ? (
-            <ul className="flex flex-col gap-3">
+            <div className="flex flex-col gap-8">
               {applications.data.claimed.map((item) => (
-                <li key={item.id} className="flex flex-wrap items-center gap-2 font-sans text-[15px]">
-                  <span className="font-bold text-ink">{item.reference}</span>
-                  <Badge tone={STATUS_TONE[item.status]}>{item.statusLabel}</Badge>
-                </li>
+                <ApplicationProgress key={item.id} item={item} />
               ))}
-            </ul>
+            </div>
           ) : applications.data.claimable.length ? (
             <p className="font-sans text-[15px] leading-[1.6] text-ink">
               We found an application sent with {email}.{' '}
-              <Link to="/account/application" className="font-bold text-brand underline underline-offset-4">
+              <Link to="/account/application" className={link}>
                 Link it to your account
               </Link>{' '}
-              to see its status here.
+              to follow its progress here.
             </p>
           ) : (
             <p className="font-sans text-[15px] leading-[1.6] text-ink">
               There’s no application sent with {email}.{' '}
-              <Link to="/apply" className="font-bold text-brand underline underline-offset-4">
+              <Link to="/apply" className={link}>
                 Apply now
               </Link>
               , or sign in with the email address you applied with.
             </p>
+          )}
+        </Panel>
+
+        <Panel title="To do" description={allDone ? 'You’re all set.' : undefined}>
+          {todo.length ? (
+            <ul className="flex flex-col gap-3">
+              {todo.map((item) => (
+                <ChecklistRow key={item.id} item={item} />
+              ))}
+            </ul>
+          ) : (
+            <Loading />
           )}
         </Panel>
 
@@ -79,7 +126,7 @@ export default function AccountOverviewPage() {
             <Loading />
           ) : inbox.data.items.length ? (
             <ul className="flex flex-col gap-3">
-              {inbox.data.items.slice(0, 3).map((item) => (
+              {inbox.data.items.slice(0, PREVIEW_COUNT).map((item) => (
                 <li key={item.id} className="flex flex-col gap-0.5">
                   <span className="font-sans text-[15px] font-bold text-ink">
                     {item.title}
@@ -94,12 +141,38 @@ export default function AccountOverviewPage() {
           )}
         </Panel>
 
-        <Panel title="Notifications on this device" actions={<ButtonLink to="/account/notifications">Manage</ButtonLink>}>
-          <NotificationSummary />
+        <Panel title="Programme updates" actions={<ButtonLink to="/updates">All updates</ButtonLink>}>
+          {updates.error ? (
+            <LoadError error={updates.error} onRetry={updates.reload} />
+          ) : !updates.data ? (
+            <Loading />
+          ) : updates.data.items.length ? (
+            <ul className="flex flex-col gap-3">
+              {updates.data.items.slice(0, PREVIEW_COUNT).map((item) => (
+                <li key={item.id} className="flex flex-col gap-0.5">
+                  <span className="font-sans text-[15px] font-bold text-ink">{item.title}</span>
+                  <span className="font-sans text-[13px] text-muted">{when(item.publishedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-[15px] text-muted">There are no announcements yet.</p>
+          )}
         </Panel>
 
-        <Panel title="Settings" actions={<ButtonLink to="/account/settings">Open</ButtonLink>}>
-          <p className="font-sans text-[15px] leading-[1.6] text-ink">Where you’re signed in, signing out everywhere, and deleting your account.</p>
+        <Panel title="The programme" description="Six stages, from applying to community." actions={<ButtonLink to="/journey">The journey</ButtonLink>}>
+          <ol className="flex flex-col gap-2.5">
+            {JOURNEY.map((stage) => (
+              <li key={stage.num} className="flex items-baseline gap-3 font-sans text-[14px]">
+                <span className="w-6 shrink-0 font-bold tabular-nums text-gold">{stage.num}</span>
+                <span className="text-ink">
+                  <span className="font-bold">{stage.name}</span>
+                  <span className="text-muted"> · {stage.meta[0]}</span>
+                  {stage.condition && <span className="text-muted"> · {stage.condition}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
         </Panel>
       </div>
     </AccountFrame>
