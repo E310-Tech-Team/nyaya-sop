@@ -1,28 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JOURNEY } from '../config/programme';
 import { APPLICATION_STATUSES, PUBLISHED_STATUS_LABELS } from '../shared/platform';
-import { checklist, nextStep, progressSteps, PROGRESS_STATUSES } from './dashboard';
-
-describe('applicant dashboard: progress', () => {
-  it('walks the published stages in order, with the applicant’s labels', () => {
-    expect(PROGRESS_STATUSES).toEqual(['submitted', 'under_review', 'shortlisted', 'invited']);
-    expect(progressSteps('submitted')!.map((step) => step.label)).toEqual(
-      PROGRESS_STATUSES.map((status) => PUBLISHED_STATUS_LABELS[status].label),
-    );
-  });
-
-  it('marks the stages before the current one done and the rest upcoming', () => {
-    expect(progressSteps('shortlisted')!.map((step) => step.state)).toEqual(['done', 'done', 'current', 'upcoming']);
-    expect(progressSteps('submitted')!.map((step) => step.state)).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
-    expect(progressSteps('invited')!.map((step) => step.state)).toEqual(['done', 'done', 'done', 'current']);
-  });
-
-  it('shows no stepper for an application that has left the path', () => {
-    // A published "Not selected" doesn't say how far it got, so no stage is drawn as reached.
-    expect(progressSteps('not_selected')).toBeNull();
-    expect(progressSteps('withdrawn')).toBeNull();
-  });
-});
+import { checklist, checklistSummary, nextStep } from './dashboard';
 
 describe('applicant dashboard: what happens next', () => {
   it('has a line for every status except a withdrawn application', () => {
@@ -83,5 +62,19 @@ describe('applicant dashboard: checklist', () => {
   it('leaves out what is still loading rather than guessing', () => {
     expect(checklist({}).length).toBe(0);
     expect(checklist({ unread: 0 }).map((item) => item.id)).toEqual(['messages']);
+  });
+
+  it('gives every open item a short action for its button, and done items none', () => {
+    const open = checklist({ claimed: 0, claimable: 1, unread: 2, notifications: 'off' });
+    expect(open.map((item) => item.action)).toEqual(['Link it', 'Turn on', 'Read']);
+    expect(checklist({ claimed: 0, claimable: 0, notifications: 'install-required' }).map((item) => item.action)).toEqual(['Apply', 'How to']);
+    expect(checklist(all).every((item) => item.action === undefined)).toBe(true);
+  });
+
+  it('counts what is done, and says when everything is', () => {
+    expect(checklistSummary(checklist(all))).toEqual({ done: 3, total: 3, complete: true });
+    expect(checklistSummary(checklist({ ...all, unread: 2 }))).toEqual({ done: 2, total: 3, complete: false });
+    // An empty list (still loading) is never "complete".
+    expect(checklistSummary([])).toEqual({ done: 0, total: 0, complete: false });
   });
 });

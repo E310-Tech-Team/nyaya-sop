@@ -7,7 +7,7 @@ import { useAsync } from '../lib/useAsync';
 import { AccountFrame } from './AccountApp';
 import { accountApi } from './api';
 import { ApplicationProgress } from './ApplicationProgress';
-import { checklist, type ChecklistItem, type NotificationReadiness } from './dashboard';
+import { checklist, checklistSummary, type ChecklistItem, type NotificationReadiness } from './dashboard';
 
 const PREVIEW_COUNT = 3;
 const link = 'font-bold text-brand underline underline-offset-4';
@@ -22,15 +22,16 @@ function readiness(device: PushDevice): NotificationReadiness | undefined {
   return device.status.kind === 'denied' ? 'unavailable' : 'off';
 }
 
+/** Each open item has its own button (a bigger target than an inline link); done items are ticked. */
 function ChecklistRow({ item }: { item: ChecklistItem }) {
   return (
-    <li className="flex items-start gap-3">
+    <li className="flex items-center gap-3">
       <span
         aria-hidden="true"
         className={
           item.done
-            ? 'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-white'
-            : 'mt-0.5 size-5 shrink-0 rounded-full border-2 border-gold bg-white'
+            ? 'flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-white'
+            : 'size-5 shrink-0 rounded-full border-2 border-gold bg-white'
         }
       >
         {item.done && (
@@ -39,17 +40,45 @@ function ChecklistRow({ item }: { item: ChecklistItem }) {
           </svg>
         )}
       </span>
-      <span className="font-sans text-[15px] leading-[1.5] text-ink">
+      <span className={`min-w-0 flex-1 font-sans text-[15px] leading-[1.45] ${item.done ? 'text-muted' : 'text-ink'}`}>
         <span className="sr-only">{item.done ? 'Done: ' : 'To do: '}</span>
-        {item.to && !item.done ? (
-          <Link to={item.to} className={link}>
-            {item.label}
-          </Link>
-        ) : (
-          <span className={item.done ? 'text-muted' : undefined}>{item.label}</span>
-        )}
+        {item.label}
       </span>
+      {item.to && item.action && !item.done && (
+        <ButtonLink to={item.to} className="min-h-[36px] shrink-0 px-4 text-[13px]">
+          {item.action}
+          <span className="sr-only">: {item.label}</span>
+        </ButtonLink>
+      )}
     </li>
+  );
+}
+
+/** "2 of 3 done" with a bar; once everything is done the list folds away behind "Show the list". */
+function TodoList({ items }: { items: ChecklistItem[] }) {
+  const summary = checklistSummary(items);
+  const list = (
+    <ul className="flex flex-col gap-3">
+      {items.map((item) => (
+        <ChecklistRow key={item.id} item={item} />
+      ))}
+    </ul>
+  );
+  if (summary.complete) {
+    return (
+      <details className="font-sans text-[14px] text-muted">
+        <summary className="cursor-pointer font-semibold text-brand underline underline-offset-4">Show the list</summary>
+        <div className="mt-3">{list}</div>
+      </details>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <div aria-hidden="true" className="h-1.5 w-full overflow-hidden rounded-full bg-line/60">
+        <div className="h-full rounded-full bg-brand" style={{ width: `${(summary.done / summary.total) * 100}%` }} />
+      </div>
+      {list}
+    </div>
   );
 }
 
@@ -68,7 +97,8 @@ export default function AccountOverviewPage() {
     unread: inbox.data?.unread,
     notifications: readiness(device),
   });
-  const allDone = todo.length > 0 && todo.every((item) => item.done);
+  const progress = checklistSummary(todo);
+  const todoDescription = progress.complete ? 'You’re all set.' : progress.total ? `${progress.done} of ${progress.total} done` : undefined;
 
   return (
     <AccountFrame title="Dashboard" documentTitle="Your account">
@@ -103,16 +133,8 @@ export default function AccountOverviewPage() {
           )}
         </Panel>
 
-        <Panel title="To do" description={allDone ? 'You’re all set.' : undefined}>
-          {todo.length ? (
-            <ul className="flex flex-col gap-3">
-              {todo.map((item) => (
-                <ChecklistRow key={item.id} item={item} />
-              ))}
-            </ul>
-          ) : (
-            <Loading />
-          )}
+        <Panel title="To do" description={todoDescription}>
+          {todo.length ? <TodoList items={todo} /> : <Loading />}
         </Panel>
 
         <Panel

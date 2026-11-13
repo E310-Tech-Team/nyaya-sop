@@ -180,6 +180,14 @@
   html[data-sticky-header] :is(main, footer) :is([id], a[href], button, input, select, textarea, summary, [tabindex]) {
     scroll-margin-top: calc(var(--sticky-header-height) + 16px);
   }
+
+  /* Application steps pin Back / Continue to the bottom below lg (FormActions): anything focused
+     or scrolled to (a field, an error, the submission alert) stops above that bar, not under it. */
+  @media (max-width: 1023.98px) {
+    main:has([data-form-actions]) :is([id], a[href], button, input, select, textarea, summary, [tabindex], [role='alert']) {
+      scroll-margin-bottom: 104px;
+    }
+  }
 }
 
 @layer components {

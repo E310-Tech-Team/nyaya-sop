@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { SAVED_PROGRESS_NOTE } from '../config/programme';
 import { usePublicConfig } from '../lib/config';
-import { progressLabel, stepForPath, stepIndex, stepState, type StepState } from '../lib/progress';
-import { STEPS, type StepKey } from '../state/application';
+import { answeredCount, progressLabel, stepForPath, stepIndex, stepState, type StepState } from '../lib/progress';
+import { STEPS, useApplication, type StepKey } from '../state/application';
 import { SiteHeader } from './SiteHeader';
 
 const STEP_COPY: Record<StepKey, { eyebrow: string; title: string; subtitle: string }> = {
@@ -57,6 +57,28 @@ function StepMarker({ state, number, compact = false }: { state: StepState; numb
 
 const stateLabel = { done: 'completed', active: 'current step', upcoming: 'not started' } as const;
 
+/** "5 of 8 answered" for the current step, or null (review, short steps). Not a live region: it would talk over typing. */
+function useAnswered(step: StepKey) {
+  const { draft } = useApplication();
+  const count = answeredCount(step, draft);
+  return count && { ...count, text: `${count.answered} of ${count.total} answered`, ratio: count.answered / count.total };
+}
+
+/**
+ * A thin gold bar for the answered share (decorative: the text says the same). It grows by
+ * `scale` from the left, never `width` (docs/04 §6), and only moves without reduced motion.
+ */
+function AnsweredBar({ ratio, className = '' }: { ratio: number; className?: string }) {
+  return (
+    <span aria-hidden="true" className={`block h-[3px] overflow-hidden rounded-full bg-white/15 ${className}`}>
+      <span
+        className="block h-full w-full origin-left rounded-full bg-gold motion-safe:transition-[scale] motion-safe:duration-(--duration-form)"
+        style={{ scale: `${ratio} 1` }}
+      />
+    </span>
+  );
+}
+
 /**
  * Phones and tablets: one compact row under the header ("Step 1 of 3 / Personal Information"
  * with done ✓, current and upcoming markers). Not sticky, so it never covers inputs, errors
@@ -65,13 +87,17 @@ const stateLabel = { done: 'completed', active: 'current step', upcoming: 'not s
 function MobileProgress({ step }: { step: StepKey }) {
   const current = stepIndex(step);
   const { eyebrow, title } = progressLabel(step);
+  const answered = useAnswered(step);
   return (
     <nav
       aria-label="Application progress"
-      className="on-dark flex w-full shrink-0 items-center gap-[14px] border-t border-white/10 bg-brand px-6 py-[12px] sm:px-10 lg:hidden"
+      className="on-dark relative flex w-full shrink-0 items-center gap-[14px] border-t border-white/10 bg-brand px-6 py-[12px] sm:px-10 lg:hidden"
     >
       <p className="order-2 min-w-0 font-sans leading-[1.3]">
-        <span className="block text-[10px] font-bold uppercase tracking-[1.4px] text-gold-light">{eyebrow}</span>
+        <span className="block text-[10px] font-bold uppercase tracking-[1.4px] text-gold-light">
+          {eyebrow}
+          {answered && <span className="font-semibold normal-case tracking-normal text-white/75"> · {answered.text}</span>}
+        </span>
         <span className="block text-[14px] font-bold text-white">{title}</span>
       </p>
       <ol className="order-1 flex shrink-0 items-center">
@@ -90,6 +116,7 @@ function MobileProgress({ step }: { step: StepKey }) {
           );
         })}
       </ol>
+      {answered && <AnsweredBar ratio={answered.ratio} className="absolute inset-x-0 bottom-0 rounded-none" />}
     </nav>
   );
 }
@@ -97,6 +124,7 @@ function MobileProgress({ step }: { step: StepKey }) {
 function SidePanel({ step }: { step: StepKey }) {
   const copy = STEP_COPY[step];
   const current = stepIndex(step);
+  const answered = useAnswered(step);
   return (
     <aside className="on-dark hidden w-[356px] shrink-0 flex-col justify-between bg-brand pb-[48px] pl-[52px] pr-[40px] pt-[56px] lg:flex">
       <div className="flex w-full flex-col gap-[38px]">
@@ -123,14 +151,22 @@ function SidePanel({ step }: { step: StepKey }) {
                   }`}
                 >
                   <StepMarker state={state} number={i + 1} />
-                  <p
-                    className={`font-sans text-[13px] leading-[1.25] ${stateTransition} ${
-                      state === 'active' ? 'font-bold text-white' : 'font-medium text-rose/80'
-                    }`}
-                  >
-                    {s.label}
-                    <span className="sr-only"> ({stateLabel[state]})</span>
-                  </p>
+                  <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
+                    <p
+                      className={`font-sans text-[13px] leading-[1.25] ${stateTransition} ${
+                        state === 'active' ? 'font-bold text-white' : 'font-medium text-rose/80'
+                      }`}
+                    >
+                      {s.label}
+                      <span className="sr-only"> ({stateLabel[state]})</span>
+                    </p>
+                    {state === 'active' && answered && (
+                      <>
+                        <span className="font-sans text-[11px] font-semibold text-gold-light">{answered.text}</span>
+                        <AnsweredBar ratio={answered.ratio} />
+                      </>
+                    )}
+                  </div>
                 </li>
               );
             })}
@@ -242,12 +278,23 @@ export function SavedNote({ className = '' }: { className?: string }) {
   );
 }
 
-/** Button row under the card, with the saved-answers note. */
+/**
+ * Button row under the card, with the saved-answers note. Below `lg` the row is pinned to the
+ * bottom of the screen (edge to edge, above the iPhone home indicator) so Back and Continue stay
+ * in reach on long steps; it settles in place at the end of the form. It must be a direct child
+ * of the tall form (sticky only sticks within its parent), so this renders two siblings. Focus
+ * targets keep clear of it through `scroll-margin-bottom` (index.css, `data-form-actions`).
+ */
 export function FormActions({ children }: { children: ReactNode }) {
   return (
-    <div className="flex w-full max-w-[840px] flex-col gap-[14px] pt-[4px]">
-      {children}
-      <SavedNote className="justify-center md:justify-start" />
-    </div>
+    <>
+      <div
+        data-form-actions
+        className="sticky bottom-0 z-30 -mx-6 w-[calc(100%+3rem)] border-t border-line bg-cream px-6 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_24px_rgba(45,9,20,0.06)] sm:-mx-10 sm:w-[calc(100%+5rem)] sm:px-10 lg:static lg:mx-0 lg:w-full lg:max-w-[840px] lg:border-0 lg:bg-transparent lg:p-0 lg:pt-[4px] lg:shadow-none"
+      >
+        <div className="mx-auto w-full max-w-[840px]">{children}</div>
+      </div>
+      <SavedNote className="-mt-[14px] w-full max-w-[840px] justify-center md:justify-start" />
+    </>
   );
 }
