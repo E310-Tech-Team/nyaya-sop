@@ -45,7 +45,7 @@ The brand guideline ("School of Purpose 4.pdf") defines the logo, its meaning an
 - Where a link wraps the lockup, the link keeps its name ("School of Purpose: home") and the image has `alt=""`. Elsewhere its alternative text is "RCCG NYAYA School of Purpose".
 - Files: two 960×268 WebP lockups (about 20 KB each), content-hashed and precached by the service worker so headers keep their logo offline. Favicons and app icons: §7. All are resized from the masters by `python3 scripts/brand-assets.py`; the logo is never redrawn or recoloured.
 - **Footer credit** (below the tagline): the RCCG Young Adults & Youths emblem at 64 px, then "An initiative of RCCG National Young Adults and Youth Affairs".
-  - The words "An initiative of" use the footer's gold eyebrow style (as "Navigation"); the organisation's name uses the footer link colour.
+  - The words "An initiative of" use the footer's gold eyebrow style (as the link headings); the organisation's name uses the footer link colour.
   - It's one sentence for screen readers. The emblem has `alt=""`, since the text names it.
   - The emblem is the supplied logo with only its white page made transparent (`design/brand/README.md`, "Partner mark").
 - **Emails** keep a text header in burgundy ("RCCG NYAYA / SCHOOL OF PURPOSE") rather than a logo image. Remote images are often blocked, and fetching one would tell the server when someone opens a sign-in or password email.
@@ -152,7 +152,7 @@ A concise overview; the detail lives on the dedicated pages. Each preview keeps 
 
 ### Dedicated pages
 
-Same sticky header on all four (burgundy, lockup links home, nav with the current page marked, cream **Apply** pill); same page intro; same apply band ("Discover your purpose. / Prepare to lead.", eligibility and time to apply, **Start my application** + one related page) and footer.
+Same sticky header on all four (burgundy, lockup links home, nav with the current page marked, cream **Apply** pill); same page intro; same apply band ("Discover your purpose. / Prepare to lead.", eligibility and time to apply, **Start my application** + one related page) and footer. The footer (`MarketingFooter` in `Chrome.tsx`) puts the brand block and the links side by side from `md` (768 px) and shows the links as two short columns at every width, **Explore** (the pages, Contact) and **Take part** (Apply now, Programme updates, Your account, Notification settings, Install the app), rather than one long list (2026-11-13; 917 px tall at 1024 px before, 497 px after).
 
 | Page | Sections after the intro |
 |---|---|
