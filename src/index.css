@@ -180,6 +180,14 @@
   html[data-sticky-header] :is(main, footer) :is([id], a[href], button, input, select, textarea, summary, [tabindex]) {
     scroll-margin-top: calc(var(--sticky-header-height) + 16px);
   }
+
+  /* Application steps pin Back / Continue to the bottom below lg (FormActions): anything focused
+     or scrolled to (a field, an error, the submission alert) stops above that bar, not under it. */
+  @media (max-width: 1023.98px) {
+    main:has([data-form-actions]) :is([id], a[href], button, input, select, textarea, summary, [tabindex], [role='alert']) {
+      scroll-margin-bottom: 104px;
+    }
+  }
 }
 
 @layer components {
@@ -493,6 +501,11 @@
     translate: 0 100%;
   }
 }
+@keyframes ui-sheet-in-left {
+  from {
+    translate: -100% 0;
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   [data-slot='popover-content'][data-state='open'] {
     transform-origin: var(--radix-popover-content-transform-origin);
@@ -510,6 +523,9 @@
   }
   [data-slot='sheet-content'][data-side='bottom'][data-state='open'] {
     animation: ui-sheet-in-bottom var(--duration-drawer-in) var(--ease-enter);
+  }
+  [data-slot='sheet-content'][data-side='left'][data-state='open'] {
+    animation: ui-sheet-in-left var(--duration-drawer-in) var(--ease-enter);
   }
 }
 

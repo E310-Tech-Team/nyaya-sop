@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { STEPS } from '../state/application';
-import { progressLabel, stepForPath, stepIndex, stepState } from './progress';
+import { validPayload } from '../shared/test-fixtures';
+import { emptyDraft, STEPS, type Draft } from '../state/application';
+import { answeredCount, progressLabel, stepForPath, stepIndex, stepState } from './progress';
 
 describe('application progress', () => {
   it('labels the three question sections "Step N of 3"', () => {
@@ -23,5 +24,30 @@ describe('application progress', () => {
   it('maps routes to steps', () => {
     expect(stepForPath('/apply/education')).toBe('education');
     expect(stepForPath('/apply/review')).toBe('review');
+  });
+});
+
+describe('answered questions in a step', () => {
+  const filled = (): Draft => {
+    const { fullName, email, phone, gender, ageRange, stateOfResidence, city, parishName } = validPayload();
+    return { ...emptyDraft(), personal: { fullName, email, phone, gender, ageRange, stateOfResidence, city, parishName } };
+  };
+
+  it('counts the Personal step’s questions that have a valid answer', () => {
+    expect(answeredCount('personal', emptyDraft())).toEqual({ answered: 0, total: 8 });
+    expect(answeredCount('personal', filled())).toEqual({ answered: 8, total: 8 });
+  });
+
+  it('agrees with the step’s own checks: an answer with an error isn’t counted', () => {
+    const draft = filled();
+    expect(answeredCount('personal', { ...draft, personal: { ...draft.personal, email: 'not an email' } })).toEqual({ answered: 7, total: 8 });
+    // In directory mode, typed parish text is never an answer.
+    expect(answeredCount('personal', { ...draft, parishMode: 'directory' })).toEqual({ answered: 7, total: 8 });
+  });
+
+  it('shows no count on short steps or on review', () => {
+    expect(answeredCount('education', emptyDraft())).toBeNull();
+    expect(answeredCount('purpose', emptyDraft())).toBeNull();
+    expect(answeredCount('review', filled())).toBeNull();
   });
 });

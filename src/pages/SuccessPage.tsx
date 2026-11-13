@@ -14,11 +14,14 @@ import imgMail from '../assets/success/icon-mail.svg';
 import imgUsers from '../assets/success/icon-users.svg';
 import imgPortraitHalo from '../assets/success/portrait-halo.svg';
 import imgStudent from '../assets/success/student-portrait.webp';
+import { ApplicationStepper } from '../components/ApplicationStepper';
 import { PrimaryLink } from '../components/Buttons';
 import { NotificationCard } from '../components/notifications/NotificationCard';
 import { usePageTitle } from '../components/RouteEffects';
 import { SiteHeader } from '../components/SiteHeader';
+import { buttonClasses } from '../components/ui/basic';
 import { site } from '../config/site';
+import { progressSteps } from '../lib/applicationProgress';
 import { copyText } from '../lib/clipboard';
 import { usePublicConfig } from '../lib/config';
 import { enterAfter, staggerDelay } from '../lib/motion';
@@ -171,19 +174,34 @@ function NextStepCard({ step, index }: { step: (typeof NEXT_STEPS)[number]; inde
   );
 }
 
+/** Where the application is now: the dashboard's stepper, at "Received", dated today. */
+function WhereItIs({ submittedAt }: { submittedAt: string }) {
+  const steps = progressSteps('submitted', { submittedAt });
+  if (!steps) return null;
+  return (
+    <section aria-labelledby="where-it-is" className="flex w-full max-w-[560px] flex-col gap-4 rounded-[16px] border border-line bg-white p-5">
+      <h2 id="where-it-is" className="font-sans text-[15px] font-extrabold text-ink">
+        Where your application is
+      </h2>
+      <ApplicationStepper steps={steps} label="Where your application is" />
+    </section>
+  );
+}
+
 /** When applicant accounts are available: following the application online is optional. */
 function AccountPrompt() {
   const config = usePublicConfig();
   if (!config?.accounts.enabled) return null;
   return (
-    <p className="w-full max-w-[560px] font-sans text-[14px] leading-[1.6] text-muted">
-      <strong className="text-ink">Want to follow your application online?</strong> You can sign in with the email address you applied
-      with to see status updates and messages.{' '}
-      <Link to="/account" className="font-bold text-brand underline underline-offset-4">
-        Sign in to your account
+    <div className="flex w-full max-w-[560px] flex-col items-start gap-3">
+      <p className="font-sans text-[14px] leading-[1.6] text-muted">
+        <strong className="text-ink">Want to follow your application online?</strong> Sign in with the email address you applied with to
+        see each stage as it’s updated, and messages from the Programme team. It’s optional.
+      </p>
+      <Link to="/account" className={buttonClasses('secondary')}>
+        Follow your application
       </Link>
-      . It’s optional.
-    </p>
+    </div>
   );
 }
 
@@ -243,6 +261,7 @@ export default function SuccessPage() {
               is reviewed, and the physical boot camp is for participants selected on merit.
             </p>
             <ReferenceCard reference={submission.reference} />
+            <WhereItIs submittedAt={submission.submittedAt} />
             {/* Optional follow-ups: no entrance delay (they ask for consent). */}
             <NotificationCard />
             <AccountPrompt />
