@@ -501,6 +501,11 @@
     translate: 0 100%;
   }
 }
+@keyframes ui-sheet-in-left {
+  from {
+    translate: -100% 0;
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   [data-slot='popover-content'][data-state='open'] {
     transform-origin: var(--radix-popover-content-transform-origin);
@@ -518,6 +523,9 @@
   }
   [data-slot='sheet-content'][data-side='bottom'][data-state='open'] {
     animation: ui-sheet-in-bottom var(--duration-drawer-in) var(--ease-enter);
+  }
+  [data-slot='sheet-content'][data-side='left'][data-state='open'] {
+    animation: ui-sheet-in-left var(--duration-drawer-in) var(--ease-enter);
   }
 }
 

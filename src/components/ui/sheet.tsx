@@ -20,7 +20,12 @@ export function SheetClose(props: ComponentProps<typeof DialogPrimitive.Close>) 
   return <DialogPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
-export function SheetContent({ className, children, side = 'right', ...props }: ComponentProps<typeof DialogPrimitive.Content> & { side?: 'right' | 'bottom' }) {
+export function SheetContent({
+  className,
+  children,
+  side = 'right',
+  ...props
+}: ComponentProps<typeof DialogPrimitive.Content> & { side?: 'right' | 'left' | 'bottom' }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay data-slot="sheet-overlay" className="fixed inset-0 z-50 bg-ink/45" />
@@ -30,6 +35,7 @@ export function SheetContent({ className, children, side = 'right', ...props }: 
         className={cn(
           'fixed z-50 flex flex-col bg-paper text-ink shadow-[0_0_48px_rgba(45,9,20,0.25)] outline-none',
           side === 'right' && 'inset-y-0 right-0 h-full w-full border-l border-line sm:max-w-md',
+          side === 'left' && 'inset-y-0 left-0 h-full w-[min(320px,86vw)] border-r border-line',
           side === 'bottom' && 'inset-x-0 bottom-0 max-h-[92dvh] rounded-t-2xl border-t border-line',
           className,
         )}
