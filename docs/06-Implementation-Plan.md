@@ -312,7 +312,7 @@ The owner asked (2026-11-21) to raise the age limit to 35 for Continent 1 and to
 | 22.3 | Server: after the parish is resolved, the age range must fit its continent (`linkContinent()`); 400 with `fieldErrors.ageRange` | Done · 7 tests (`server/age-limits.test.ts`: each continent, an unlisted parish's place, "I don't know my province", directory off, the enum, the consent) |
 | 22.4 | Form: the same check in `personalErrors()` once the parish is answered (`draftContinent()`); the age question offers 31-35 and 36-40 with the new hint | Done · 3 tests (`application.test.ts`); browser check (text mode refuses 31-35 with the message, 28-30 continues) |
 | 22.5 | Copy: hero, apply band, journey, FAQ, welcome checklist, About, Journey and the age hint from `ageEligibility()` / `ageEligibilityShort()` | Done |
-| 22.6 | Production check: confirm the RCCG directory names the continents "CONTINENT 1", "CONTINENT 2" and "CONTINENT 11" (the rule matches that pattern); the sandbox fixture does | Not yet |
+| 22.6 | Production check: the RCCG directory names the continents as the rule expects | **Done** (2026-11-21, read-only query on the Droplet): "Continent 1" (17,978 parishes), "Continent 2" (6,984) and "Continent 11" (3,542) match. Units whose names only resemble them keep the 30 limit: "Ict Continent 1" (968, a separate unit), "RCCG Continent 1" (1 parish, apparently a stray entry) and "Redemption City Continent" (162). Other continents: 3, 12, Australia/Pacific, Emeritus, RCCG Global and four with no parishes |
 
 ## Content needed from the Programme team
 
