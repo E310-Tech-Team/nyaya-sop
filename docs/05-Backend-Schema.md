@@ -44,6 +44,7 @@ flowchart LR
 | `0017_mentor_nomination_age_ranges.sql` | adds the 18–24 and 25–29 mentor age ranges while preserving the prior 18–29 enum value for existing nominations |
 | `0018_mentor_nomination_pillar_multi_select.sql` | adds `pillar_fits text[]`, backfills earlier `pillar_fit` answers and bounds new arrays to 1–8 choices; retains `pillar_fit` during the additive rollout |
 | `0019_mentor_nomination_location_length.sql` | widens the nomination location limit to 300 characters for a Non-RCCG nominee's base or address |
+| `0021_age_limits_by_continent.sql` | adds the `31_35` and `36_40` age ranges and consent version `2026-11-v1` (age limits by continent, D-65); additive |
 | `0020_mentor_nominee_residence.sql` | adds the nominee's state of residence and Non-RCCG church denomination, while allowing full addresses up to 500 characters; older nominations keep nulls for fields they were not asked |
 
 Existing applications stay valid: new columns have defaults (`published_status = 'submitted'`, no account, no reviewer), and a person can claim an older application after signing in with the same email ([03 §8](03-App-Flow.md#8-applicant-accounts)). Verified on real PostgreSQL 17 over existing data (2026-09-26).
@@ -360,7 +361,8 @@ Staff sign in with their email and password and then a second step, or with a **
 | Enum | Values |
 |---|---|
 | `gender` | `male` · `female` · `prefer_not_to_say`. The form offers only the first two since 2026-09-30 (`GENDERS`, D-54); the value stays for the applications saved with it, labelled "Prefer not to say (earlier form)" (`STORED_GENDERS` in [`src/shared/application.ts`](../src/shared/application.ts)), and the 0011 trigger refuses it for new rows and changed answers |
-| `age_range`, `education_level`, `current_status` | unchanged ([`src/shared/application.ts`](../src/shared/application.ts)) |
+| `age_range` (0001, 0021) | `18_20` · `21_24` · `25_27` · `28_30` · `31_35` · `36_40` ([`src/shared/application.ts`](../src/shared/application.ts)); the two highest are accepted only for parishes in the continents that allow them (§5) |
+| `education_level`, `current_status` | unchanged ([`src/shared/application.ts`](../src/shared/application.ts)) |
 | `application_status` | `submitted` · `under_review` · `shortlisted` · `invited` · `not_selected` · `withdrawn` |
 | `staff_role` | `owner` · `programme_admin` · `reviewer` · `communications` · `read_only` |
 | `staff_status`, `applicant_account_status` | invited/active/suspended · active/suspended |
@@ -476,7 +478,7 @@ Implemented once in [`src/shared/validation.ts`](../src/shared/validation.ts) (f
 | Email | required; trimmed + lower-cased; `x@y.z`, without spaces, invisible characters or `, ; : < > ( ) [ ] " \` (mail software reads those as address syntax); ≤ 254. Sent to nodemailer as one address object, never a string it could split |
 | Phone | required; normalised to E.164 (Nigerian formats accepted) |
 | Gender | required; `male` or `female` (D-54). `prefer_not_to_say`, an option until 2026-09-30, is refused like any other value by the form, the API and the database (0011); a draft saved with it loads with the gender cleared |
-| Age range / Education / Status | one of the enum values |
+| Age range / Education / Status | one of the enum values; the age range must also fit the parish's continent (D-65, [`src/shared/ageLimits.ts`](../src/shared/ageLimits.ts)): up to 35 in Continent 1, up to 40 in Continents 2 and 11, up to 30 elsewhere or when no continent is known (typed text, "I don't know my province", a chain with no continent). The server takes the continent from the resolved parish or place (`linkContinent()` in `server/parishes.ts`), never from the browser, and answers 400 `VALIDATION_FAILED` with `fieldErrors.ageRange` naming the limit |
 | State of residence | one of 36 states, "FCT (Abuja)" or "Outside Nigeria" |
 | City/Town | required; 2–80 chars; contains a letter |
 | RCCG parish | required. While the directory is on: a listed parish, confirmed, or the name of one that isn't listed (2–120, contains a letter); typed text alone doesn't count. While it's off: the parish's name (2–120, contains a letter) |

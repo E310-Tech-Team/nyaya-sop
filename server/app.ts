@@ -11,6 +11,7 @@ import {
   type CurrentCohortResponse,
   type SubmitApplicationResponse,
 } from '../src/shared/application';
+import { ageLimitMessage, ageRangeAllowed } from '../src/shared/ageLimits';
 import { MESSAGES, isHoneypotFilled, validateApplication } from '../src/shared/validation';
 import { validateMentorNomination } from '../src/shared/mentor-nomination';
 import { accountRoutes } from './account/routes';
@@ -33,7 +34,7 @@ import { cameViaEdgeProxy, edgeProxyCheck } from './edge-proxy';
 import { createDirectoryApi } from './directory/api';
 import { createEmailTransport, type EmailTransport } from './email';
 import { sendError } from './http';
-import { parishDirectoryEnabled, parishRoutes, resolveParish, unitPlace } from './parishes';
+import { linkContinent, parishDirectoryEnabled, parishRoutes, resolveParish, unitPlace } from './parishes';
 import { publicRoutes } from './public';
 import { pushRoutes } from './push/routes';
 import { PushService } from './push/service';
@@ -275,6 +276,12 @@ export async function buildApp({
           return sendError(reply, 503, 'DIRECTORY_UNAVAILABLE', 'We couldn’t confirm your parish with the RCCG directory just now. Your answers are saved: try again in a few minutes.');
         }
         return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', { fieldErrors: { parishName: parish.error } });
+      }
+
+      // Age limits depend on the parish's continent (D-65): from the directory, never from the browser.
+      const continent = linkContinent(parish.link);
+      if (!ageRangeAllowed(result.value.ageRange, continent)) {
+        return sendError(reply, 400, 'VALIDATION_FAILED', 'Some answers need attention.', { fieldErrors: { ageRange: ageLimitMessage(continent) } });
       }
 
       let row: Awaited<ReturnType<typeof insertApplication>>;

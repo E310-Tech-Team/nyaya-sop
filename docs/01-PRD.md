@@ -30,7 +30,7 @@ This app covers **only the "Apply" stage** of the programme:
 
 | # | Stage (from the site copy) | In this app? |
 |---|---|---|
-| 01 | Apply: open to RCCG young adults and youth aged 18–30 | **Yes** |
+| 01 | Apply: open to RCCG young adults and youth aged 18–30, or up to 35 in Continent 1 and up to 40 in Continents 2 and 11 (D-65, 2026-11-21) | **Yes** |
 | 02 | Virtual Training: 8 weeks, 16 live sessions, 32 contact hours | No |
 | 03 | Merit Selection: transparent 100-point system | No |
 | 04 | Physical Boot Camp: 10 fully sponsored days at Redemption City | No |
@@ -58,7 +58,7 @@ Payments · delivering training, grading, mentorship or community management · 
 
 | Persona | Needs | How the product serves them |
 |---|---|---|
-| **Applicant** (primary): RCCG member aged 18–30, mostly in Nigeria, usually on a phone (often on shared Wi-Fi or a mobile network) | Understand the programme fast, apply in minutes, know what happens next | Mobile-first pages, saved progress, plain-language errors, a reference number |
+| **Applicant** (primary): RCCG member aged 18–30, or up to 35 in Continent 1 and up to 40 in Continents 2 and 11, mostly in Nigeria, usually on a phone (often on shared Wi-Fi or a mobile network) | Understand the programme fast, apply in minutes, know what happens next | Mobile-first pages, saved progress, plain-language errors, a reference number |
 | **Programme team** (owners, programme admins) | A complete, de-duplicated applicant list; decisions communicated consistently | Admin platform: applicants, publication, cohorts, accounts, staff, settings, audit; audited CSV |
 | **Reviewer** | Only the applications assigned to them | Admin: assigned applications, notes, review status (no exports or publishing) |
 | **Communications volunteer** | Send programme news | Admin: announcements and notification campaigns (preview, test, schedule, truthful results) |
@@ -103,7 +103,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 
 ### Welcome: consent
 
-"I confirm that I am an RCCG member aged 18-30 and consent to being contacted about this programme." (version `2026-09-v1`)
+"I confirm that I am an RCCG member aged 18–30, or up to 35 in Continent 1 and up to 40 in Continents 2 and 11, and consent to being contacted about this programme." (version `2026-11-v1`, since 2026-11-21; `2026-09-v1`, "aged 18-30", stays valid for forms opened before it)
 
 ### Section 1: Personal Information
 
@@ -113,7 +113,7 @@ The rules are enforced in the browser and on the server ([05 §4](05-Backend-Sch
 | 02 | Email Address | email | Duplicate emails per cohort are rejected |
 | 03 | Phone Number | tel | Nigerian formats (`0801 234 5678`, `8012345678`, `+234…`) or international with country code; stored as E.164 |
 | 04 | Gender | select | Male · Female (D-54). Until 2026-09-30 the form also offered "Prefer not to say": applications saved with it keep it, and staff see it as "Prefer not to say (earlier form)" |
-| 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 |
+| 05 | Age range | select | 18-20 · 21-24 · 25-27 · 28-30 · 31-35 · 36-40 (31-35 only in Continents 1, 2 and 11; 36-40 only in Continents 2 and 11: checked against the parish's continent, D-65) |
 | 06 | State of Residence | select | All 36 states + FCT (Abuja) + Outside Nigeria |
 | 07 | City/Town of Residence | text | 2–80 characters |
 | 08 | Your RCCG parish | required | While the parish directory is on, two steps (D-59): **"Your province"** (searched by name or number, "LP 12"; the applicant's state first; also the regions and continents some parishes sit directly under, e.g. "Region 13 (parishes not in a province)"), then **"Your parish in <province>"** (type to filter, or browse the whole list 20 at a time). Province, region and continent come from the chosen parish (read-only) and are confirmed. "I don't know my province" searches every province instead; "I can't find my parish" takes its name, with the province chosen. While it's off: "Name of your RCCG parish", typed (hint: "Type your parish's name as you know it. The Programme team will match it to the RCCG parish list.") |
@@ -185,7 +185,7 @@ There is no third-party analytics tool. The admin dashboard shows anonymous firs
 | Q2 | Was a "RCCG member? Yes/No" question removed? | ✅ Resolved by rewording the parish hint; the parish stays optional. Reopen if the question should come back. **Superseded while the parish directory is on:** the parish is required and chosen from the RCCG list (D-31). **Superseded everywhere (2026-09-30, D-52):** the parish is compulsory whether or not the directory is on |
 | Q3 | Time estimate: 5 or 12 minutes? | ✅ "About 5 minutes" (11 questions). Change in `src/config/site.ts` |
 | Q4 | Full state list / diaspora? | ✅ 36 states + FCT + "Outside Nigeria". **Confirm** |
-| Q5 | How is eligibility (18–30, RCCG) enforced? | Open: currently self-declared via the consent statement and age ranges |
+| Q5 | How is eligibility (age, RCCG) enforced? | Partly settled (D-65): the age range must fit the limit of the parish's continent (from the RCCG directory, checked by the form and the server); otherwise self-declared via the consent statement |
 | Q6 | Application window dates? | Open: set them in Admin → Cohorts when known |
 | Q7 | What should the nav items do? | ✅ Each opens its own page (`/about`, `/programme`, `/journey`, `/faq`; 2026-09-26, previously in-page anchors); "Experience" and "Speakers" removed (no content) |
 | Q8 | "SOC" or "SOP"? Canonical organisation name? | ✅ The brand guideline settles the logo: the official lockup "RCCG NYAYA School of Purpose" is in every header (2026-09-28); "SOP" stays the short name. **Confirm** the written org-name variants (see [04 §9](04-UI-UX-Design-Brief.md#9-design-inconsistencies-from-the-prototype)) |
