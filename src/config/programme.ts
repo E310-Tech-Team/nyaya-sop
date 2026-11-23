@@ -1,3 +1,4 @@
+import { ageEligibility, ageEligibilityShort } from '../shared/ageLimits';
 import { site } from './site';
 
 /**
@@ -17,7 +18,7 @@ export const HERO_COPY = {
   eyebrow: 'School of Purpose · First Edition',
   headline: ['Discover your purpose.', 'Prepare to lead.'],
   summary: 'Purpose Boot Camp equips young Christians to influence the Church, marketplace and nation.',
-  eligibility: 'For RCCG members aged 18–30',
+  eligibility: `For RCCG members aged ${ageEligibilityShort()}`,
   /** The edition's name, shown once as a small caption by the photograph. */
   edition: 'The Called Generation',
 } as const;
@@ -161,7 +162,7 @@ export const JOURNEY: readonly JourneyStage[] = [
     num: '01',
     name: 'Apply',
     meta: [`About ${site.minutesToComplete} minutes`, 'Online form'],
-    body: 'Open to RCCG young adults and youth aged 18–30.',
+    body: `Open to RCCG young adults and youth aged ${ageEligibility()}.`,
     next: 'The Programme team reviews every application.',
   },
   {
@@ -209,7 +210,7 @@ export const FAQ: readonly FaqEntry[] = [
     question: 'Who can apply?',
     topic: 'applying',
     answer:
-      'RCCG members aged 18–30: young adults and youth. You confirm this at the start of the application, before the first question.',
+      `RCCG members aged ${ageEligibility()}: young adults and youth. Your parish’s continent decides which limit applies. You confirm this at the start of the application, before the first question.`,
   },
   {
     question: 'How does virtual training work?',
@@ -269,7 +270,7 @@ export const SAVED_PROGRESS_NOTE = 'Your answers are saved while this tab stays 
 export const WELCOME_GROUPS = [
   {
     title: 'Eligibility',
-    items: ['Applications are open to RCCG members aged 18–30.'],
+    items: [`Applications are open to RCCG members aged ${ageEligibility()}.`],
   },
   {
     title: 'Your commitment',

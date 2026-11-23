@@ -7,6 +7,7 @@ import { readSession, writeSession } from '../lib/storage';
 import {
   CONSENT_VERSION,
   isGender,
+  type AgeRange,
   type ApplicationPayload,
   type EducationAnswers,
   type FieldErrors,
@@ -15,6 +16,7 @@ import {
   type SubmitApplicationResponse,
 } from '../shared/application';
 import { CHURCH_LEVELS, type ChainUnit, type ParishChain, type ParishDetailsResponse, type UnitDetails } from '../shared/directory';
+import { ageLimitMessage, ageRangeAllowed } from '../shared/ageLimits';
 import { MESSAGES, hasErrors, validateEducation, validateParish, validateParishText, validatePersonal, validatePurpose } from '../shared/validation';
 
 export type Draft = {
@@ -225,7 +227,25 @@ export function personalErrors(draft: Draft): FieldErrors {
     const checked = validateParishText(draft.personal.parishName);
     if (!checked.ok) errors.parishName = checked.error;
   }
+  // The age limit depends on the parish's continent (D-65): judged once the parish is answered
+  // (its own error comes first), and checked again by the server from the directory.
+  if (!errors.ageRange && !errors.parishName) {
+    const continent = draftContinent(draft);
+    if (!ageRangeAllowed(draft.personal.ageRange as AgeRange, continent)) errors.ageRange = ageLimitMessage(continent);
+  }
   return errors;
+}
+
+/**
+ * The continent of the draft's parish answer, as last fetched from the directory: the listed
+ * parish's, or the province's (or region's or continent's) for one that isn't listed. Null for
+ * typed text and "I don't know my province". The server's `linkContinent()` does the same.
+ */
+export function draftContinent(draft: Draft): string | null {
+  if (draft.parishMode !== 'directory') return null;
+  if (draft.parish?.kind === 'listed') return draft.parish.chain.continent?.name ?? null;
+  if (draft.parish?.kind !== 'not_listed' || draft.province?.kind !== 'place') return null;
+  return draft.province.chain.continent?.name ?? (draft.province.level === 'continent' ? draft.province.name : null);
 }
 
 /** The parish question the form asks: 'loading' or 'failed' until the server's settings arrive. */

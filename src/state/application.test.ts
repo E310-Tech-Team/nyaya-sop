@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChosenPlace, ListedParish } from '../lib/parish';
 import { validPayload } from '../shared/test-fixtures';
+import { ageLimitMessage } from '../shared/ageLimits';
 import { MESSAGES } from '../shared/validation';
 import { emptyDraft, firstIncompletePath, isReachable, personalErrors, reducer, restoreDraft, toPayload, type Draft, type State } from './application';
 
@@ -278,5 +279,44 @@ describe('a draft saved with a gender the form no longer offers (docs/06 D-54)',
 
   it('starts from an empty draft when nothing was saved', () => {
     expect(restoreDraft(null)).toEqual(emptyDraft());
+  });
+});
+
+describe('age limits in the Personal step (D-65)', () => {
+  const inContinent = (name: string, ageRange: Draft['personal']['ageRange']): Draft => {
+    const draft = completeDraft({
+      parishMode: 'directory',
+      province: { ...LAGOS_3, chain: { ...LAGOS_3.chain, continent: { id: 'cx', name } } },
+      parish: { ...jesusHouse(true), chain: { ...jesusHouse(true).chain, continent: { id: 'cx', name } } },
+    });
+    return { ...draft, personal: { ...draft.personal, ageRange } };
+  };
+
+  it('follows the chosen parish’s continent', () => {
+    expect(personalErrors(inContinent('Continent 1', '31_35'))).toEqual({});
+    expect(personalErrors(inContinent('Continent 1', '36_40'))).toEqual({ ageRange: ageLimitMessage('Continent 1') });
+    expect(personalErrors(inContinent('Continent 2', '36_40'))).toEqual({});
+    expect(personalErrors(inContinent('Continent 11', '36_40'))).toEqual({});
+    expect(personalErrors(inContinent('Continent 3', '31_35'))).toEqual({ ageRange: ageLimitMessage('Continent 3') });
+    expect(personalErrors(inContinent('Continent 3', '28_30'))).toEqual({});
+  });
+
+  it('uses the place chosen for a parish that isn’t listed, and 30 for "I don’t know my province"', () => {
+    const north = { ...LAGOS_3, chain: { ...LAGOS_3.chain, continent: { id: 'c11', name: 'Continent 11' } } };
+    const placed = completeDraft({ parishMode: 'directory', province: north, parish: { kind: 'not_listed', name: 'New Hope' } });
+    expect(personalErrors({ ...placed, personal: { ...placed.personal, ageRange: '36_40' } })).toEqual({});
+    // A place that is itself a continent names it.
+    const continentPlace = { ...LAGOS_3, level: 'continent' as const, name: 'Continent 2', chain: { ...LAGOS_3.chain, continent: null } };
+    const direct = completeDraft({ parishMode: 'directory', province: continentPlace, parish: { kind: 'not_listed', name: 'New Hope' } });
+    expect(personalErrors({ ...direct, personal: { ...direct.personal, ageRange: '36_40' } })).toEqual({});
+    const anywhere = completeDraft({ parishMode: 'directory', province: { kind: 'anywhere' }, parish: { kind: 'not_listed', name: 'New Hope' } });
+    expect(personalErrors({ ...anywhere, personal: { ...anywhere.personal, ageRange: '31_35' } })).toEqual({ ageRange: ageLimitMessage(null) });
+  });
+
+  it('waits for the parish answer before judging the age, and keeps 30 for typed text', () => {
+    const unanswered = completeDraft({ parishMode: 'directory' });
+    expect(personalErrors({ ...unanswered, personal: { ...unanswered.personal, ageRange: '36_40' } })).toEqual({ parishName: MESSAGES.parishPlaceRequired });
+    const typed = completeDraft();
+    expect(personalErrors({ ...typed, personal: { ...typed.personal, ageRange: '31_35' } })).toEqual({ ageRange: ageLimitMessage(null) });
   });
 });

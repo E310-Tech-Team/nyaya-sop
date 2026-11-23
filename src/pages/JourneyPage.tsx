@@ -1,6 +1,7 @@
 import { JourneySection } from '../components/landing/JourneySection';
 import { ApplyBand, PageIntro } from '../components/marketing/PageParts';
 import { usePageTitle } from '../components/RouteEffects';
+import { ageEligibility } from '../shared/ageLimits';
 
 /** /journey: the six stages in order, with applying and being selected told apart up front. */
 export default function JourneyPage() {
@@ -13,7 +14,7 @@ export default function JourneyPage() {
           <div className="flex flex-col gap-[6px]">
             <dt className="font-sans text-[11px] font-bold uppercase tracking-[1.6px] text-gold-light xl:text-[12px]">Applying</dt>
             <dd className="text-[14px] leading-[1.55] text-rose xl:text-[16px]">
-              Open to RCCG members aged 18–30. The Programme team reviews every application.
+              Open to RCCG members aged {ageEligibility()}. The Programme team reviews every application.
             </dd>
           </div>
           <div className="flex flex-col gap-[6px]">

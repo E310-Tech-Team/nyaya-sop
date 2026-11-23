@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { CONSENT_VERSION } from '../src/shared/application';
 import { validPayload } from '../src/shared/test-fixtures';
 import { MESSAGES } from '../src/shared/validation';
 import { buildApp, errorForLog } from './app';
@@ -115,7 +116,7 @@ describe('POST /api/applications', () => {
       parish_name: 'Grace Chapel',
       parish_status: 'legacy_text',
       status: 'submitted',
-      consent_version: '2026-09-v1',
+      consent_version: CONSENT_VERSION,
       submission_meta: { utmSource: 'whatsapp' },
     });
   });

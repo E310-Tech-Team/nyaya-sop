@@ -338,6 +338,17 @@ export async function parishDetails(db: Queryable, id: string): Promise<ParishDe
 /** The unit an applicant chose before saying their parish isn't listed, and the units above it (D-59). */
 export type PlaceSnapshot = { unit: ChainUnit & { level: ChurchLevel }; importId: string | null; externalId: string | null } & ParishChain;
 
+/**
+ * The continent of a resolved answer, as the directory names it: the listed parish's, or that of
+ * the place chosen for an unlisted one. Null for typed text, "I don't know my province" or a chain
+ * with no continent. Age limits depend on it (src/shared/ageLimits.ts, D-65).
+ */
+export function linkContinent(link: ParishLink): string | null {
+  if (link.snapshot) return link.snapshot.continent?.name ?? null;
+  if (!link.place) return null;
+  return link.place.continent?.name ?? (link.place.unit.level === 'continent' ? link.place.unit.name : null);
+}
+
 export type ParishLink = {
   status: 'listed' | 'reported' | 'legacy_text' | 'not_provided';
   parishId: string | null;
