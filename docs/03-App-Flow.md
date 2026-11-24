@@ -19,17 +19,17 @@ Defined in [`src/App.tsx`](../src/App.tsx).
 | `/journey` | The Participant Journey | [JourneyPage](../src/pages/JourneyPage.tsx) | — |
 | `/faq` | Frequently asked questions | [FaqPage](../src/pages/FaqPage.tsx) | — |
 | `/apply` | Welcome & consent | [WelcomePage](../src/pages/WelcomePage.tsx) | — (shows "closed" if no cohort is open) |
-| `/apply/personal` | Section 1: Personal Information | [PersonalInfoPage](../src/pages/PersonalInfoPage.tsx) | needs consent |
+| `/apply/personal` | Section 1: Personal Information (with "x of 8 answered" in the progress row and side panel) | [PersonalInfoPage](../src/pages/PersonalInfoPage.tsx) | needs consent |
 | `/apply/education` | Section 2: Education & Career | [EducationCareerPage](../src/pages/EducationCareerPage.tsx) | needs Section 1 valid |
 | `/apply/purpose` | Section 3: Purpose & Self-Discovery | [PurposePage](../src/pages/PurposePage.tsx) | needs Section 2 valid |
 | `/apply/review` | Review & submit | [ReviewPage](../src/pages/ReviewPage.tsx) | needs all sections valid |
-| `/apply/success` | Confirmation (+ optional notification card and account prompt) | [SuccessPage](../src/pages/SuccessPage.tsx) | needs a submission receipt, else → `/` |
+| `/apply/success` | Confirmation: reference, **Where your application is** (the dashboard's stepper at Received, dated), optional notification card and **Follow your application** (when accounts are on) | [SuccessPage](../src/pages/SuccessPage.tsx) | needs a submission receipt, else → `/` |
 | `/mentor-nomination` | Standalone, two-stage mentor nomination (“IT’S TIME TO BUILD”, goal: 500 mentors) | [MentorNominationPage](../src/pages/MentorNominationPage.tsx) | —; unlisted, noindex, intentionally not linked from public pages |
 | `/install` | Install the app (device-aware steps) | [InstallPage](../src/pages/InstallPage.tsx) | — |
 | `/notifications` | This device's notification settings | [NotificationsPage](../src/pages/NotificationsPage.tsx) | — (account topics need a signed-in applicant) |
 | `/updates` | Public announcements | [UpdatesPage](../src/pages/UpdatesPage.tsx) | — |
 | `/account/sign-in`, `/account/verify?token=…` | Applicant sign-in by emailed link (the token leaves the address bar once read) | [SignIn](../src/account/SignIn.tsx) | off (with an explanation) when email isn't configured |
-| `/account` | Account overview | [OverviewPage](../src/account/OverviewPage.tsx) | signed-in applicant, else the sign-in form in place |
+| `/account` | Applicant dashboard: each linked application's progress (Received → Under review → Shortlisted → Invited, no stepper for Not selected or Withdrawn), the team's message and what happens next; a to-do list (link or send the application, notifications on this device, unread messages); latest messages; latest programme updates; the six journey stages | [OverviewPage](../src/account/OverviewPage.tsx), [ApplicationProgress](../src/account/ApplicationProgress.tsx), logic in [dashboard.ts](../src/account/dashboard.ts) | signed-in applicant, else the sign-in form in place |
 | `/account/application` | Published status, messages, linking an application | [ApplicationPage](../src/account/ApplicationPage.tsx) | signed-in applicant |
 | `/account/notifications` | Inbox, this device's notifications, the account's devices | [NotificationsPage](../src/account/NotificationsPage.tsx) | signed-in applicant |
 | `/account/settings` | Details, sessions, sign out everywhere, delete account | [SettingsPage](../src/account/SettingsPage.tsx) | signed-in applicant |

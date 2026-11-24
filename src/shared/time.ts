@@ -100,3 +100,9 @@ export function formatInZone(date: Date | string, timeZone: string = DEFAULT_TIM
   }).format(value);
   return `${text} ${zoneLabel(timeZone, value)}`;
 }
+
+/** "1 Oct 2026": the calendar day in the zone (a date has no time, so no zone label). */
+export function formatDateInZone(date: Date | string, timeZone: string = DEFAULT_TIME_ZONE): string {
+  const value = typeof date === 'string' ? new Date(date) : date;
+  return new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(value);
+}

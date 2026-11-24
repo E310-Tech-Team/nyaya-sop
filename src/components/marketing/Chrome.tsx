@@ -106,6 +106,10 @@ export function MarketingHeader({ menu }: { menu: MobileMenuControls }) {
   );
 }
 
+const FOOTER_HEADING = 'font-sans font-bold leading-[18px] text-[#b69b63] text-[12px] tracking-[1.2px] uppercase whitespace-nowrap';
+const FOOTER_LIST = 'flex flex-col gap-[12px] items-start font-sans font-normal leading-[20px] text-[14px] text-[rgba(243,240,230,0.85)]';
+const FOOTER_LINK = 'transition-colors hover:text-white aria-[current=page]:font-bold aria-[current=page]:text-white';
+
 /** Site footer (every marketing page). `id="contact"` keeps the Contact link working. */
 export function MarketingFooter() {
   const opsz = { fontVariationSettings: '"opsz" 14' };
@@ -113,7 +117,7 @@ export function MarketingFooter() {
   return (
     <footer id="contact" className="on-dark bg-[#1a0810] w-full shrink-0">
       <div data-reveal="fade" className="flex flex-col items-start max-w-[1440px] mx-auto px-6 sm:px-10 xl:px-[80px] pb-[48px] pt-[72px]">
-        <div className="flex flex-col xl:flex-row gap-[48px] xl:gap-[401px] items-start w-full">
+        <div className="flex w-full flex-col items-start gap-[48px] md:flex-row md:justify-between md:gap-[48px]">
           <div className="flex flex-col gap-[24px] items-start w-full max-w-[360px]">
             <BrandLockup on="dark" className="h-[64px]" />
             <p className="font-sans font-normal leading-[22px] text-[14px] text-[rgba(243,240,230,0.72)]" style={opsz}>
@@ -136,48 +140,56 @@ export function MarketingFooter() {
               </span>
             </p>
           </div>
-          <nav aria-label="Footer" className="flex flex-col gap-[20px] items-start w-[220px]">
-            <p className="font-sans font-bold leading-[18px] text-[#b69b63] text-[12px] tracking-[1.2px] uppercase whitespace-nowrap" style={opsz}>Navigation</p>
-            <ul className="flex flex-col gap-[12px] items-start font-sans font-normal leading-[20px] text-[14px] text-[rgba(243,240,230,0.85)]" style={opsz}>
-              {MAIN_NAV.map((item) => (
-                <li key={item.to}>
-                  <NavLink to={item.to} end className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
-                    {item.label}
+          {/* Two short columns instead of one long list, side by side with the brand from md. */}
+          <nav aria-label="Footer" className="grid w-full grid-cols-2 gap-x-[32px] gap-y-[32px] sm:gap-x-[64px] md:w-auto md:shrink-0" style={opsz}>
+            <div className="flex flex-col gap-[20px]">
+              <p className={FOOTER_HEADING}>Explore</p>
+              <ul className={FOOTER_LIST}>
+                {MAIN_NAV.map((item) => (
+                  <li key={item.to}>
+                    <NavLink to={item.to} end className={FOOTER_LINK}>
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+                {CONTACT_LINK && (
+                  <li>
+                    <a href={CONTACT_LINK.href} className={FOOTER_LINK}>{CONTACT_LINK.label}</a>
+                  </li>
+                )}
+              </ul>
+            </div>
+            <div className="flex flex-col gap-[20px]">
+              <p className={FOOTER_HEADING}>Take part</p>
+              <ul className={FOOTER_LIST}>
+                <li>
+                  <Link to="/apply" className={FOOTER_LINK}>Apply now</Link>
+                </li>
+                <li>
+                  <NavLink to="/updates" end className={FOOTER_LINK}>
+                    Programme updates
                   </NavLink>
                 </li>
-              ))}
-              {CONTACT_LINK && (
                 <li>
-                  <a href={CONTACT_LINK.href} className="transition-colors hover:text-white whitespace-nowrap">{CONTACT_LINK.label}</a>
-                </li>
-              )}
-              <li>
-                <Link to="/apply" className="transition-colors hover:text-white whitespace-nowrap">Apply now</Link>
-              </li>
-              <li>
-                <NavLink to="/updates" end className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
-                  Programme updates
-                </NavLink>
-              </li>
-              <li>
-                <NavLink to="/account" className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
-                  Your account
-                </NavLink>
-              </li>
-              <li>
-                <NavLink to="/notifications" end className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
-                  Notification settings
-                </NavLink>
-              </li>
-              {/* Not shown inside the installed app itself. */}
-              {!standalone && (
-                <li>
-                  <NavLink to="/install" end className="transition-colors hover:text-white whitespace-nowrap aria-[current=page]:font-bold aria-[current=page]:text-white">
-                    Install the app
+                  <NavLink to="/account" className={FOOTER_LINK}>
+                    Your account
                   </NavLink>
                 </li>
-              )}
-            </ul>
+                <li>
+                  <NavLink to="/notifications" end className={FOOTER_LINK}>
+                    Notification settings
+                  </NavLink>
+                </li>
+                {/* Not shown inside the installed app itself. */}
+                {!standalone && (
+                  <li>
+                    <NavLink to="/install" end className={FOOTER_LINK}>
+                      Install the app
+                    </NavLink>
+                  </li>
+                )}
+              </ul>
+            </div>
           </nav>
         </div>
         <div className="border-[rgba(243,240,230,0.06)] border-b mt-[40px] w-full" />
@@ -185,7 +197,7 @@ export function MarketingFooter() {
         <p className="font-sans font-normal leading-[18px] max-w-[760px] pt-[20px] text-[12px] text-[rgba(243,240,230,0.62)]" style={opsz}>
           About our images: the photographs in the About, Programme and Journey sections, and on the application pages, are AI-generated. They are not pictures of real applicants, participants or RCCG events. The Biblical Blueprint paintings are artistic interpretations.
         </p>
-        <div className="flex flex-col xl:flex-row font-sans font-normal gap-[8px] xl:gap-0 xl:items-center xl:justify-between pt-[20px] text-[12px] w-full" style={opsz}>
+        <div className="flex flex-col md:flex-row font-sans font-normal gap-[8px] md:gap-[24px] md:items-center md:justify-between pt-[20px] text-[12px] w-full" style={opsz}>
           <p className="text-[rgba(243,240,230,0.62)]">© {new Date().getFullYear()} RCCG National Young Adults &amp; Youth. All rights reserved.</p>
           <p className="text-[rgba(243,240,230,0.62)]">Built for the School of Purpose community</p>
         </div>

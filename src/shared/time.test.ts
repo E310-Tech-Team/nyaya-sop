@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatInZone, isValidTimeZone, utcToZonedLocal, zonedLocalToUtc, zoneOffsetMinutes } from './time';
+import { formatDateInZone, formatInZone, isValidTimeZone, utcToZonedLocal, zonedLocalToUtc, zoneOffsetMinutes } from './time';
 
 describe('scheduling time zones', () => {
   it('converts Lagos wall-clock time (UTC+1 all year) to UTC and back', () => {
@@ -41,5 +41,12 @@ describe('scheduling time zones', () => {
     expect(formatInZone('2026-10-01T08:00:00Z')).toBe('1 Oct 2026, 09:00 WAT');
     expect(formatInZone('2026-10-01T08:00:00Z', 'Europe/London')).toBe('1 Oct 2026, 09:00 BST');
     expect(formatInZone('2026-10-01T08:00:00Z', 'UTC')).toBe('1 Oct 2026, 08:00 UTC');
+  });
+
+  it('gives the calendar day in the zone, not in UTC', () => {
+    expect(formatDateInZone('2026-10-01T08:00:00Z')).toBe('1 Oct 2026');
+    // 23:30 UTC is already the next day in Lagos (UTC+1).
+    expect(formatDateInZone('2026-10-01T23:30:00Z')).toBe('2 Oct 2026');
+    expect(formatDateInZone('2026-10-01T23:30:00Z', 'UTC')).toBe('1 Oct 2026');
   });
 });

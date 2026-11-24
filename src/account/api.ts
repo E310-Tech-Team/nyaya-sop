@@ -1,5 +1,5 @@
 import { apiRequest } from '../lib/api';
-import type { AccountSummary, ApplicantApplication, ClaimableApplication, DeviceSummary, InboxItem, SessionSummary } from '../shared/platform';
+import type { AccountSummary, Announcement, ApplicantApplication, ClaimableApplication, DeviceSummary, InboxItem, SessionSummary } from '../shared/platform';
 
 const change = { method: 'POST', csrf: 'applicant' } as const;
 
@@ -22,6 +22,9 @@ export const accountApi = {
   sessions: (signal?: AbortSignal) => apiRequest<{ sessions: SessionSummary[] }>('/account/sessions', { signal }),
   revokeSession: (id: string) => apiRequest<{ ok: true }>(`/account/sessions/${encodeURIComponent(id)}/revoke`, change),
   revokeOtherSessions: () => apiRequest<{ ok: true }>('/account/sessions/revoke-others', change),
+
+  /** The public announcements (/updates), for the dashboard. */
+  announcements: (signal?: AbortSignal) => apiRequest<{ items: Announcement[] }>('/announcements', { signal }),
 
   deleteAccount: (confirm: string) => apiRequest<{ ok: true }>('/account/delete', { ...change, json: { confirm } }),
 };
