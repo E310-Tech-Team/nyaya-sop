@@ -4,6 +4,7 @@ import { Eyebrow } from '../components/marketing/Chrome';
 import { ApplyBand, PageIntro } from '../components/marketing/PageParts';
 import { usePageTitle } from '../components/RouteEffects';
 import { ABOUT_COPY } from '../config/programme';
+import { ageEligibility } from '../shared/ageLimits';
 
 /** /about: who the School of Purpose is, its vision and mission, who it serves, the Blueprint. */
 export default function AboutPage() {
@@ -38,7 +39,7 @@ function WhoItServes() {
               </h2>
             </div>
             <div className="flex flex-col gap-[10px] font-sans text-[15px] leading-[1.55] xl:max-w-[520px] xl:text-[17px]">
-              <p className="font-semibold text-ink">RCCG members aged 18–30: young adults and youth.</p>
+              <p className="font-semibold text-ink">RCCG members aged {ageEligibility()}: young adults and youth.</p>
               <p className="text-muted">
                 Purpose Boot Camp prepares them to lead with Kingdom impact in three spheres. You confirm your eligibility at
                 the start of the application.

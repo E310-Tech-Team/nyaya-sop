@@ -10,6 +10,7 @@ import { retryPublicConfig } from '../lib/config';
 import { AGE_RANGES, GENDERS, STATE_OPTIONS, type AgeRange, type FieldErrors, type Gender } from '../shared/application';
 import { LIMITS, hasErrors } from '../shared/validation';
 import { personalErrors, useApplication, useParishQuestion } from '../state/application';
+import { ageEligibility } from '../shared/ageLimits';
 
 /** Why the step can't be completed while the parish question isn't known yet. */
 const PARISH_PENDING = {
@@ -119,7 +120,7 @@ export default function PersonalInfoPage() {
             number="05"
             label="Age range"
             placeholder="Select age range"
-            hint="The programme is for ages 18–30."
+            hint={`The programme is for ages ${ageEligibility()}. Your parish’s continent decides which applies.`}
             className="md:max-w-[367px]"
             options={AGE_RANGES}
             value={answers.ageRange}

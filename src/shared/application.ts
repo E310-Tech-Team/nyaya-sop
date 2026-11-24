@@ -7,9 +7,13 @@
  * earlier one that stored applications keep (migration 0011).
  */
 
-export const CONSENT_VERSION = '2026-09-v1';
+/**
+ * The consent shown in the form, recorded word for word in `consent_versions` (migration 0021
+ * holds this version; 2026-09-v1, "aged 18-30", stays valid for forms opened before it).
+ */
+export const CONSENT_VERSION = '2026-11-v1';
 export const CONSENT_STATEMENT =
-  'I confirm that I am an RCCG member aged 18-30 and consent to being contacted about this programme.';
+  'I confirm that I am an RCCG member aged 18–30, or up to 35 in Continent 1 and up to 40 in Continents 2 and 11, and consent to being contacted about this programme.';
 
 /** The gender options applicants choose from: the form's select and the shared validation. */
 export const GENDERS = [
@@ -32,6 +36,9 @@ export const AGE_RANGES = [
   { value: '21_24', label: '21-24' },
   { value: '25_27', label: '25-27' },
   { value: '28_30', label: '28-30' },
+  // Open only in some continents (06 D-65, src/shared/ageLimits.ts): offered to everyone, checked against the parish.
+  { value: '31_35', label: '31-35' },
+  { value: '36_40', label: '36-40' },
 ] as const;
 
 export const EDUCATION_LEVELS = [
